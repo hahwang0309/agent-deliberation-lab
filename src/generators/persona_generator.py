@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class PersonaGenerator:
     """주제에 맞는 페르소나를 생성하는 클래스 (구조화 출력 사용)"""
 
-    def __init__(self, llm: Optional[BaseChatModel] = None, provider: LLMProvider = LLMProvider.OPENAI):
+    def __init__(self, llm: Optional[BaseChatModel] = None, provider: Optional[LLMProvider] = None):
         self.llm = llm or LLMFactory.create_llm(provider, temperature=0.8)
         self.structured_llm = self.llm.with_structured_output(Persona)
 

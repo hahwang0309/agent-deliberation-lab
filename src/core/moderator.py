@@ -18,7 +18,7 @@ class DiscussionModerator:
     """토론 진행자 - 소주제 관리 및 심화 유도"""
 
     def __init__(self, llm: Optional[BaseChatModel] = None, language: str = "auto"):
-        self.llm = llm or LLMFactory.create_llm(LLMProvider.OPENAI, temperature=0.5)
+        self.llm = llm or LLMFactory.create_llm(None, temperature=0.5)
         self.language = language
 
         # 소주제 관리

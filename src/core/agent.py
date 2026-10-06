@@ -24,16 +24,16 @@ class DiscussionAgent:
     """
 
     def __init__(self, persona: Persona, llm: Optional[BaseChatModel] = None,
-                 provider: LLMProvider = LLMProvider.OPENAI, track_evolution: bool = True,
+                 provider: Optional[LLMProvider] = None, track_evolution: bool = True,
                  enable_web_search: bool = False, enable_belief_reasoning: bool = False,
                  aux_llm: Optional[BaseChatModel] = None):
         self.persona = persona
-        self.provider = provider
+        self.provider = provider or LLMFactory.default_provider()
         self.language = "auto"
         self.statement_count = 0
         self.total_position_shifts = 0
 
-        self.llm = llm or LLMFactory.create_llm(provider, temperature=0.7)
+        self.llm = llm or LLMFactory.create_llm(self.provider, temperature=0.7)
         aux_llm = aux_llm or self.llm
 
         # 신념 추론 서비스 (선택)

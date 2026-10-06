@@ -23,7 +23,7 @@ class PersonaInput(BaseModel):
     communication_style: str = Field("", max_length=500)
     beliefs: List[str] = Field(default_factory=list)
     template_id: Optional[str] = Field(None, max_length=50)
-    llm_provider: LLMProviderName = "openai"
+    llm_provider: Optional[LLMProviderName] = Field(None, description="비우면 config.yaml llm.default_provider")
     model: Optional[str] = Field(None, max_length=100, description="비우면 config.yaml 기본 모델")
 
 

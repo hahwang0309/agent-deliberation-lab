@@ -16,6 +16,11 @@ class LLMFactory:
     """다양한 LLM 프로바이더를 생성하는 팩토리 클래스"""
     
     @classmethod
+    def default_provider(cls) -> LLMProvider:
+        """config.yaml의 llm.default_provider"""
+        return LLMProvider(config_loader.get_llm_config().default_provider)
+
+    @classmethod
     def _get_default_model(cls, provider: LLMProvider) -> str:
         """설정 파일에서 기본 모델 가져오기"""
         llm_config = config_loader.get_llm_config()
@@ -23,19 +28,20 @@ class LLMFactory:
         return llm_config.default_models.get(provider_key, {
             LLMProvider.OPENAI: "gpt-4",
             LLMProvider.GEMINI: "gemini-pro",
-            LLMProvider.CLAUDE: "claude-3-opus-20240229",
+            LLMProvider.CLAUDE: "claude-haiku-4-5-20251001",
             LLMProvider.MISTRAL: "mistral-large-latest"
         }.get(provider))
     
     @classmethod
     def create_llm(
         cls,
-        provider: LLMProvider,
+        provider: Optional[LLMProvider] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         **kwargs
     ) -> BaseChatModel:
-        """지정된 프로바이더의 LLM 인스턴스를 생성"""
+        """지정된 프로바이더의 LLM 인스턴스를 생성 (provider 생략 시 기본 프로바이더)"""
+        provider = provider or cls.default_provider()
         
         # 설정 파일에서 기본값 가져오기
         llm_config = config_loader.get_llm_config()

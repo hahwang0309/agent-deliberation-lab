@@ -10,6 +10,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_tmpdir}/test.db"
 os.environ["LEGACY_EXPORT_DIR"] = f"{_tmpdir}/legacy_export"
 os.environ.setdefault("ADMIN_PASSWORD", "test-admin-password")
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 
 import pytest  # noqa: E402
 

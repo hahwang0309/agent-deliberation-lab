@@ -43,7 +43,7 @@ class DiscussionService:
             created_by=created_by,
         )
         for p in request.personas:
-            provider = LLMProvider(p.llm_provider)
+            provider = LLMProvider(p.llm_provider) if p.llm_provider else LLMFactory.default_provider()
             discussion.participants.append(Participant(
                 name=p.name,
                 role=p.role,

@@ -88,7 +88,7 @@ class QueryGenerator:
     
     def __init__(self, llm=None):
         from src.models.personas import LLMProvider
-        self.llm = llm or LLMFactory.create_llm(LLMProvider.OPENAI, temperature=0.3)
+        self.llm = llm or LLMFactory.create_llm(None, temperature=0.3)
         self.prompt_loader = RAGPromptLoader()
     
     async def generate_persona_query(
@@ -157,7 +157,7 @@ class QueryRouter:
     
     def __init__(self, llm=None):
         from src.models.personas import LLMProvider
-        self.llm = llm or LLMFactory.create_llm(LLMProvider.OPENAI, temperature=0.1)  # 낮은 temperature로 일관성 확보
+        self.llm = llm or LLMFactory.create_llm(None, temperature=0.1)  # 낮은 temperature로 일관성 확보
         self.prompt_loader = RAGPromptLoader()
     
     async def classify_query(self, query: str, topic: str = "") -> QueryType:
@@ -203,7 +203,7 @@ class RAGService:
         self.query_router = QueryRouter(llm)
         self.web_search = WebSearchService() if os.getenv("TAVILY_API_KEY") else None
         from src.models.personas import LLMProvider
-        self.llm = llm or LLMFactory.create_llm(LLMProvider.OPENAI, temperature=0.3)
+        self.llm = llm or LLMFactory.create_llm(None, temperature=0.3)
         self.prompt_loader = RAGPromptLoader()
         self.cache = RAGCache()  # 캐싱 활성화
         

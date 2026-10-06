@@ -76,8 +76,9 @@ function personaCard(p = {}) {
     return el("div", {}, el("label", {}, label), input);
   };
   const provider = el("select", { "data-field": "llm_provider" },
+    el("option", { value: "" }, "기본값 (서버 설정)"),
     ...PROVIDERS.map(v => el("option", { value: v }, v)));
-  provider.value = p.llm_provider || "openai";
+  provider.value = p.llm_provider || "";
 
   const card = el("div", { class: "persona-card", "data-template-id": p.id || "" },
     el("div", { class: "head" },
@@ -106,6 +107,7 @@ function collectPersonas() {
       persona[name] = LIST_FIELDS.includes(name) ? value.split(",").map(s => s.trim()).filter(Boolean) : value;
     });
     if (!persona.model) delete persona.model;
+    if (!persona.llm_provider) delete persona.llm_provider;
     return persona;
   });
 }

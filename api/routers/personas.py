@@ -33,7 +33,7 @@ async def generate_personas(request: GeneratePersonasRequest):
         personas = await PersonaGenerator().generate_multiple_personas(
             request.topic, count=request.count, language=request.language
         )
-    except ValueError as e:  # API 키 미설정 등
+    except ValueError as e:  # API 키 미설정 등 (기본 프로바이더 기준)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail={"error": {"code": "LLM_UNAVAILABLE", "message": str(e)}})
     return GeneratePersonasResponse(personas=[p.model_dump() for p in personas])

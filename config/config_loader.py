@@ -16,6 +16,7 @@ class LLMConfig:
     max_tokens: int = 500
     timeout_seconds: float = 60
     max_retries: int = 2
+    default_provider: str = "claude"
     default_models: Dict[str, str] = field(default_factory=dict)
     
     @classmethod
@@ -25,6 +26,7 @@ class LLMConfig:
             max_tokens=data.get('max_tokens', 500),
             timeout_seconds=data.get('timeout_seconds', 60),
             max_retries=data.get('max_retries', 2),
+            default_provider=data.get('default_provider', 'claude'),
             default_models=data.get('default_models', {})
         )
 

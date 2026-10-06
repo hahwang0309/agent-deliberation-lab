@@ -2,11 +2,14 @@
 
 # LLM 설정
 llm:
+  # 기본 프로바이더 (참가자·페르소나 생성에서 provider를 지정하지 않으면 사용)
+  default_provider: "claude"
+
   # 기본 모델 설정
   default_models:
     openai: "gpt-4"
     gemini: "gemini-pro"
-    claude: "claude-3-opus-20240229"
+    claude: "claude-haiku-4-5-20251001"
     mistral: "mistral-large-latest"
   
   # 공통 파라미터
