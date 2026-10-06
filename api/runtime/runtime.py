@@ -6,14 +6,15 @@ uvicorn 메인 루프의 asyncio.Task로 엔진(src.core.natural_discussion)을 
 """
 import asyncio
 import logging
-from typing import Any, Dict, Optional
-
-from langchain_core.callbacks import UsageMetadataCallbackHandler
+from typing import Any, Callable, Dict, Optional
 
 from api.models.discussion import DiscussionStatus
 from api.models.message import SpeakerType
 from api.runtime import persistence
 from api.runtime.broker import EventBroker
+from api.runtime.reports import run_report_job
+from api.runtime.usage import UsageCounter
+from config.config_loader import config_loader
 from src.core.natural_discussion import EngineEvent
 from src.discussion import ParticipantSpec, create_discussion
 from src.models.personas import LLMProvider, Persona
@@ -22,27 +23,13 @@ from src.utils.llm_provider import LLMBundle
 logger = logging.getLogger(__name__)
 
 
-class UsageCounter(UsageMetadataCallbackHandler):
-    """토큰 사용량 + LLM 호출 횟수 집계"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.calls = 0
-
-    def on_llm_end(self, response, **kwargs) -> None:
-        self.calls += 1
-        super().on_llm_end(response, **kwargs)
-
-    def totals(self) -> Dict[str, int]:
-        prompt = sum(u.get("input_tokens", 0) for u in self.usage_metadata.values())
-        completion = sum(u.get("output_tokens", 0) for u in self.usage_metadata.values())
-        return {"prompt_tokens": prompt, "completion_tokens": completion, "llm_calls": self.calls}
-
-
 class DiscussionRuntime:
-    def __init__(self, discussion_id: str, broker: EventBroker):
+    def __init__(self, discussion_id: str, broker: EventBroker,
+                 schedule_report: Optional[Callable[[str], Any]] = None):
         self.discussion_id = discussion_id
         self.broker = broker
+        self.schedule_report = schedule_report  # 중지 후 보고서 생성을 별도 태스크로 예약
+        self.ai_messages = 0
         self.status = DiscussionStatus.RUNNING
         self.last_seq = 0
         self.current_utterance: Optional[Dict[str, Any]] = None
@@ -86,6 +73,9 @@ class DiscussionRuntime:
             async for event in engine.stream(topic, language=data["language"]):
                 await self._handle(event)
 
+            if self._report_eligible():
+                await self._set_status(DiscussionStatus.REPORTING)
+                await run_report_job(self.discussion_id, self.broker)
             await self._set_status(DiscussionStatus.COMPLETED, completed_at=persistence.utcnow())
 
         except asyncio.CancelledError:
@@ -101,11 +91,19 @@ class DiscussionRuntime:
 
     async def _on_cancelled(self) -> None:
         self._abort_utterance()
+        was_reporting = self.status == DiscussionStatus.REPORTING
         req = self.stop_request or {}
         await asyncio.shield(self._set_status(
             DiscussionStatus.STOPPED, stopped_at=persistence.utcnow(),
             stopped_by=req.get("by"), stop_reason=req.get("reason"),
         ))
+        # 사용자가 중지한 토론도 발언이 충분하면 보고서를 만든다 (서버 종료·보고서 생성 중 중지는 제외)
+        if (self.schedule_report and not was_reporting and req.get("by") != "system"
+                and self._report_eligible()):
+            self.schedule_report(self.discussion_id)
+
+    def _report_eligible(self) -> bool:
+        return self.ai_messages >= config_loader.config.report.min_ai_messages
 
     def _abort_utterance(self) -> None:
         if self.current_utterance:
@@ -149,6 +147,8 @@ class DiscussionRuntime:
             )
             self.last_seq = seq
             self.current_utterance = None
+            if speaker_type == SpeakerType.AI:
+                self.ai_messages += 1
             if event.action == "transition" and event.meta.get("subtopic"):
                 await asyncio.to_thread(persistence.update_discussion, self.discussion_id,
                                         current_subtopic=event.meta["subtopic"][:200])

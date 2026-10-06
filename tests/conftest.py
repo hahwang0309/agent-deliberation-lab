@@ -21,3 +21,11 @@ from api.database import init_db  # noqa: E402
 def database():
     init_db()
     yield
+
+
+@pytest.fixture(autouse=True)
+def stub_report_llm(monkeypatch):
+    """보고서 LLM은 기본적으로 가짜 구현 (실제 API 호출 방지)"""
+    from api.runtime import reports
+    from tests.report_stubs import default_stub
+    monkeypatch.setattr(reports, "create_report_llm", lambda callbacks: default_stub())

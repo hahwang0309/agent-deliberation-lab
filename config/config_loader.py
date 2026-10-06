@@ -95,6 +95,31 @@ class LimitsConfig:
         return cls(**{k: data.get(k, getattr(defaults, k)) for k in defaults.__dataclass_fields__})
 
 
+@dataclass
+class ReportConfig:
+    """종합보고서 설정"""
+    model: Optional[str] = None
+    max_tokens: int = 4000
+    max_attempts: int = 3
+    min_ai_messages: int = 4
+    agreed_threshold: float = 0.8
+    partial_threshold: float = 0.6
+    partial_weight: float = 0.7
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ReportConfig':
+        thresholds = data.get('thresholds', {})
+        return cls(
+            model=data.get('model'),
+            max_tokens=data.get('max_tokens', 4000),
+            max_attempts=data.get('max_attempts', 3),
+            min_ai_messages=data.get('min_ai_messages', 4),
+            agreed_threshold=thresholds.get('agreed', 0.8),
+            partial_threshold=thresholds.get('partial', 0.6),
+            partial_weight=data.get('partial_weight', 0.7),
+        )
+
+
 @dataclass 
 class AppConfig:
     """전체 애플리케이션 설정"""
@@ -102,6 +127,7 @@ class AppConfig:
     discussion: DiscussionConfig
     ui: UIConfig
     limits: LimitsConfig
+    report: ReportConfig
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AppConfig':
@@ -109,7 +135,8 @@ class AppConfig:
             llm=LLMConfig.from_dict(data.get('llm', {})),
             discussion=DiscussionConfig.from_dict(data.get('discussion', {})),
             ui=UIConfig.from_dict(data.get('ui', {})),
-            limits=LimitsConfig.from_dict(data.get('limits', {}))
+            limits=LimitsConfig.from_dict(data.get('limits', {})),
+            report=ReportConfig.from_dict(data.get('report', {}))
         )
 
 
@@ -185,10 +212,14 @@ class ConfigLoader:
             config_data = yaml.safe_load(f)
             self._config = AppConfig.from_dict(config_data)
         
-        # 프롬프트 파일 로드
+        # 프롬프트 파일 로드 (보고서 프롬프트는 'report' 네임스페이스로 병합)
         with open(prompts_path, 'r', encoding='utf-8') as f:
             prompts_data = yaml.safe_load(f)
-            self._prompts = PromptManager(prompts_data)
+        report_prompts_path = base_dir / 'config' / 'report_prompts.yaml'
+        if report_prompts_path.exists():
+            with open(report_prompts_path, 'r', encoding='utf-8') as f:
+                prompts_data['report'] = yaml.safe_load(f)
+        self._prompts = PromptManager(prompts_data)
     
     @property
     def config(self) -> AppConfig:

@@ -5,5 +5,6 @@ from api.services.auth_service import AuthService
 from api.services.user_service import UserService
 from api.services.discussion_service import DiscussionService
 from api.services.config_service import ConfigService
+from api.services.report_service import ReportService
 
-__all__ = ["AuthService", "UserService", "DiscussionService", "ConfigService"]
+__all__ = ["AuthService", "UserService", "DiscussionService", "ConfigService", "ReportService"]

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from api.models.discussion import Discussion, DiscussionStatus, Participant
 from api.models.message import Message
+from api.models.report import DiscussionReport
 from api.runtime import registry
 from api.runtime.registry import AlreadyRunningError, CapacityError
 from api.schemas.discussion import CreateDiscussionRequest
@@ -102,8 +103,10 @@ class DiscussionService:
     @staticmethod
     def delete(db: Session, discussion_id: str) -> None:
         discussion = DiscussionService.get(db, discussion_id)
-        if registry.get(discussion_id) is not None or discussion.status in DiscussionStatus.ACTIVE:
+        if (registry.get(discussion_id) is not None or registry.report_running(discussion_id)
+                or discussion.status in DiscussionStatus.ACTIVE):
             raise _error(status.HTTP_409_CONFLICT, "DISCUSSION_RUNNING", "실행 중인 토론은 삭제할 수 없습니다.")
         db.query(Message).filter(Message.discussion_id == discussion_id).delete(synchronize_session=False)
+        db.query(DiscussionReport).filter(DiscussionReport.discussion_id == discussion_id).delete(synchronize_session=False)
         db.delete(discussion)
         db.commit()

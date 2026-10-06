@@ -17,6 +17,17 @@
     <div id="transcript" class="transcript"></div>
     <p id="empty" class="muted">아직 발언이 없습니다.</p>
     <div id="error" class="error"></div>
+
+    <section id="report" class="card report" hidden>
+      <h2>종합보고서 <span id="report-status"></span></h2>
+      <div id="report-body"></div>
+      <div class="actions">
+        <button id="report-generate">보고서 생성</button>
+        <a id="report-md" class="button" hidden>Markdown 다운로드</a>
+        <a id="report-json" class="button" hidden>JSON 다운로드</a>
+      </div>
+      <div id="report-error" class="error"></div>
+    </section>
   </section>
   <aside>
     <div class="card">
@@ -50,6 +61,75 @@ let lastSeq = 0;
 let streaming = null;  // 현재 스트리밍 중인 발언 DOM
 let source = null;
 let currentSubtopic = null;
+let reportPoll = null;
+
+const LABELS = { agreed: "합의", partial: "부분 합의", disagreed: "이견", insufficient: "판단 보류" };
+const STANCES = { agree: "찬성", partially_agree: "부분 찬성", disagree: "반대", no_position: "입장 없음" };
+const DIRECTIONS = { support: "지지 쪽", oppose: "반대 쪽", split: "양분" };
+const pct = v => v == null ? "-" : `${Math.round(v * 100)}%`;
+
+function labelBadge(label) {
+  return el("span", { class: `badge ${label || ""}` }, LABELS[label] || "-");
+}
+
+function scoreBox(name, value) {
+  return el("div", { class: "score" },
+    el("div", { class: "name" }, name),
+    el("div", { class: "value" }, pct(value)),
+    el("div", { class: "bar" }, el("span", { style: `width:${value == null ? 0 : Math.round(value * 100)}%` })));
+}
+
+function issueNode(issue) {
+  return el("details", {},
+    el("summary", {}, labelBadge(issue.label), " ", issue.title, " ",
+      el("span", { class: "muted" }, `${pct(issue.scores.overall)} · ${DIRECTIONS[issue.direction] || "-"}`)),
+    el("p", { class: "muted" }, issue.summary),
+    el("ul", { class: "positions" }, ...issue.positions.map(p => el("li", {},
+      el("strong", {}, p.participant), p.participant_type === "human" ? " (사람)" : "",
+      ` · ${STANCES[p.stance]}: ${p.claim}`,
+      p.evidence_seqs.length ? el("span", { class: "muted" }, ` [#${p.evidence_seqs.join(", #")}]`) : null))));
+}
+
+function renderReport(r) {
+  const section = document.getElementById("report");
+  section.hidden = false;
+  document.getElementById("report-status").replaceChildren(
+    r ? el("span", { class: "badge" }, { pending: "생성 중", ready: "완료", failed: "실패" }[r.status] || r.status) : "");
+  document.getElementById("report-error").textContent = r && r.status === "failed" ? r.error || "" : "";
+  const body = document.getElementById("report-body");
+  const ready = r && r.status === "ready";
+  ["report-md", "report-json"].forEach(idName => document.getElementById(idName).hidden = !ready);
+  if (!ready) {
+    body.replaceChildren(el("p", { class: "muted" },
+      !r ? "아직 보고서가 없습니다." : r.status === "pending" ? "보고서를 생성하고 있습니다..." : "보고서 생성에 실패했습니다."));
+    return;
+  }
+  const c = r.content;
+  const groups = [["합의된 내용", "agreed"], ["부분 합의된 내용", "partial"], ["합의되지 않은 내용", "disagreed"]];
+  if (c.issues.some(i => i.label === "insufficient")) groups.push(["판단 보류 (입장을 밝힌 참가자 1명 이하)", "insufficient"]);
+  body.replaceChildren(
+    el("div", { class: "scores" }, scoreBox("종합", c.scores.overall), scoreBox("AI 참가자", c.scores.ai), scoreBox("사람 참가자", c.scores.human)),
+    el("p", {}, labelBadge(c.label), " ", c.narrative.executive_summary),
+    ...groups.flatMap(([title, key]) => {
+      const issues = c.issues.filter(i => i.label === key);
+      return [el("h3", {}, `${title} (${issues.length})`), ...(issues.length ? issues.map(issueNode) : [el("p", { class: "muted" }, "없음")])];
+    }),
+    el("h3", {}, "열린 질문"), el("ul", {}, ...c.narrative.open_questions.map(q => el("li", {}, q))),
+    el("h3", {}, "제언"), el("ul", {}, ...c.narrative.recommendations.map(q => el("li", {}, q))),
+    el("p", { class: "muted" }, `합의 정도 = 쟁점별 수렴도의 가중 평균. 수렴도 = max(지지, 반대), 지지 = (찬성 + ${c.partial_weight ?? 0.7}×부분찬성)/입장 수. 합의 ≥ ${pct(c.thresholds.agreed)}, 부분 합의 ≥ ${pct(c.thresholds.partial)}. 입장 2개 미만 쟁점은 판단 보류.`),
+  );
+}
+
+async function loadReport() {
+  clearTimeout(reportPoll);
+  try {
+    const r = await api(`/discussions/${encodeURIComponent(id)}/report`);
+    renderReport(r);
+    if (r.status === "pending") reportPoll = setTimeout(loadReport, 3000);
+  } catch (e) {
+    renderReport(null);  // 404: 보고서 없음
+  }
+}
 
 function messageNode(m) {
   const type = m.speaker_type || "ai";
@@ -108,7 +188,9 @@ function setStatus(status) {
     clearStreaming();
     if (source) { source.close(); source = null; }
     loadDetail();  // 사용량 등 최종 값 갱신
+    loadReport();
   }
+  document.getElementById("report-generate").hidden = !TERMINAL.includes(status);
 }
 
 function connect() {
@@ -132,6 +214,8 @@ function connect() {
     currentSubtopic = list[0];
     renderSubtopics(list);
   });
+  source.addEventListener("report_status", e => renderReport({ status: JSON.parse(e.data).status, error: JSON.parse(e.data).error }));
+  source.addEventListener("report_ready", loadReport);
   source.addEventListener("status", e => {
     const s = JSON.parse(e.data);
     setStatus(s.status);
@@ -164,6 +248,16 @@ document.getElementById("stop").onclick = async () => {
   try { await api(`/discussions/${encodeURIComponent(id)}/stop`, { method: "POST", body: {} }); }
   catch (e) { document.getElementById("error").textContent = e.message; }
 };
+document.getElementById("report-generate").onclick = async () => {
+  document.getElementById("report-error").textContent = "";
+  try {
+    await api(`/discussions/${encodeURIComponent(id)}/report`, { method: "POST" });
+    renderReport({ status: "pending" });
+    reportPoll = setTimeout(loadReport, 3000);
+  } catch (e) { document.getElementById("report-error").textContent = e.message; }
+};
+document.getElementById("report-md").href = `${API}/discussions/${encodeURIComponent(id)}/report/export?format=md`;
+document.getElementById("report-json").href = `${API}/discussions/${encodeURIComponent(id)}/report/export?format=json`;
 document.getElementById("delete").onclick = async () => {
   if (!confirm("이 토론과 모든 발언을 삭제할까요?")) return;
   try {

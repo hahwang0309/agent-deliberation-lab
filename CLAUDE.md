@@ -17,7 +17,7 @@ python start_api.py             # DEBUG=True면 reload. 반드시 단일 워커 
 ./docker-start.sh
 
 # 테스트 (가짜 LLM, 임시 SQLite — API 키·서버 불필요)
-pytest tests/test_runtime.py tests/test_events_api.py
+pytest
 pytest tests/test_runtime.py::test_stop_cancels_running_discussion   # 단일 테스트
 ```
 
@@ -36,6 +36,7 @@ alembic check                               # 모델과 마이그레이션 일�
 - **`src/` — 토론 엔진 (API에 의존하지 않음)**: `src/discussion.py`의 `create_discussion(ParticipantSpec[], LLMBundle)`이 참가자별 provider/model로 `DiscussionAgent`와 `DiscussionModerator`를 조립해 `NaturalDiscussion`을 만든다. `NaturalDiscussion.stream()`은 진행을 `EngineEvent`(subtopics / utterance_start / chunk / utterance)로 yield할 뿐 저장·전송하지 않는다. `LLMBundle`(`src/utils/llm_provider.py`)은 토론 1건의 LLM 클라이언트를 캐시하고 사용량 콜백을 연결한다. 웹검색(RAG)·신념 추론은 토론별 플래그로 켜며 LLM 호출이 크게 늘어난다.
 - **`api/runtime/` — 실행 런타임**: `registry.start()`가 토론을 uvicorn 메인 루프의 `asyncio.Task`로 실행한다(스레드 없음, DB 쓰기만 `asyncio.to_thread`). `runtime.py`는 완성 발언을 per-discussion `seq`로 **저장한 뒤 발행**하고, 청크는 발행만 한다. `broker.py`는 단일 루프 Pub/Sub. 서버 시작 시 실행 중이던 토론은 `interrupted`로 표시된다(`persistence.mark_active_as_interrupted`).
 - **SSE** (`api/routers/messages.py` `GET /api/v1/discussions/{id}/events`): 구독 → `seq > Last-Event-ID(또는 ?since)` 메시지 재생 → `snapshot`(상태·진행 중 발화) → 실시간 이벤트 순서. 종료 상태(`DiscussionStatus.TERMINAL`)가 되면 스트림을 닫는다.
+- **종합보고서**: `src/services/consensus_report.py`가 (1) 구조화 출력으로 쟁점(명제)·참가자별 입장을 추출하고 참가자명·seq를 검증해 재시도, (2) 합의 점수를 **코드로** 계산(수렴도 = max(지지, 반대), 지지 = (찬성 + w·부분찬성)/n; 종합·AI·사람 별도; 입장 2개 미만 쟁점은 `insufficient`), (3) 요약·열린 질문·제언을 생성한다. 실행은 `api/runtime/reports.py`(완료 시 런타임 안에서 `reporting` 단계, 중지 시 registry가 별도 태스크로 예약). 결과는 `discussion_reports` 테이블. 설정은 `config.yaml`의 `report.*`, 프롬프트는 `config/report_prompts.yaml`(`report.` 네임스페이스로 로드). 테스트는 `tests/report_stubs.py`의 가짜 LLM을 conftest가 자동 주입한다.
 - **`api/`**: `routers/` → `services/` → `models/`(SQLAlchemy) / `schemas/`(Pydantic). 웹 UI는 `web/`(바닐라 HTML/JS)을 `/`에 마운트한다.
 - **인증**: 현재 `api/utils/admin_auth.py`의 Basic 인증 미들웨어가 `/health` 외 전체를 보호한다. 요청 주체는 `api/dependencies.py`의 `get_actor_id()`로 얻는다.
 - **설정/프롬프트**: 프롬프트는 코드에 쓰지 않고 `config/prompts.yaml`(엔진·모더레이터·페르소나 생성), `config/rag_prompts.yaml`에 둔다. 조회는 `config_loader.prompts.render("turn_actions.present", ...)` 형태. 페르소나 템플릿은 `config/persona_templates.yaml`.

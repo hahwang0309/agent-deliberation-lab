@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from api.database import SessionLocal
 from api.models.discussion import Discussion, DiscussionStatus, Participant
-from api.models.message import Message
+from api.models.message import Message, SpeakerType
+from api.models.report import DiscussionReport, ReportStatus
 
 
 def utcnow() -> datetime:
@@ -133,8 +134,12 @@ def add_usage(discussion_id: str, prompt_tokens: int, completion_tokens: int, ll
 
 
 def mark_active_as_interrupted() -> int:
-    """서버 시작 시: 이전 프로세스에서 실행 중이던 토론을 interrupted로 표시"""
+    """서버 시작 시: 이전 프로세스에서 실행 중이던 토론은 interrupted, 생성 중이던 보고서는 failed로 표시"""
     with session_scope() as db:
+        (db.query(DiscussionReport)
+         .filter(DiscussionReport.status == ReportStatus.PENDING)
+         .update({DiscussionReport.status: ReportStatus.FAILED, DiscussionReport.error: "server restarted"},
+                 synchronize_session=False))
         return (db.query(Discussion)
                 .filter(Discussion.status.in_(DiscussionStatus.ACTIVE))
                 .update({Discussion.status: DiscussionStatus.INTERRUPTED,
@@ -142,6 +147,62 @@ def mark_active_as_interrupted() -> int:
                         synchronize_session=False))
 
 
-def count_active() -> int:
+def count_ai_messages(discussion_id: str) -> int:
     with session_scope() as db:
-        return db.query(func.count(Discussion.id)).filter(Discussion.status.in_(DiscussionStatus.ACTIVE)).scalar()
+        return (db.query(func.count(Message.id))
+                .filter(Message.discussion_id == discussion_id, Message.speaker_type == SpeakerType.AI)
+                .scalar())
+
+
+def load_transcript(discussion_id: str) -> Dict[str, Any]:
+    """보고서 생성 입력: 주제·언어·참가자(이름→ai|human)·전체 발언"""
+    with session_scope() as db:
+        d = db.get(Discussion, discussion_id)
+        messages = (db.query(Message).filter(Message.discussion_id == discussion_id)
+                    .order_by(Message.seq).all())
+        participants = {p.name: "ai" for p in
+                        db.query(Participant).filter(Participant.discussion_id == discussion_id)
+                        .order_by(Participant.created_at, Participant.id)}
+        for m in messages:
+            if m.speaker_type == SpeakerType.HUMAN:
+                participants.setdefault(m.speaker, "human")
+        return {
+            "topic": d.topic,
+            "language": d.language,
+            "participants": participants,
+            "transcript": [{"seq": m.seq, "speaker": m.speaker, "speaker_type": m.speaker_type,
+                            "content": m.content} for m in messages],
+        }
+
+
+def mark_report_pending(discussion_id: str) -> None:
+    with session_scope() as db:
+        report = db.get(DiscussionReport, discussion_id) or DiscussionReport(discussion_id=discussion_id)
+        report.status = ReportStatus.PENDING
+        report.error = None
+        report.requested_at = utcnow()
+        db.add(report)
+
+
+def save_report(discussion_id: str, content: Dict[str, Any], model: Optional[str]) -> None:
+    scores = content["scores"]
+    with session_scope() as db:
+        report = db.get(DiscussionReport, discussion_id)
+        report.status = ReportStatus.READY
+        report.content = content
+        report.consensus_score = scores["overall"]
+        report.ai_score = scores["ai"]
+        report.human_score = scores["human"]
+        report.consensus_label = content.get("label")
+        report.model = model
+        report.error = None
+        report.generated_at = utcnow()
+        db.get(Discussion, discussion_id).consensus_score = scores["overall"]
+
+
+def fail_report(discussion_id: str, error: str) -> None:
+    with session_scope() as db:
+        report = db.get(DiscussionReport, discussion_id)
+        if report is not None:
+            report.status = ReportStatus.FAILED
+            report.error = error

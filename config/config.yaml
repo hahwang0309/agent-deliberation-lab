@@ -65,6 +65,17 @@ limits:
   min_personas: 2
   max_personas: 5
 
+# 종합보고서 (src/services/consensus_report.py)
+report:
+  model: null                # null이면 llm.default_provider의 기본 모델
+  max_tokens: 4000           # 쟁점 추출·요약 구조화 출력 상한
+  max_attempts: 3            # 구조화 출력 검증 실패 시 총 시도 횟수
+  min_ai_messages: 4         # 이 수 이상 AI 발언이 있어야 보고서 생성 (중지된 토론 포함)
+  partial_weight: 0.7        # 부분 찬성이 지지 쪽에 기여하는 비율 (반대 쪽에는 기여하지 않음)
+  thresholds:                # 쟁점별 수렴도 → 라벨
+    agreed: 0.8              # 이상이면 '합의'
+    partial: 0.6             # 이상이면 '부분 합의', 미만은 '이견'
+
 # 고급 토론 설정
 advanced_discussion:
   # 에이전트 역할

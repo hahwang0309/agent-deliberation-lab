@@ -5,5 +5,6 @@ from api.models.user import User
 from api.models.discussion import Discussion, Participant, DiscussionStatus
 from api.models.message import Message, SpeakerType
 from api.models.persona import CustomPersona
+from api.models.report import DiscussionReport, ReportStatus
 
-__all__ = ["User", "Discussion", "Participant", "DiscussionStatus", "Message", "SpeakerType", "CustomPersona"]
+__all__ = ["User", "Discussion", "Participant", "DiscussionStatus", "Message", "SpeakerType", "CustomPersona", "DiscussionReport", "ReportStatus"]

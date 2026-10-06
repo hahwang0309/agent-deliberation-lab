@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     logger.info("API server shutting down...")
     await registry.shutdown()
 
-from api.routers import auth_router, users_router, discussions_router, messages_router, personas_router, config_router
+from api.routers import auth_router, users_router, discussions_router, messages_router, personas_router, config_router, reports_router
 from api.runtime import registry
 from api.runtime.persistence import mark_active_as_interrupted
 
@@ -72,6 +72,7 @@ app.include_router(discussions_router)
 app.include_router(messages_router)
 app.include_router(personas_router)
 app.include_router(config_router)
+app.include_router(reports_router)
 
 
 @app.get("/api", tags=["헬스체크"])
