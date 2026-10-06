@@ -36,7 +36,7 @@ document.getElementById("form").onsubmit = async (ev) => {
     let target = "/";
     try {
       const url = new URL(next || "/", location.origin);
-      if (url.origin === location.origin) target = url.pathname + url.search + url.hash;
+      if (url.origin === location.origin) target = url.href;  // 절대 주소로 이동 (경로가 "//"로 시작해도 같은 출처 유지)
     } catch (_) {}
     location.href = me.must_change_password ? "/change-password.html" : target;
   } catch (e) {
