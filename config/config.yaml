@@ -12,6 +12,10 @@ llm:
   # 공통 파라미터
   temperature: 0.7
   max_tokens: 500  # 3-8 문장 정도
+
+  # 호출 안정성 (LLMFactory가 모든 프로바이더에 적용)
+  timeout_seconds: 60  # 요청당 타임아웃
+  max_retries: 2       # 실패 시 재시도 횟수
   
   # 빠른 데모용 설정
   quick_demo:
@@ -109,8 +113,6 @@ system:
     level: "INFO"
     file: "discussion.log"
   
-  # 성능
+  # 성능 (LLM 타임아웃/재시도는 llm.timeout_seconds, llm.max_retries)
   performance:
-    async_timeout: 30  # 초
-    retry_attempts: 3
     cache_responses: false

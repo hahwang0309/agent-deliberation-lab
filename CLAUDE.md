@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # Setup
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # 런타임만: requirements.txt
 cp .env.example .env            # OPENAI_API_KEY·ADMIN_PASSWORD 필수, DATABASE_URL 기본 sqlite:///./discussion_api.db
 
 # API 서버 (frontend/ 정적 파일도 함께 서빙) — http://localhost:8000, 문서 /docs
@@ -24,7 +24,14 @@ python tests/test_rag_quick.py          # 단일 테스트 실행 예시
 python test_full_flow.py                # 루트의 test_*.py: API 엔드투엔드 흐름 (서버 기동 필요)
 ```
 
-`migrations/*.sql`은 DB에 수동 적용하는 SQL이다(Alembic 미사용). 테이블은 앱 시작 시 `init_db()`가 생성한다.
+DB 스키마는 Alembic으로 관리한다. 앱 시작 시 `init_db()`(`api/database.py`)가 `upgrade head`를 실행하며, Alembic 이력 없는 기존(create_all) DB는 기준 리비전으로 자동 stamp한다. 모델 변경 시:
+
+```bash
+alembic revision --autogenerate -m "설명"   # DATABASE_URL·ADMIN_PASSWORD 환경변수 필요
+alembic upgrade head
+```
+
+로그는 stdout으로만 출력되며 레벨은 `LOG_LEVEL`. LLM 타임아웃·재시도는 `config/config.yaml`의 `llm.timeout_seconds`, `llm.max_retries`.
 
 ## Architecture
 

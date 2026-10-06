@@ -1,6 +1,8 @@
 """
 FastAPI 메인 애플리케이션
 """
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +13,20 @@ from pathlib import Path
 from api.config import settings
 from api.database import init_db
 from api.utils.admin_auth import AdminBasicAuthMiddleware
+from src.utils.logger import setup_logging
+
+setup_logging(settings.LOG_LEVEL)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """앱 시작/종료 처리"""
+    init_db()
+    logger.info("%s v%s started (docs: /docs)", settings.APP_NAME, settings.APP_VERSION)
+    yield
+    logger.info("API server shutting down...")
+
 from api.routers import auth_router, users_router, discussions_router, messages_router, analytics_router, personas_router, export_router, config_router, investigations_router
 from api.routers.batch_analyses import router as batch_analyses_router
 
@@ -67,7 +83,8 @@ app = FastAPI(
     * LLM 프로바이더 상태
     """,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # 관리자 인증 (CORS보다 먼저 등록 → CORS가 바깥에서 preflight 처리)
@@ -123,21 +140,6 @@ if frontend_path.exists():
         if file_path.exists():
             return FileResponse(str(file_path))
         return JSONResponse(status_code=404, content={"error": "Page not found"})
-
-
-@app.on_event("startup")
-def on_startup():
-    """앱 시작 시 실행"""
-    # 데이터베이스 초기화
-    init_db()
-    print(f"[OK] {settings.APP_NAME} v{settings.APP_VERSION} started")
-    print(f"[INFO] API Docs: http://{settings.HOST}:{settings.PORT}/docs")
-
-
-@app.on_event("shutdown")
-def on_shutdown():
-    """앱 종료 시 실행"""
-    print("[INFO] API server shutting down...")
 
 
 @app.get("/api", tags=["헬스체크"])

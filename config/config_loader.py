@@ -14,6 +14,8 @@ class LLMConfig:
     """LLM 설정"""
     temperature: float = 0.7
     max_tokens: int = 500
+    timeout_seconds: float = 60
+    max_retries: int = 2
     default_models: Dict[str, str] = field(default_factory=dict)
     
     @classmethod
@@ -21,6 +23,8 @@ class LLMConfig:
         return cls(
             temperature=data.get('temperature', 0.7),
             max_tokens=data.get('max_tokens', 500),
+            timeout_seconds=data.get('timeout_seconds', 60),
+            max_retries=data.get('max_retries', 2),
             default_models=data.get('default_models', {})
         )
 

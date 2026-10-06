@@ -53,9 +53,18 @@ docker-compose*.yml
 # Claude
 .claude/
 
-# Migration scripts (이미 DB에 적용됨)
-migrations/
 
-# Local config
+# Local config & secrets (런타임에 env_file로 주입)
+.env
 .env.local
 *.local.json
+
+# Local data
+*.db
+data/
+
+# Root-level test scripts
+test_*.py
+test_*.json
+test_api.html
+test_api.sh

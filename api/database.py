@@ -1,7 +1,9 @@
 """
 데이터베이스 연결 및 세션 관리
 """
-from sqlalchemy import create_engine
+import logging
+from pathlib import Path
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from api.config import settings
@@ -33,7 +35,27 @@ def get_db():
         db.close()
 
 
+logger = logging.getLogger(__name__)
+
+# create_all 시절 스키마에 해당하는 Alembic 기준 리비전
+BASELINE_REVISION = "115ef33629d0"
+
+
 def init_db():
-    """데이터베이스 초기화"""
-    Base.metadata.create_all(bind=engine)
+    """데이터베이스 마이그레이션을 최신(head)으로 적용
+
+    Alembic 도입 전 create_all로 만들어진 DB는 기준 리비전으로 stamp 후 업그레이드한다.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    alembic_cfg.attributes["configure_logger"] = False
+
+    tables = set(inspect(engine).get_table_names())
+    if "alembic_version" not in tables and tables:
+        logger.warning("Alembic 이력이 없는 기존 DB 감지 → 기준 리비전 %s로 stamp", BASELINE_REVISION)
+        command.stamp(alembic_cfg, BASELINE_REVISION)
+
+    command.upgrade(alembic_cfg, "head")
 

@@ -68,3 +68,4 @@ api/**/__pycache__/
 # Local tooling
 .venv/
 .claude/settings.local.json
+data/

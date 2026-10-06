@@ -46,6 +46,8 @@ personas:
 ### Key Settings Explained
 
 #### LLM Settings
+
+- `llm.timeout_seconds` (기본 60), `llm.max_retries` (기본 2): 모든 프로바이더 호출에 적용
 - **temperature**: Controls randomness (0.0-1.0)
   - Lower (0.1-0.3): More focused, deterministic
   - Medium (0.5-0.7): Balanced creativity
@@ -198,13 +200,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=...
 MISTRAL_API_KEY=...
 
-# Logging
+# Logging (stdout 출력)
 LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
-LOG_FILE=logs/discussion.log
-
-# Performance
-MAX_CONCURRENT_REQUESTS=5
-REQUEST_TIMEOUT=30
 ```
 
 ## Usage Examples

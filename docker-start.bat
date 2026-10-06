@@ -81,7 +81,7 @@ set attempt=0
 :healthcheck_loop
 if !attempt! geq !max_attempts! goto healthcheck_failed
 
-curl -sf http://localhost:8106/api/health >nul 2>nul
+curl -sf http://localhost:8106/health >nul 2>nul
 if %ERRORLEVEL% equ 0 goto healthcheck_success
 
 set /a attempt+=1

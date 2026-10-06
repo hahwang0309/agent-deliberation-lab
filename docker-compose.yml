@@ -13,12 +13,13 @@ services:
       # 데이터베이스 연결: DATABASE_URL은 .env에서 주입
 
       # 애플리케이션 설정
-      - ENV=production
-      - LOG_LEVEL=info
+      - ENVIRONMENT=production
 
     volumes:
       # 설정 파일 마운트
       - ./config:/app/config:ro
+      # SQLite 사용 시 DB 영속화: DATABASE_URL=sqlite:////app/data/app.db
+      - ./data:/app/data
 
     restart: unless-stopped
 

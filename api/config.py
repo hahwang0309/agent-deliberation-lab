@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "production"  # development, production
 
+    # 로그 레벨 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    LOG_LEVEL: str = "INFO"
+
     # 서버 설정
     HOST: str = "0.0.0.0"
     PORT: int = 8000

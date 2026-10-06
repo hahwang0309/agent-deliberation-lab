@@ -1,22 +1,17 @@
-# LangChain & AI
-langchain>=1.0.0
-langgraph>=1.0.0
+# LangChain & AI (langchain_core는 provider 패키지 의존성으로 설치됨)
 langchain-openai>=1.0.0
 langchain-google-genai>=3.0.0
 langchain-anthropic>=1.0.0
 langchain-mistralai>=1.0.0
-langsmith>=0.4.0
 
 # FastAPI & Web
 fastapi>=0.116.0
 uvicorn[standard]>=0.35.0
-python-multipart>=0.0.20
 
 # Database
 sqlalchemy>=2.0.0
 alembic>=1.17.0
 psycopg2-binary>=2.9.0
-pymysql>=1.1.0
 
 # Authentication & Security
 python-jose[cryptography]>=3.5.0
@@ -30,24 +25,8 @@ pydantic-settings>=2.10.0
 pyyaml>=6.0.2
 email-validator>=2.3.0
 
-# CLI & UI
+# CLI 출력
 rich>=14.0.0
-typer>=0.20.0
 
-# Async & HTTP
+# Async HTTP (웹 검색)
 aiohttp>=3.13.0
-httpx>=0.28.0
-
-# SSE (Server-Sent Events)
-sse-starlette>=3.0.0
-
-# Data Processing
-pandas>=2.3.0
-numpy>=2.3.0
-openpyxl>=3.1.5
-python-docx>=1.2.0
-
-# AI Models
-openai>=2.6.0
-anthropic>=0.71.0
-tiktoken>=0.12.0

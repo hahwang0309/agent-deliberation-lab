@@ -42,6 +42,8 @@ class LLMFactory:
         model = model or cls._get_default_model(provider)
         temperature = temperature if temperature is not None else llm_config.temperature
         max_tokens = kwargs.get('max_tokens', llm_config.max_tokens)
+        timeout = kwargs.get('timeout', llm_config.timeout_seconds)
+        max_retries = kwargs.get('max_retries', llm_config.max_retries)
         
         if provider == LLMProvider.OPENAI:
             api_key = kwargs.get("api_key") or os.getenv("OPENAI_API_KEY")
@@ -51,7 +53,9 @@ class LLMFactory:
                 model=model,
                 temperature=temperature,
                 api_key=api_key,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                timeout=timeout,
+                max_retries=max_retries
             )
             
         elif provider == LLMProvider.GEMINI:
@@ -62,7 +66,9 @@ class LLMFactory:
                 model=model,
                 temperature=temperature,
                 google_api_key=api_key,
-                max_output_tokens=max_tokens
+                max_output_tokens=max_tokens,
+                timeout=timeout,
+                max_retries=max_retries
             )
             
         elif provider == LLMProvider.CLAUDE:
@@ -73,7 +79,9 @@ class LLMFactory:
                 model=model,
                 temperature=temperature,
                 anthropic_api_key=api_key,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                default_request_timeout=timeout,
+                max_retries=max_retries
             )
             
         elif provider == LLMProvider.MISTRAL:
@@ -84,7 +92,9 @@ class LLMFactory:
                 model=model,
                 temperature=temperature,
                 mistral_api_key=api_key,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                timeout=int(timeout),
+                max_retries=max_retries
             )
             
         else:
