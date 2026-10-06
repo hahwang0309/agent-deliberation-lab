@@ -14,7 +14,8 @@ llm:
   
   # 공통 파라미터
   temperature: 0.7
-  max_tokens: 500  # 3-8 문장 정도
+  max_tokens: 1500  # 응답 상한 (실제 길이는 프롬프트의 3-8문장 지시가 결정; 한국어는 토큰이 많아 500이면 잘림)
+  structured_max_tokens: 2000  # 구조화 출력(페르소나 생성 등) 전용 — JSON이 잘리지 않도록 여유 있게
 
   # 호출 안정성 (LLMFactory가 모든 프로바이더에 적용)
   timeout_seconds: 60  # 요청당 타임아웃

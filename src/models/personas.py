@@ -1,5 +1,6 @@
+import json
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from enum import Enum
 
@@ -20,6 +21,22 @@ class Persona(BaseModel):
     expertise: List[str] = Field(description="전문 분야 리스트")
     communication_style: str = Field(description="의사소통 스타일")
     beliefs: List[str] = Field(description="핵심 신념 리스트")
+
+    @field_validator("personality", "expertise", "beliefs", mode="before")
+    @classmethod
+    def _coerce_list(cls, value: Any) -> Any:
+        """LLM이 목록을 문자열(JSON 배열 문자열 또는 쉼표 구분)로 반환한 경우 목록으로 변환"""
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except json.JSONDecodeError:
+                pass
+        return [item.strip() for item in text.split(",") if item.strip()]
     
     def to_prompt(self) -> str:
         """페르소나를 프롬프트로 변환"""

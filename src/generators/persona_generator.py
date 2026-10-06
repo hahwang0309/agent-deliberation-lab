@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import ValidationError
 
 from config.config_loader import config_loader
 from src.models.personas import LLMProvider, Persona
@@ -15,12 +16,16 @@ from src.utils.llm_provider import LLMFactory
 
 logger = logging.getLogger(__name__)
 
+MAX_ATTEMPTS = 2  # 구조화 출력 검증 실패 시 재시도 포함 총 시도 횟수
+
 
 class PersonaGenerator:
     """주제에 맞는 페르소나를 생성하는 클래스 (구조화 출력 사용)"""
 
     def __init__(self, llm: Optional[BaseChatModel] = None, provider: Optional[LLMProvider] = None):
-        self.llm = llm or LLMFactory.create_llm(provider, temperature=0.8)
+        self.llm = llm or LLMFactory.create_llm(
+            provider, temperature=0.8, max_tokens=config_loader.get_llm_config().structured_max_tokens
+        )
         self.structured_llm = self.llm.with_structured_output(Persona)
 
     async def generate_persona(self, topic: str, perspective: Optional[str] = None,
@@ -37,10 +42,15 @@ class PersonaGenerator:
         )
         user_prompt = prompts.get_persona_user_prompt(topic, perspective_text)
 
-        persona = await self.structured_llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
-        ])
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                persona = await self.structured_llm.ainvoke(messages)
+                break
+            except ValidationError:
+                if attempt == MAX_ATTEMPTS:
+                    raise
+                logger.warning("Persona output failed validation (attempt %d); retrying", attempt)
         if agent_id:
             persona = persona.model_copy(update={"name": agent_id})
         return persona

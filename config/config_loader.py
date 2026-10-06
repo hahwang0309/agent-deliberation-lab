@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 class LLMConfig:
     """LLM 설정"""
     temperature: float = 0.7
-    max_tokens: int = 500
+    max_tokens: int = 1500
+    structured_max_tokens: int = 2000
     timeout_seconds: float = 60
     max_retries: int = 2
     default_provider: str = "claude"
@@ -23,7 +24,8 @@ class LLMConfig:
     def from_dict(cls, data: Dict[str, Any]) -> 'LLMConfig':
         return cls(
             temperature=data.get('temperature', 0.7),
-            max_tokens=data.get('max_tokens', 500),
+            max_tokens=data.get('max_tokens', 1500),
+            structured_max_tokens=data.get('structured_max_tokens', 2000),
             timeout_seconds=data.get('timeout_seconds', 60),
             max_retries=data.get('max_retries', 2),
             default_provider=data.get('default_provider', 'claude'),

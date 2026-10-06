@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, HTTPException, status
+from pydantic import ValidationError
 
 from api.schemas.persona import (
     GeneratePersonasRequest,
@@ -33,6 +34,10 @@ async def generate_personas(request: GeneratePersonasRequest):
         personas = await PersonaGenerator().generate_multiple_personas(
             request.topic, count=request.count, language=request.language
         )
+    except ValidationError as e:  # LLM 출력이 페르소나 형식에 맞지 않음 (ValueError의 하위 클래스라 먼저 처리)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail={"error": {"code": "LLM_INVALID_OUTPUT",
+                                              "message": f"페르소나 생성 결과가 형식에 맞지 않습니다: {e.error_count()}개 오류"}})
     except ValueError as e:  # API 키 미설정 등 (기본 프로바이더 기준)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail={"error": {"code": "LLM_UNAVAILABLE", "message": str(e)}})

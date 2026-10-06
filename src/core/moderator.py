@@ -54,7 +54,7 @@ class DiscussionModerator:
         for line in response.content.strip().split('\n'):
             line = line.strip()
             if line and any(char.isdigit() for char in line[:3]):
-                subtopic = re.sub(r'^[\d.)\s]+', '', line).strip()
+                subtopic = re.sub(r'^[\d.)\s]+', '', line).replace('**', '').strip()
                 if subtopic and len(subtopic) > 5:
                     parsed_subtopics.append(subtopic)
 
