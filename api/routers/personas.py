@@ -1,118 +1,39 @@
 """
 페르소나 API 라우터
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from typing import Optional
+from pathlib import Path
 
-from api.dependencies import get_db, get_current_user, get_optional_user
-from api.models.user import User
+import yaml
+from fastapi import APIRouter, HTTPException, status
+
 from api.schemas.persona import (
+    GeneratePersonasRequest,
+    GeneratePersonasResponse,
+    PersonaTemplate,
     PersonaTemplateListResponse,
-    CustomPersonaCreateRequest,
-    CustomPersonaResponse
 )
-from api.schemas.error import ErrorResponse
-from api.services.persona_service import PersonaService
-
+from src.generators.persona_generator import PersonaGenerator
 
 router = APIRouter(prefix="/api/v1/personas", tags=["Personas"])
 
-
-@router.get(
-    "/templates",
-    response_model=PersonaTemplateListResponse,
-    summary="페르소나 템플릿 목록 (게스트 지원)",
-    description="사전 정의된 페르소나 템플릿 목록을 조회합니다. 로그인 선택사항.",
-    responses={
-        200: {
-            "description": "성공",
-            "model": PersonaTemplateListResponse
-        }
-    }
-)
-async def get_persona_templates(
-    _current_user: Optional[User] = Depends(get_optional_user)
-) -> PersonaTemplateListResponse:
-    """
-    페르소나 템플릿 목록 조회
-    
-    사전 정의된 페르소나 템플릿 목록을 반환합니다.
-    토론 생성 시 이 템플릿들을 사용할 수 있습니다.
-    
-    Args:
-        _current_user: 현재 로그인한 사용자 (선택사항)
-        
-    Returns:
-        PersonaTemplateListResponse: 템플릿 목록
-    """
-    return PersonaService.get_templates()
+TEMPLATES_PATH = Path(__file__).resolve().parents[2] / "config" / "persona_templates.yaml"
 
 
-@router.post(
-    "/custom",
-    response_model=CustomPersonaResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="커스텀 페르소나 생성 (게스트 지원)",
-    description="사용자 정의 페르소나를 생성합니다. 로그인 선택사항.",
-    responses={
-        201: {
-            "description": "생성 성공",
-            "model": CustomPersonaResponse
-        },
-        422: {
-            "description": "유효성 검증 실패",
-            "model": ErrorResponse
-        }
-    }
-)
-async def create_custom_persona(
-    persona_data: CustomPersonaCreateRequest,
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user)
-) -> CustomPersonaResponse:
-    """
-    커스텀 페르소나 생성
-    
-    사용자가 직접 정의한 페르소나를 생성합니다.
-    생성된 페르소나는 토론에서 사용할 수 있습니다.
-    
-    Args:
-        persona_data: 페르소나 데이터
-        db: 데이터베이스 세션
-        current_user: 현재 로그인한 사용자 (선택사항)
-        
-    Returns:
-        CustomPersonaResponse: 생성된 페르소나
-    """
+@router.get("/templates", response_model=PersonaTemplateListResponse, summary="페르소나 템플릿 목록")
+def get_persona_templates():
+    data = yaml.safe_load(TEMPLATES_PATH.read_text(encoding="utf-8")) or {}
+    return PersonaTemplateListResponse(
+        templates=[PersonaTemplate(id=template_id, **fields) for template_id, fields in data.items()]
+    )
+
+
+@router.post("/generate", response_model=GeneratePersonasResponse, summary="주제 기반 페르소나 자동 생성")
+async def generate_personas(request: GeneratePersonasRequest):
     try:
-        user_id = current_user.id if current_user else "guest"
-        return PersonaService.create_custom_persona(
-            db=db,
-            user_id=user_id,
-            persona_data=persona_data
+        personas = await PersonaGenerator().generate_multiple_personas(
+            request.topic, count=request.count, language=request.language
         )
-    except ValueError as e:
-        # 유효성 검증 오류
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": str(e),
-                    "field": "persona_data"
-                }
-            }
-        )
-    except Exception as e:
-        # 기타 오류
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "페르소나 생성 중 오류가 발생했습니다."
-                }
-            }
-        )
-
+    except ValueError as e:  # API 키 미설정 등
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail={"error": {"code": "LLM_UNAVAILABLE", "message": str(e)}})
+    return GeneratePersonasResponse(personas=[p.model_dump() for p in personas])

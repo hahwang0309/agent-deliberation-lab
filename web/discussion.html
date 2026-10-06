@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>토론</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="top">
+  <a href="/">← 목록</a>
+  <h1 id="topic">토론</h1>
+  <span id="status"></span>
+</header>
+<main class="layout">
+  <section>
+    <div id="transcript" class="transcript"></div>
+    <p id="empty" class="muted">아직 발언이 없습니다.</p>
+    <div id="error" class="error"></div>
+  </section>
+  <aside>
+    <div class="card">
+      <h2>진행</h2>
+      <div class="actions" style="margin-top:0">
+        <button id="start" class="primary" hidden>시작</button>
+        <button id="stop" class="danger" hidden>중지</button>
+        <button id="delete" hidden>삭제</button>
+      </div>
+      <p id="usage" class="muted"></p>
+    </div>
+    <div class="card">
+      <h2>소주제</h2>
+      <ol id="subtopics" class="subtopics"></ol>
+      <p id="no-subtopics" class="muted">없음</p>
+    </div>
+    <div class="card">
+      <h2>참가자</h2>
+      <div id="participants"></div>
+    </div>
+  </aside>
+</main>
+
+<script src="/js/api.js"></script>
+<script>
+const id = new URLSearchParams(location.search).get("id");
+const TERMINAL = ["completed", "stopped", "failed", "interrupted"];
+const ACTIVE = ["running", "awaiting_human", "reporting"];
+const transcript = document.getElementById("transcript");
+let lastSeq = 0;
+let streaming = null;  // 현재 스트리밍 중인 발언 DOM
+let source = null;
+let currentSubtopic = null;
+
+function messageNode(m) {
+  const type = m.speaker_type || "ai";
+  const action = m.action ? el("span", { class: "meta" }, m.action) : null;
+  const node = el("div", { class: `msg ${type}` },
+    el("div", { class: "who" }, m.speaker, action),
+    el("div", { class: "body" }, m.content || ""));
+  if (m.sources && m.sources.length) node.append(el("div", { class: "sources" }, "출처: " + m.sources.join(", ")));
+  return node;
+}
+
+function appendMessage(m) {
+  if (m.seq <= lastSeq) return;
+  lastSeq = m.seq;
+  clearStreaming();
+  transcript.append(messageNode(m));
+  document.getElementById("empty").hidden = true;
+  if (m.speaker_type === "moderator" && m.action === "transition" && m.meta && m.meta.subtopic) {
+    currentSubtopic = m.meta.subtopic;
+    highlightSubtopic();
+  }
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function startStreaming(u) {
+  clearStreaming();
+  streaming = messageNode({ speaker: u.speaker, speaker_type: u.speaker_type, action: u.action, content: u.text || "" });
+  streaming.classList.add("streaming");
+  transcript.append(streaming);
+  document.getElementById("empty").hidden = true;
+}
+
+function clearStreaming() {
+  if (streaming) streaming.remove();
+  streaming = null;
+}
+
+function renderSubtopics(list) {
+  const ol = document.getElementById("subtopics");
+  ol.replaceChildren(...(list || []).map(s => el("li", {}, s)));
+  document.getElementById("no-subtopics").hidden = !!(list && list.length);
+  highlightSubtopic();
+}
+
+function highlightSubtopic() {
+  document.querySelectorAll("#subtopics li").forEach(li =>
+    li.classList.toggle("current", li.textContent === currentSubtopic));
+}
+
+function setStatus(status) {
+  document.getElementById("status").replaceChildren(statusBadge(status));
+  document.getElementById("start").hidden = status !== "draft";
+  document.getElementById("stop").hidden = !ACTIVE.includes(status);
+  document.getElementById("delete").hidden = ACTIVE.includes(status);
+  if (TERMINAL.includes(status)) {
+    clearStreaming();
+    if (source) { source.close(); source = null; }
+    loadDetail();  // 사용량 등 최종 값 갱신
+  }
+}
+
+function connect() {
+  if (source) source.close();
+  source = new EventSource(`${API}/discussions/${encodeURIComponent(id)}/events?since=${lastSeq}`);
+  source.addEventListener("message", e => appendMessage(JSON.parse(e.data)));
+  source.addEventListener("snapshot", e => {
+    const s = JSON.parse(e.data);
+    setStatus(s.status);
+    if (s.current_utterance) startStreaming(s.current_utterance);
+  });
+  source.addEventListener("utterance_start", e => startStreaming(JSON.parse(e.data)));
+  source.addEventListener("chunk", e => {
+    const d = JSON.parse(e.data);
+    if (!streaming) startStreaming({ speaker: d.speaker, speaker_type: "ai", text: "" });
+    streaming.querySelector(".body").textContent += d.delta;
+  });
+  source.addEventListener("utterance_aborted", clearStreaming);
+  source.addEventListener("subtopics", e => {
+    const list = JSON.parse(e.data).subtopics;
+    currentSubtopic = list[0];
+    renderSubtopics(list);
+  });
+  source.addEventListener("status", e => {
+    const s = JSON.parse(e.data);
+    setStatus(s.status);
+    if (s.error) document.getElementById("error").textContent = s.error;
+  });
+}
+
+async function loadDetail() {
+  const d = await api(`/discussions/${encodeURIComponent(id)}`);
+  document.title = d.topic;
+  document.getElementById("topic").textContent = d.topic;
+  currentSubtopic = d.current_subtopic;
+  renderSubtopics(d.subtopics);
+  document.getElementById("participants").replaceChildren(...d.participants.map(p =>
+    el("div", { style: "margin-bottom:8px" }, el("strong", {}, p.name), el("div", { class: "muted" }, `${p.role} · ${p.model}`))));
+  document.getElementById("usage").textContent =
+    `LLM 호출 ${d.llm_calls}회 · 토큰 ${d.prompt_tokens + d.completion_tokens}`;
+  if (d.error) document.getElementById("error").textContent = d.error;
+  return d;
+}
+
+document.getElementById("start").onclick = async () => {
+  try {
+    await api(`/discussions/${encodeURIComponent(id)}/start`, { method: "POST" });
+    setStatus("running");
+    connect();
+  } catch (e) { document.getElementById("error").textContent = e.message; }
+};
+document.getElementById("stop").onclick = async () => {
+  try { await api(`/discussions/${encodeURIComponent(id)}/stop`, { method: "POST", body: {} }); }
+  catch (e) { document.getElementById("error").textContent = e.message; }
+};
+document.getElementById("delete").onclick = async () => {
+  if (!confirm("이 토론과 모든 발언을 삭제할까요?")) return;
+  try {
+    await api(`/discussions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    location.href = "/";
+  } catch (e) { document.getElementById("error").textContent = e.message; }
+};
+
+loadDetail()
+  .then(d => { setStatus(d.status); connect(); })
+  .catch(e => document.getElementById("error").textContent = e.message);
+</script>
+</body>
+</html>

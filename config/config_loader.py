@@ -76,19 +76,36 @@ class UIConfig:
         )
 
 
+@dataclass
+class LimitsConfig:
+    """API 토론 실행 제한"""
+    max_global_running: int = 5
+    default_statements: int = 12
+    max_statements: int = 30
+    min_personas: int = 2
+    max_personas: int = 5
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'LimitsConfig':
+        defaults = cls()
+        return cls(**{k: data.get(k, getattr(defaults, k)) for k in defaults.__dataclass_fields__})
+
+
 @dataclass 
 class AppConfig:
     """전체 애플리케이션 설정"""
     llm: LLMConfig
     discussion: DiscussionConfig
     ui: UIConfig
+    limits: LimitsConfig
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AppConfig':
         return cls(
             llm=LLMConfig.from_dict(data.get('llm', {})),
             discussion=DiscussionConfig.from_dict(data.get('discussion', {})),
-            ui=UIConfig.from_dict(data.get('ui', {}))
+            ui=UIConfig.from_dict(data.get('ui', {})),
+            limits=LimitsConfig.from_dict(data.get('limits', {}))
         )
 
 
@@ -98,6 +115,22 @@ class PromptManager:
     def __init__(self, prompts_data: Dict[str, Any]):
         self.prompts = prompts_data
     
+    def get(self, path: str, default: Any = None) -> Any:
+        """점(.) 경로로 프롬프트 조회 (예: 'turn_actions.present')"""
+        node: Any = self.prompts
+        for key in path.split('.'):
+            if not isinstance(node, dict) or key not in node:
+                return default
+            node = node[key]
+        return node
+
+    def render(self, path: str, **kwargs) -> str:
+        """점(.) 경로의 템플릿을 kwargs로 채워 반환 (없으면 KeyError)"""
+        template = self.get(path)
+        if not isinstance(template, str):
+            raise KeyError(f"Prompt template not found: {path}")
+        return template.format(**kwargs)
+
     def get_persona_system_prompt(self) -> str:
         """페르소나 생성 시스템 프롬프트"""
         return self.prompts.get('persona_generation', {}).get('system', '')
@@ -117,16 +150,7 @@ class PromptManager:
         template = self.prompts.get('agent', {}).get('length_instruction', '')
         return template.format(min_sentences=min_sentences, max_sentences=max_sentences)
     
-    def get_discussion_prompt(self, phase: str, prompt_type: str, **kwargs) -> str:
-        """토론 단계별 프롬프트"""
-        phase_prompts = self.prompts.get('discussion', {}).get(phase, {})
-        template = phase_prompts.get(prompt_type, '')
-        return template.format(**kwargs) if template else ''
     
-    def get_moderator_prompt(self, prompt_type: str, **kwargs) -> str:
-        """모더레이터 프롬프트"""
-        template = self.prompts.get('moderator', {}).get(prompt_type, '')
-        return template.format(**kwargs) if template else ''
 
 
 class ConfigLoader:

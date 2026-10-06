@@ -47,6 +47,30 @@ persona_generation:
     
     Return ONLY the JSON object, no additional text, no markdown code blocks.
 
+  # 언어별 추가 지시 (system 프롬프트 뒤에 붙음)
+  language_suffix:
+    ko: |
+
+      - role은 한국어로 작성 (예: 'AI 연구원', '윤리학 교수')
+      - background, personality, expertise, beliefs 모두 한국어로 작성
+      - 각 필드를 간결하게 작성 (background는 100자 이내)
+    en: ""
+
+  # 다중 생성 시 페르소나별로 순환 적용되는 관점/스타일
+  perspectives:
+    - strongly supportive
+    - highly skeptical
+    - contrarian
+    - pragmatic critic
+    - radical
+  style_hints:
+    - Make this persona confrontational and data-driven, often challenging others with hard facts and statistics
+    - Make this persona skeptical and questioning, constantly probing for weaknesses in arguments
+    - Make this persona contrarian and provocative, taking devil's advocate positions
+    - Make this persona critical but constructive, identifying flaws while proposing alternatives
+    - Make this persona radical and disruptive, challenging fundamental assumptions
+  perspective_template: "{perspective} perspective. {style_hint}"
+
 # 에이전트 시스템 프롬프트
 agent:
   base_persona: |
@@ -77,6 +101,49 @@ agent:
     - Avoid phrases like "I believe", "My values", "As someone who believes"
     - Show your perspective through your priorities and concerns, not declarations
   
+  belief_emphasis: |
+
+
+    IMPORTANT INSTRUCTIONS:
+    - Let your beliefs and values GUIDE your arguments naturally
+    - NEVER explicitly state "I believe..." or "My belief is..." or "As someone who values..."
+    - Your perspective should EMERGE from your reasoning, not be declared
+    - Speak through evidence, examples, and logical arguments that reflect your worldview
+    - Show your values through what you emphasize and prioritize, not through direct statements
+
+    Your core values for reference (DO NOT mention these directly):
+    {beliefs}
+
+    Express these values IMPLICITLY through:
+    - The evidence and examples you choose to highlight
+    - The aspects of the topic you focus on
+    - The solutions or approaches you advocate for
+    - The concerns and priorities you emphasize
+    - Your reasoning and logical framework
+
+    Remember: Sophisticated discourse shows beliefs through argument structure, not declarations.
+
+  evolution_note: |
+
+
+    Note: Your views have evolved through this discussion. Reflect your current understanding.
+
+  reasoning_block: |
+
+
+    Your reasoning process:
+    {reasoning}
+
+    Now provide your response based on this reasoning.
+
+  evidence_block: |
+
+
+    Relevant evidence from research:
+    {evidence}
+
+    Incorporate this evidence naturally into your response.
+
   length_instruction: |
     
     RESPONSE GUIDELINES:
@@ -85,134 +152,131 @@ agent:
     - Focus on adding NEW VALUE to the discussion
     - Avoid summarizing what was already said
 
-# 토론 프롬프트
-discussion:
-  # Opening Round
-  opening:
-    basic: |
-      Topic: '{topic}'
-      
-      Share your UNIQUE perspective on this topic.
-      - Draw from your specific expertise and experience
-      - Present a clear position or framework
-      - Use concrete examples or scenarios
-      - Avoid generic statements
-    
-    advanced: |
-      We're discussing: {topic}. 
-      
-      Based on your role as {role}, present your distinctive viewpoint.
-      - What specific aspects concern or interest you most?
-      - What unique insights can you offer from your background?
-      - Frame the issue in your own professional context
-  
-  # Interactive Round
-  interactive:
-    respond_to_other: |
-      Topic: {topic}
-      
-      {target_agent} mentioned: "{statement}"
-      
-      CONSTRUCTIVE ENGAGEMENT GUIDELINES:
-      - First, identify what's valuable or insightful in their point
-      - Build upon their strongest arguments, don't just dismiss them
-      - If you disagree, explain under what conditions their point might be valid
-      - Add new dimensions rather than just negating
-      - Use "Yes, and..." or "That's true when..." instead of "No, but..."
-      - Provide concrete examples or scenarios to ground abstract points
-      - Ask clarifying questions if something is unclear
-      - Focus on advancing the discussion, not winning an argument
-    
-    general_response: |
-      Topic: '{topic}'
-      
-      The discussion needs CRITICAL EXAMINATION:
-      - Point out CONTRADICTIONS between different speakers' positions
-      - Identify LOGICAL FALLACIES in the arguments presented
-      - Challenge the FUNDAMENTAL PREMISES of the discussion
-      - Introduce UNCOMFORTABLE TRUTHS others are avoiding
-      - Present a CONTRARIAN VIEW that challenges the emerging consensus
-      - Ask HARD QUESTIONS that expose weaknesses
-    
-    additional_point: |
-      Topic: '{topic}'
-      
-      DISRUPT the discussion with critical insights:
-      - Expose a FUNDAMENTAL FLAW in the prevailing arguments
-      - Present a COMPETING THEORY that better explains the issue
-      - Highlight UNINTENDED CONSEQUENCES others haven't considered
-      - Challenge the ETHICAL IMPLICATIONS of positions taken
-      - Introduce EMPIRICAL EVIDENCE that contradicts common assumptions
-  
-  # Closing Round
-  closing:
-    summary: |
-      Topic: {topic}
-      
-      Reflect on the discussion constructively:
-      - What specific points from others strengthened or challenged your view?
-      - What synthesis or integration is now possible?
-      - What concrete next steps or experiments would advance this discussion?
-      - What key question remains unanswered?
-      
-      Be specific about what you learned, not just what you already believed.
-    
-    brief: |
-      Topic: '{topic}'
-      
-      Share your REFINED perspective after this discussion.
-      Focus on what you've learned or what still challenges you.
+# 발언 액션별 프롬프트 (src/core/natural_discussion.py)
+turn_actions:
+  present: |
+    Topic: {topic}
+    {focus_line}
 
-# 모더레이터 프롬프트
+    Share YOUR unique perspective based on your expertise and experience.
+    What specific insight do you bring that others might not see?
+    Be concrete and grounded in your professional background.
+  respond: |
+    {target_name} said: "{target_excerpt}..."
+
+    Directly address this point from YOUR perspective.
+    How does your background lead you to agree or disagree?
+  build: |
+    {target_name}'s point about "{target_excerpt}..." is valuable.
+
+    Agree with this and extend it further based on your expertise.
+    What additional dimension or implication do you see?
+  challenge: |
+    Consider {target_name}'s claim: "{target_excerpt}..."
+
+    What specific concerns, risks, or limitations do you identify based on your expertise?
+    Respectfully challenge this with evidence-based reasoning.
+  example: |
+    Topic: {topic}
+    {recent_context}
+
+    Provide a SPECIFIC example or case from your experience/expertise.
+    Make it concrete and detailed, not abstract.
+  synthesize: |
+    Topic: {topic}
+
+    Synthesize the discussion so far from YOUR perspective.
+    What patterns do you see? What remains unresolved?
+    What evidence and reasoning lead to your conclusion?
+  focus_line: "Current focus: {subtopic}"
+  recent_context_header: "Recent points:"
+  recent_context_line: "- {name}: {excerpt}..."
+
+# 모더레이터 프롬프트 (src/core/moderator.py)
 moderator:
-  introduction: |
-    We're exploring '{topic}' today. Let's hear diverse perspectives.
-  
-  transition: |
-    Interesting point. Let's explore another angle.
-  
-  synthesis_request: |
-    As a discussion facilitator, reflect on the conversation about {topic}.
-    
-    Key themes emerging:
-    {summary}
-    
-    Speak naturally as a thoughtful moderator would:
-    - Note interesting tensions or agreements
-    - Highlight overlooked aspects
-    - Suggest productive directions for deeper exploration
-    - Be genuinely engaged, not formulaic
-  
-  conclusion: |
-    Reflecting on our discussion: {key_points}
+  subtopics: |
+    Main topic: {topic}
 
-# 고급 토론 프롬프트
-advanced:
-  role_specific:
-    expert: |
-      As an expert in your field, provide professional insights on: {topic}
-    
-    critic: |
-      {agent_name}의 의견에 대한 비판적 검토를 해주세요.
-      논리적 오류나 개선점을 지적해주세요.
-    
-    synthesizer: |
-      지금까지의 토론을 종합해주세요.
-      공통점과 차이점을 정리하고, 합의 가능한 지점을 찾아주세요.
-    
-    questioner: |
-      토론을 심화시킬 수 있는 질문을 제시해주세요.
-      아직 논의되지 않은 측면이나 모순점을 지적해주세요.
-  
-  phase_specific:
-    exploration: |
-      '{subtopic}'에 대한 당신의 관점은 무엇입니까?
-      전문성과 경험을 바탕으로 설명해주세요.
-    
-    debate: |
-      이전 발언자의 주장에 대해 어떻게 생각하십니까?
-      동의하는 점과 반대하는 점을 명확히 해주세요.
-    
-    synthesis: |
-      토론의 핵심 논점들을 정리해주세요.
-      어떤 합의점을 도출할 수 있을까요?
+    Identify 4-5 key perspectives that MUST be explored for a comprehensive discussion.
+    Consider:
+    - Practical/Implementation aspects
+    - Ethical/Value dimensions
+    - Economic/Resource implications
+    - Social/Human impact
+    - Technical/Feasibility concerns
+    - Long-term consequences
+    {language_instruction}
+
+    Format: Simple numbered list of specific subtopics.
+    Make each subtopic a clear, focused question or aspect.
+  probing_abstract: |
+    The following statement is too abstract and needs specifics:
+    "{statement}"
+
+    Generate ONE probing question that asks for:
+    - Specific examples or cases
+    - Concrete data or evidence
+    - Measurable impacts or outcomes
+    - Real-world applications
+    - Detailed mechanisms or processes
+
+    Make it direct but respectful. Focus on getting concrete details.
+    {language_instruction}
+  probing_general: |
+    Topic: {topic}
+    Current aspect: {subtopic}
+    Recent discussion: {recent_points}
+
+    Generate ONE specific, probing question that:
+    1. Asks for SPECIFIC evidence, data, or examples
+    2. Explores concrete impacts or measurable outcomes
+    3. Challenges with "How exactly?" or "What specifically?"
+    4. Demands practical details, not theoretical concepts
+
+    Keep it concise and focused on getting concrete information.
+    {language_instruction}
+  transition:
+    en: |
+      Building on our discussion so far, let's now examine another crucial perspective:
+
+      **{subtopic}**
+
+      This aspect is essential for a comprehensive understanding of {topic}.
+
+      Who would like to address this?
+    ko: |
+      지금까지의 논의를 바탕으로, 또 하나의 중요한 관점을 살펴보겠습니다.
+
+      **{subtopic}**
+
+      이 관점은 '{topic}'을(를) 종합적으로 이해하는 데 꼭 필요합니다.
+
+      누가 먼저 말씀해 주시겠습니까?
+  all_covered:
+    en: "We've explored all the key perspectives. Let's begin synthesizing our discussion."
+    ko: "핵심 관점을 모두 살펴보았습니다. 이제 지금까지의 논의를 종합해 보겠습니다."
+
+# 신념 기반 추론 (src/services/belief_reasoning.py)
+belief_reasoning:
+  reason: |
+    As {name}, a {role} with {background}
+
+    Topic/Question: {topic}
+
+    Internal reasoning (these values guide you but DON'T state them):
+    {beliefs}
+
+    Analyze the topic considering:
+    1. What specific DATA or EVIDENCE from your field supports your position?
+    2. What PRACTICAL EXAMPLES from your experience are relevant?
+    3. What CONCRETE IMPACTS or CONSEQUENCES concern you most?
+
+    Generate reasoning that naturally reflects your worldview WITHOUT declaring beliefs.
+    Focus on facts, evidence, and logical arguments that implicitly show your values.
+    Provide 2-3 sentences of reasoning that guides a sophisticated, implicit response.
+
+# 응답 언어 지시 (src/utils/language_detector.py)
+language:
+  instruction:
+    ko: "\n\nIMPORTANT: Respond in Korean (한국어로 응답하세요)."
+    en: "\n\nIMPORTANT: Respond in English."

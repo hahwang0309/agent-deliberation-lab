@@ -3,6 +3,7 @@ Web Search Service using Tavily API
 에이전트와 모더레이터가 웹에서 실제 정보를 검색하여 활용
 """
 import os
+import logging
 import asyncio
 from typing import List, Dict, Optional
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ import json
 from datetime import datetime
 import hashlib
 
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class SearchResult:
@@ -32,7 +35,7 @@ class WebSearchService:
         """
         self.api_key = api_key or os.getenv("TAVILY_API_KEY")
         if not self.api_key:
-            print("Warning: TAVILY_API_KEY not found. Web search will be disabled.")
+            logger.warning("TAVILY_API_KEY not found. Web search will be disabled.")
             self.enabled = False
         else:
             self.enabled = True
@@ -104,11 +107,11 @@ class WebSearchService:
                         
                         return results
                     else:
-                        print(f"Search API error: {response.status}")
+                        logger.warning("Search API error: %s", response.status)
                         return []
                         
         except Exception as e:
-            print(f"Search error: {e}")
+            logger.warning("Search error: %s", e)
             return []
     
     async def fact_check(self, statement: str) -> Dict:

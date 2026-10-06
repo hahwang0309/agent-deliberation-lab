@@ -53,6 +53,14 @@ discussion:
       - "philosophical_questioning"  # 철학적이고 질문형
       - "data_driven_empirical"  # 데이터 중심적
 
+# 실행 제한 (API 토론 런타임)
+limits:
+  max_global_running: 5     # 서버 전체 동시 실행 토론 수
+  default_statements: 12    # 토론 생성 시 기본 AI 발언 수
+  max_statements: 30        # AI 발언 수 상한
+  min_personas: 2
+  max_personas: 5
+
 # 고급 토론 설정
 advanced_discussion:
   # 에이전트 역할

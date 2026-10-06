@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -44,6 +44,7 @@ class LLMFactory:
         max_tokens = kwargs.get('max_tokens', llm_config.max_tokens)
         timeout = kwargs.get('timeout', llm_config.timeout_seconds)
         max_retries = kwargs.get('max_retries', llm_config.max_retries)
+        callbacks = kwargs.get('callbacks')
         
         if provider == LLMProvider.OPENAI:
             api_key = kwargs.get("api_key") or os.getenv("OPENAI_API_KEY")
@@ -54,8 +55,10 @@ class LLMFactory:
                 temperature=temperature,
                 api_key=api_key,
                 max_tokens=max_tokens,
+                stream_usage=True,  # 스트리밍 시에도 토큰 사용량 수집
                 timeout=timeout,
-                max_retries=max_retries
+                max_retries=max_retries,
+                callbacks=callbacks
             )
             
         elif provider == LLMProvider.GEMINI:
@@ -68,7 +71,8 @@ class LLMFactory:
                 google_api_key=api_key,
                 max_output_tokens=max_tokens,
                 timeout=timeout,
-                max_retries=max_retries
+                max_retries=max_retries,
+                callbacks=callbacks
             )
             
         elif provider == LLMProvider.CLAUDE:
@@ -81,7 +85,8 @@ class LLMFactory:
                 anthropic_api_key=api_key,
                 max_tokens=max_tokens,
                 default_request_timeout=timeout,
-                max_retries=max_retries
+                max_retries=max_retries,
+                callbacks=callbacks
             )
             
         elif provider == LLMProvider.MISTRAL:
@@ -94,7 +99,8 @@ class LLMFactory:
                 mistral_api_key=api_key,
                 max_tokens=max_tokens,
                 timeout=int(timeout),
-                max_retries=max_retries
+                max_retries=max_retries,
+                callbacks=callbacks
             )
             
         else:
@@ -109,3 +115,24 @@ class LLMFactory:
             LLMProvider.CLAUDE: bool(os.getenv("ANTHROPIC_API_KEY")),
             LLMProvider.MISTRAL: bool(os.getenv("MISTRAL_API_KEY"))
         }
+
+
+class LLMBundle:
+    """토론 1건이 공유하는 LLM 클라이언트 캐시
+
+    같은 (provider, model, temperature) 조합은 하나의 클라이언트를 재사용하고,
+    모든 클라이언트에 동일한 콜백(예: 토큰 사용량 집계)을 연결한다.
+    """
+
+    def __init__(self, callbacks: Optional[List[Any]] = None):
+        self.callbacks = callbacks or []
+        self._cache: Dict[Tuple[LLMProvider, Optional[str], Optional[float]], BaseChatModel] = {}
+
+    def get(self, provider: LLMProvider, model: Optional[str] = None,
+            temperature: Optional[float] = None) -> BaseChatModel:
+        key = (provider, model, temperature)
+        if key not in self._cache:
+            self._cache[key] = LLMFactory.create_llm(
+                provider, model=model, temperature=temperature, callbacks=self.callbacks
+            )
+        return self._cache[key]

@@ -12,6 +12,10 @@ from src.utils.llm_provider import LLMFactory
 from src.services.web_search import WebSearchService
 from langchain_core.messages import SystemMessage, HumanMessage
 import os
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class QueryType(Enum):
@@ -291,7 +295,7 @@ class RAGService:
             return result
             
         except Exception as e:
-            print(f"RAG search error: {e}")
+            logger.warning("RAG search error: %s", e)
             return RAGResult(
                 query=query_result.query,
                 evidence=None,

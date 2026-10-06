@@ -109,3 +109,9 @@ def get_optional_user(
     user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
     return user
 
+
+
+def get_actor_id() -> str:
+    """현재 요청 주체 ID (관리자 Basic 인증 단계: 관리자 계정명). 계정 시스템 도입 시 사용자 ID로 대체."""
+    from api.config import settings
+    return settings.ADMIN_USERNAME

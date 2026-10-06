@@ -4,7 +4,7 @@ FastAPI 메인 애플리케이션
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -23,65 +23,23 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """앱 시작/종료 처리"""
     init_db()
+    interrupted = mark_active_as_interrupted()
+    if interrupted:
+        logger.warning("Marked %d discussions from previous process as interrupted", interrupted)
     logger.info("%s v%s started (docs: /docs)", settings.APP_NAME, settings.APP_VERSION)
     yield
     logger.info("API server shutting down...")
+    await registry.shutdown()
 
-from api.routers import auth_router, users_router, discussions_router, messages_router, analytics_router, personas_router, export_router, config_router, investigations_router
-from api.routers.batch_analyses import router as batch_analyses_router
+from api.routers import auth_router, users_router, discussions_router, messages_router, personas_router, config_router
+from api.runtime import registry
+from api.runtime.persistence import mark_active_as_interrupted
 
 # FastAPI 앱 생성
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="""
-    Multi-Agent Discussion System API
-    
-    ## 기능
-    
-    ### 행정조사 중복 판별 ⭐ NEW
-    * 두 행정조사의 중복 여부 분석
-    * AI 페르소나 자동 생성 및 토론
-    * 종합 보고서 생성 (Markdown)
-    * 분석 이력 조회 및 관리
-    
-    ### 인증
-    * 회원가입
-    * 로그인
-    * 토큰 갱신
-    
-    ### 사용자
-    * 내 정보 조회
-    * 내 정보 수정
-    * 비밀번호 변경
-    
-    ### 토론
-    * 토론 생성 및 관리
-    * 토론 시작/일시정지/재개/종료
-    * 토론 목록 및 상태 조회
-    
-    ### 메시지
-    * 메시지 목록 조회
-    * 메시지 상세 조회
-    * 실시간 스트리밍 (SSE)
-    
-    ### 분석
-    * 토론 종합 분석
-    * 토론 요약
-    * 페르소나 진화 추적
-    
-    ### 페르소나
-    * 페르소나 템플릿 목록
-    * 커스텀 페르소나 생성
-    
-    ### 내보내기
-    * JSON 내보내기
-    * Markdown 내보내기
-    
-    ### 설정
-    * 시스템 설정 조회
-    * LLM 프로바이더 상태
-    """,
+    description="멀티 에이전트 페르소나 토론 API",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
@@ -112,34 +70,8 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(discussions_router)
 app.include_router(messages_router)
-app.include_router(analytics_router)
 app.include_router(personas_router)
-app.include_router(export_router)
 app.include_router(config_router)
-app.include_router(investigations_router)
-app.include_router(batch_analyses_router)
-
-# 정적 파일 서빙 (프론트엔드)
-frontend_path = Path(__file__).parent.parent / "frontend"
-if frontend_path.exists():
-    # 정적 파일 (CSS, JS, 이미지 등)
-    app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
-
-    @app.get("/", tags=["프론트엔드"], include_in_schema=False)
-    async def serve_index():
-        """메인 페이지"""
-        file_path = frontend_path / "index.html"
-        if file_path.exists():
-            return FileResponse(str(file_path))
-        return JSONResponse(status_code=404, content={"error": "Page not found"})
-
-    @app.get("/investigation_analysis.html", tags=["프론트엔드"], include_in_schema=False)
-    async def serve_investigation_analysis():
-        """행정조사 분석 페이지"""
-        file_path = frontend_path / "investigation_analysis.html"
-        if file_path.exists():
-            return FileResponse(str(file_path))
-        return JSONResponse(status_code=404, content={"error": "Page not found"})
 
 
 @app.get("/api", tags=["헬스체크"])
@@ -243,7 +175,7 @@ async def pydantic_validation_exception_handler(request: Request, exc: Validatio
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """일반 예외 핸들러"""
-    print(f"❌ Unhandled exception: {exc}")
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -254,6 +186,11 @@ async def general_exception_handler(request: Request, exc: Exception):
             }
         }
     )
+
+
+# 웹 UI (API 라우트 뒤에 마운트해야 /api, /docs 등이 우선 매칭됨)
+web_path = Path(__file__).parent.parent / "web"
+app.mount("/", StaticFiles(directory=str(web_path), html=True), name="web")
 
 
 if __name__ == "__main__":

@@ -10,18 +10,15 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt   # 런타임만: requirements.txt
 cp .env.example .env            # OPENAI_API_KEY·ADMIN_PASSWORD 필수, DATABASE_URL 기본 sqlite:///./discussion_api.db
 
-# API 서버 (frontend/ 정적 파일도 함께 서빙) — http://localhost:8000, 문서 /docs
-python start_api.py             # DEBUG=True면 reload
+# API 서버 + 웹 UI(web/) — http://localhost:8000, 문서 /docs
+python start_api.py             # DEBUG=True면 reload. 반드시 단일 워커 (런타임 레지스트리가 프로세스 메모리)
 
 # Docker (호스트 8106 → 컨테이너 8000)
 ./docker-start.sh
-```
 
-테스트는 pytest 스위트가 아니라 **실행 스크립트**다. 대부분 실행 중인 서버(`http://localhost:8000`)나 실제 LLM API 키가 필요하다.
-
-```bash
-python tests/test_rag_quick.py          # 단일 테스트 실행 예시
-python test_full_flow.py                # 루트의 test_*.py: API 엔드투엔드 흐름 (서버 기동 필요)
+# 테스트 (가짜 LLM, 임시 SQLite — API 키·서버 불필요)
+pytest tests/test_runtime.py tests/test_events_api.py
+pytest tests/test_runtime.py::test_stop_cancels_running_discussion   # 단일 테스트
 ```
 
 DB 스키마는 Alembic으로 관리한다. 앱 시작 시 `init_db()`(`api/database.py`)가 `upgrade head`를 실행하며, Alembic 이력 없는 기존(create_all) DB는 기준 리비전으로 자동 stamp한다. 모델 변경 시:
@@ -29,24 +26,21 @@ DB 스키마는 Alembic으로 관리한다. 앱 시작 시 `init_db()`(`api/data
 ```bash
 alembic revision --autogenerate -m "설명"   # DATABASE_URL·ADMIN_PASSWORD 환경변수 필요
 alembic upgrade head
+alembic check                               # 모델과 마이그레이션 일치 확인
 ```
 
-로그는 stdout으로만 출력되며 레벨은 `LOG_LEVEL`. LLM 타임아웃·재시도는 `config/config.yaml`의 `llm.timeout_seconds`, `llm.max_retries`.
+로그는 stdout으로만 출력되며 레벨은 `LOG_LEVEL`. LLM 타임아웃·재시도는 `config/config.yaml`의 `llm.*`, 동시 실행·발언 수 등 제한은 `limits.*`.
 
 ## Architecture
 
-두 계층으로 나뉜다.
+- **`src/` — 토론 엔진 (API에 의존하지 않음)**: `src/discussion.py`의 `create_discussion(ParticipantSpec[], LLMBundle)`이 참가자별 provider/model로 `DiscussionAgent`와 `DiscussionModerator`를 조립해 `NaturalDiscussion`을 만든다. `NaturalDiscussion.stream()`은 진행을 `EngineEvent`(subtopics / utterance_start / chunk / utterance)로 yield할 뿐 저장·전송하지 않는다. `LLMBundle`(`src/utils/llm_provider.py`)은 토론 1건의 LLM 클라이언트를 캐시하고 사용량 콜백을 연결한다. 웹검색(RAG)·신념 추론은 토론별 플래그로 켜며 LLM 호출이 크게 늘어난다.
+- **`api/runtime/` — 실행 런타임**: `registry.start()`가 토론을 uvicorn 메인 루프의 `asyncio.Task`로 실행한다(스레드 없음, DB 쓰기만 `asyncio.to_thread`). `runtime.py`는 완성 발언을 per-discussion `seq`로 **저장한 뒤 발행**하고, 청크는 발행만 한다. `broker.py`는 단일 루프 Pub/Sub. 서버 시작 시 실행 중이던 토론은 `interrupted`로 표시된다(`persistence.mark_active_as_interrupted`).
+- **SSE** (`api/routers/messages.py` `GET /api/v1/discussions/{id}/events`): 구독 → `seq > Last-Event-ID(또는 ?since)` 메시지 재생 → `snapshot`(상태·진행 중 발화) → 실시간 이벤트 순서. 종료 상태(`DiscussionStatus.TERMINAL`)가 되면 스트림을 닫는다.
+- **`api/`**: `routers/` → `services/` → `models/`(SQLAlchemy) / `schemas/`(Pydantic). 웹 UI는 `web/`(바닐라 HTML/JS)을 `/`에 마운트한다.
+- **인증**: 현재 `api/utils/admin_auth.py`의 Basic 인증 미들웨어가 `/health` 외 전체를 보호한다. 요청 주체는 `api/dependencies.py`의 `get_actor_id()`로 얻는다.
+- **설정/프롬프트**: 프롬프트는 코드에 쓰지 않고 `config/prompts.yaml`(엔진·모더레이터·페르소나 생성), `config/rag_prompts.yaml`에 둔다. 조회는 `config_loader.prompts.render("turn_actions.present", ...)` 형태. 페르소나 템플릿은 `config/persona_templates.yaml`.
 
-- **`src/` — 토론 엔진(라이브러리)**: `core/`(DiscussionAgent, DiscussionModerator, natural_discussion), `services/`(rag_service, web_search, belief_reasoning, memory_manager, report_generator), `models/`(Persona, consensus/evolution 추적), `utils/llm_provider.py`(`LLMFactory` — OpenAI/Anthropic/Google/Mistral를 LangChain으로 추상화). 진입 인터페이스는 `src/discussion.py`.
-- **`api/` — FastAPI 서비스**: `routers/` → `services/` → `models/`(SQLAlchemy) / `schemas/`(Pydantic) / `mappers/` 계층. `api/main.py`가 모든 라우터를 등록하고 `frontend/*.html`을 서빙한다. API 서비스는 `src.utils.llm_provider`, `src.models.personas`, `src.services.rag_service`를 import해 엔진을 재사용한다.
-
-핵심 흐름:
-- **인증**: 관리자 1인 전용 시스템. `api/utils/admin_auth.py`의 ASGI 미들웨어가 `/health`를 제외한 전체(API·프론트·SSE)에 HTTP Basic 인증을 요구한다. 라우터 내부의 `"guest"` 사용자 처리는 레거시이며, 인증 경계는 이 미들웨어다.
-- **행정조사(investigation) 분석**: `api/services/investigation_discussion_service.py`가 페르소나 자동 생성(`persona_auto_generator.py`) → 이슈별 라운드 토론(필요 시 RAG 웹검색) → 루브릭 평가 → 최종 판정/보고서 생성을 수행한다. `moderator_agent.py`가 진행을 담당한다.
-- **실시간 스트리밍**: 서비스가 이벤트를 `api/utils/event_broker.py`(싱글톤 Pub/Sub)에 발행하고, 라우터가 SSE(`sse-starlette`)로 클라이언트에 전달한다.
-- **설정/프롬프트**: 프롬프트는 코드에 쓰지 않고 `config/prompts.yaml`, `config/rag_prompts.yaml`에 둔다. `config/config_loader.py`가 `config.yaml`(llm/discussion/advanced_discussion/ui/system)과 프롬프트를 로드하며, `api/config.py`의 `get_prompts()`로 API에서 접근한다. 환경변수 설정은 `api/config.py`(pydantic-settings)가 `.env`에서 읽는다.
-
-README의 `python main.py` CLI 사용법은 오래된 내용이다(`main.py`는 제거됨). 상세 설계는 `docs/ARCHITECTURE.md`, `docs/SERVICE_FLOW.md` 참고.
+재설계 진행 계획(Phase 0~5)과 미완료 항목은 git 로그와 `docs/`를 확인한다. README의 `python main.py` 사용법은 오래된 내용이다.
 
 ## Project Rules
 

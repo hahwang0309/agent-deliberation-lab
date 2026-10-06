@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>페르소나 토론</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="top"><h1>페르소나 토론</h1></header>
+<main>
+  <section class="card">
+    <h2>새 토론</h2>
+    <label for="topic">주제</label>
+    <input id="topic" type="text" maxlength="200" placeholder="예: 도심 차량 진입을 전면 금지해야 하는가?">
+    <label for="description">배경 설명 (선택)</label>
+    <textarea id="description" maxlength="2000"></textarea>
+    <div class="row">
+      <div>
+        <label for="language">언어</label>
+        <select id="language">
+          <option value="">자동 감지</option>
+          <option value="ko">한국어</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <div>
+        <label for="max-statements">AI 발언 수</label>
+        <input id="max-statements" type="number" min="2" value="12">
+      </div>
+    </div>
+    <div class="checks">
+      <label><input id="use-moderator" type="checkbox" checked> 모더레이터</label>
+      <label><input id="web-search" type="checkbox"> 웹 검색 (Tavily 키 필요, 비용 증가)</label>
+      <label><input id="belief-reasoning" type="checkbox"> 신념 기반 추론 (비용 증가)</label>
+    </div>
+
+    <h2 style="margin-top:22px">참가 페르소나</h2>
+    <div class="actions">
+      <select id="template-select" style="width:auto"></select>
+      <button id="add-template">템플릿 추가</button>
+      <button id="add-blank">직접 작성</button>
+      <span class="muted">|</span>
+      <input id="generate-count" type="number" min="2" max="5" value="3" style="width:70px">
+      <button id="generate">주제로 자동 생성</button>
+    </div>
+    <div id="personas"></div>
+
+    <div class="actions">
+      <button id="create" class="primary">생성 후 시작</button>
+      <button id="create-draft">생성만</button>
+    </div>
+    <div id="create-error" class="error"></div>
+  </section>
+
+  <section class="card">
+    <h2>토론 목록</h2>
+    <table>
+      <thead><tr><th>주제</th><th>상태</th><th>발언</th><th>생성</th></tr></thead>
+      <tbody id="discussion-rows"></tbody>
+    </table>
+    <div class="actions"><button id="refresh">새로고침</button></div>
+  </section>
+</main>
+
+<script src="/js/api.js"></script>
+<script>
+const LIST_FIELDS = ["personality", "expertise", "beliefs"];
+const PROVIDERS = ["openai", "claude", "gemini", "mistral"];
+let templates = [];
+
+function personaCard(p = {}) {
+  const field = (name, label, value, multiline) => {
+    const input = multiline ? el("textarea", { "data-field": name }) : el("input", { type: "text", "data-field": name });
+    input.value = Array.isArray(value) ? value.join(", ") : value || "";
+    return el("div", {}, el("label", {}, label), input);
+  };
+  const provider = el("select", { "data-field": "llm_provider" },
+    ...PROVIDERS.map(v => el("option", { value: v }, v)));
+  provider.value = p.llm_provider || "openai";
+
+  const card = el("div", { class: "persona-card", "data-template-id": p.id || "" },
+    el("div", { class: "head" },
+      el("strong", {}, p.name || "새 페르소나"),
+      el("button", { onclick: () => card.remove() }, "삭제")),
+    el("div", { class: "row" }, field("name", "이름", p.name), field("role", "역할", p.role)),
+    field("background", "배경", p.background, true),
+    el("div", { class: "row" },
+      field("personality", "성격 (쉼표 구분)", p.personality),
+      field("expertise", "전문 분야 (쉼표 구분)", p.expertise)),
+    field("communication_style", "말하는 방식", p.communication_style),
+    field("beliefs", "핵심 신념 (쉼표 구분)", p.beliefs),
+    el("div", { class: "row" },
+      el("div", {}, el("label", {}, "LLM"), provider),
+      field("model", "모델 (비우면 기본값)", p.model)),
+  );
+  return card;
+}
+
+function collectPersonas() {
+  return [...document.querySelectorAll(".persona-card")].map(card => {
+    const persona = { template_id: card.dataset.templateId || null };
+    card.querySelectorAll("[data-field]").forEach(input => {
+      const name = input.dataset.field;
+      const value = input.value.trim();
+      persona[name] = LIST_FIELDS.includes(name) ? value.split(",").map(s => s.trim()).filter(Boolean) : value;
+    });
+    if (!persona.model) delete persona.model;
+    return persona;
+  });
+}
+
+async function loadTemplates() {
+  const data = await api("/personas/templates");
+  templates = data.templates;
+  const select = document.getElementById("template-select");
+  select.replaceChildren(...templates.map(t => el("option", { value: t.id }, `${t.name} · ${t.role}`)));
+}
+
+async function loadDiscussions() {
+  const data = await api("/discussions?page_size=50");
+  const rows = data.items.map(d => el("tr", {},
+    el("td", {}, el("a", { href: `/discussion.html?id=${encodeURIComponent(d.id)}` }, d.topic)),
+    el("td", {}, statusBadge(d.status)),
+    el("td", {}, d.total_messages),
+    el("td", { class: "muted" }, formatDate(d.created_at)),
+  ));
+  document.getElementById("discussion-rows").replaceChildren(...rows);
+}
+
+async function create(start) {
+  const errorBox = document.getElementById("create-error");
+  errorBox.textContent = "";
+  const body = {
+    topic: document.getElementById("topic").value.trim(),
+    description: document.getElementById("description").value.trim() || null,
+    language: document.getElementById("language").value || null,
+    max_statements: Number(document.getElementById("max-statements").value),
+    use_moderator: document.getElementById("use-moderator").checked,
+    enable_web_search: document.getElementById("web-search").checked,
+    enable_belief_reasoning: document.getElementById("belief-reasoning").checked,
+    personas: collectPersonas(),
+  };
+  try {
+    const discussion = await api("/discussions", { method: "POST", body });
+    if (start) await api(`/discussions/${discussion.id}/start`, { method: "POST" });
+    location.href = `/discussion.html?id=${encodeURIComponent(discussion.id)}`;
+  } catch (e) {
+    errorBox.textContent = e.message;
+  }
+}
+
+document.getElementById("add-template").onclick = () => {
+  const t = templates.find(t => t.id === document.getElementById("template-select").value);
+  if (t) document.getElementById("personas").append(personaCard(t));
+};
+document.getElementById("add-blank").onclick = () => document.getElementById("personas").append(personaCard());
+document.getElementById("generate").onclick = async (ev) => {
+  const errorBox = document.getElementById("create-error");
+  errorBox.textContent = "";
+  const topic = document.getElementById("topic").value.trim();
+  if (!topic) { errorBox.textContent = "주제를 먼저 입력하세요."; return; }
+  ev.target.disabled = true;
+  ev.target.textContent = "생성 중...";
+  try {
+    const data = await api("/personas/generate", { method: "POST", body: {
+      topic, count: Number(document.getElementById("generate-count").value),
+      language: document.getElementById("language").value || null,
+    }});
+    document.getElementById("personas").replaceChildren(...data.personas.map(p => personaCard(p)));
+  } catch (e) {
+    errorBox.textContent = e.message;
+  } finally {
+    ev.target.disabled = false;
+    ev.target.textContent = "주제로 자동 생성";
+  }
+};
+document.getElementById("create").onclick = () => create(true);
+document.getElementById("create-draft").onclick = () => create(false);
+document.getElementById("refresh").onclick = loadDiscussions;
+
+loadTemplates().catch(e => document.getElementById("create-error").textContent = e.message);
+loadDiscussions().catch(e => document.getElementById("create-error").textContent = e.message);
+</script>
+</body>
+</html>
