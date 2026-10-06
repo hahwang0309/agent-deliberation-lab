@@ -32,8 +32,12 @@ document.getElementById("form").onsubmit = async (ev) => {
       email: document.getElementById("email").value.trim(),
       password: document.getElementById("password").value,
     }});
-    // 같은 출처 경로만 허용 (오픈 리다이렉트 방지)
-    const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    // 같은 출처 경로만 허용 (오픈 리다이렉트 방지: "//host", "/\host" 등은 URL 파서로 판별)
+    let target = "/";
+    try {
+      const url = new URL(next || "/", location.origin);
+      if (url.origin === location.origin) target = url.pathname + url.search + url.hash;
+    } catch (_) {}
     location.href = me.must_change_password ? "/change-password.html" : target;
   } catch (e) {
     document.getElementById("error").textContent = e.message;
