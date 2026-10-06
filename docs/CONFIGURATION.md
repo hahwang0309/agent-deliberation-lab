@@ -45,6 +45,12 @@ personas:
 
 ### Key Settings Explained
 
+#### Accounts & Limits
+
+- 계정은 가입 신청 → 관리자 승인, 또는 관리자가 직접 발급(임시 비밀번호, 첫 로그인 시 변경)한다.
+- 일반 사용자 제한(`config.yaml` `limits.*`): 동시 실행 `user_max_concurrent`(기본 1), 하루(UTC) 시작 수 `user_daily_starts`(기본 5), 웹검색·신념추론 허용 `user_expensive_features`(기본 false). 관리자는 제한 없음. 사용자별 값은 관리자 화면에서 덮어쓸 수 있다.
+- 서버 전체 동시 실행 상한: `limits.max_global_running`.
+
 #### LLM Settings
 
 - `llm.timeout_seconds` (기본 60), `llm.max_retries` (기본 2): 모든 프로바이더 호출에 적용
@@ -182,11 +188,13 @@ query_classification:
 # Required for basic operation
 OPENAI_API_KEY=sk-...
 
-# 관리자 인증 (필수). 미설정 시 서버가 시작되지 않음.
-# API·프론트엔드·SSE 전체가 HTTP Basic 인증으로 보호됨 (/health 제외).
-# Basic 인증은 비밀번호를 평문에 가깝게 전송하므로 외부 공개 시 HTTPS 필수.
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change-me
+# JWT 서명 키 (필수, 32자 이상). 미설정·예시값이면 서버가 시작되지 않음.
+SECRET_KEY=...
+# 최초 관리자 (관리자가 없을 때만 생성, 첫 로그인 시 비밀번호 변경 강제)
+ADMIN_EMAIL=admin@example.com
+ADMIN_INITIAL_PASSWORD=...
+# HTTPS 운영 시 true (인증 쿠키 Secure 플래그)
+COOKIE_SECURE=false
 
 # Optional for enhanced features
 TAVILY_API_KEY=tvly-...

@@ -4,15 +4,13 @@
 import asyncio
 import json
 
-import httpx
 import pytest
 
-from api.main import app
 from api.runtime import registry
 from api.runtime import runtime as runtime_module
+from tests.conftest import LoggedInClient, create_user
 from tests.test_runtime import FakeBundle
 
-AUTH = ("admin", "test-admin-password")
 PERSONA = dict(role="Analyst", background="bg", personality=["calm"], expertise=["x"],
                communication_style="plain", beliefs=["evidence"], model="fake-model")
 
@@ -34,8 +32,7 @@ def parse_sse(text):
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
-    transport = httpx.ASGITransport(app=app)
-    return httpx.AsyncClient(transport=transport, base_url="http://test", auth=AUTH)
+    return LoggedInClient(create_user())
 
 
 async def _create_and_run(client, max_statements=3):

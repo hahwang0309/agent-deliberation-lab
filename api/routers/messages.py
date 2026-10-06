@@ -10,13 +10,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from api.database import get_db
+from api.dependencies import require_active_user
 from api.models.discussion import DiscussionStatus
 from api.runtime import broker, registry
 from api.runtime import persistence
 from api.schemas.message import MessageListResponse
 from api.services.discussion_service import DiscussionService
 
-router = APIRouter(prefix="/api/v1/discussions", tags=["Messages"])
+router = APIRouter(prefix="/api/v1/discussions", tags=["Messages"], dependencies=[Depends(require_active_user)])
 
 HEARTBEAT_SECONDS = 15
 

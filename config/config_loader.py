@@ -88,6 +88,9 @@ class LimitsConfig:
     max_statements: int = 30
     min_personas: int = 2
     max_personas: int = 5
+    user_max_concurrent: int = 1
+    user_daily_starts: int = 5
+    user_expensive_features: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'LimitsConfig':

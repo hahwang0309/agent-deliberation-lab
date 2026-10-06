@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Setup
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt   # 런타임만: requirements.txt
-cp .env.example .env            # OPENAI_API_KEY·ADMIN_PASSWORD 필수, DATABASE_URL 기본 sqlite:///./discussion_api.db
+cp .env.example .env            # SECRET_KEY(32자+)·ANTHROPIC_API_KEY·ADMIN_EMAIL/ADMIN_INITIAL_PASSWORD 필수
 
 # API 서버 + 웹 UI(web/) — http://localhost:8000, 문서 /docs
 python start_api.py             # DEBUG=True면 reload. 반드시 단일 워커 (런타임 레지스트리가 프로세스 메모리)
@@ -24,7 +24,7 @@ pytest tests/test_runtime.py::test_stop_cancels_running_discussion   # 단일 �
 DB 스키마는 Alembic으로 관리한다. 앱 시작 시 `init_db()`(`api/database.py`)가 `upgrade head`를 실행하며, Alembic 이력 없는 기존(create_all) DB는 기준 리비전으로 자동 stamp한다. 모델 변경 시:
 
 ```bash
-alembic revision --autogenerate -m "설명"   # DATABASE_URL·ADMIN_PASSWORD 환경변수 필요
+alembic revision --autogenerate -m "설명"   # DATABASE_URL·SECRET_KEY 환경변수 필요
 alembic upgrade head
 alembic check                               # 모델과 마이그레이션 일치 확인
 ```
@@ -38,7 +38,7 @@ alembic check                               # 모델과 마이그레이션 일�
 - **SSE** (`api/routers/messages.py` `GET /api/v1/discussions/{id}/events`): 구독 → `seq > Last-Event-ID(또는 ?since)` 메시지 재생 → `snapshot`(상태·진행 중 발화) → 실시간 이벤트 순서. 종료 상태(`DiscussionStatus.TERMINAL`)가 되면 스트림을 닫는다.
 - **종합보고서**: `src/services/consensus_report.py`가 (1) 구조화 출력으로 쟁점(명제)·참가자별 입장을 추출하고 참가자명·seq를 검증해 재시도, (2) 합의 점수를 **코드로** 계산(수렴도 = max(지지, 반대), 지지 = (찬성 + w·부분찬성)/n; 종합·AI·사람 별도; 입장 2개 미만 쟁점은 `insufficient`), (3) 요약·열린 질문·제언을 생성한다. 실행은 `api/runtime/reports.py`(완료 시 런타임 안에서 `reporting` 단계, 중지 시 registry가 별도 태스크로 예약). 결과는 `discussion_reports` 테이블. 설정은 `config.yaml`의 `report.*`, 프롬프트는 `config/report_prompts.yaml`(`report.` 네임스페이스로 로드). 테스트는 `tests/report_stubs.py`의 가짜 LLM을 conftest가 자동 주입한다.
 - **`api/`**: `routers/` → `services/` → `models/`(SQLAlchemy) / `schemas/`(Pydantic). 웹 UI는 `web/`(바닐라 HTML/JS)을 `/`에 마운트한다.
-- **인증**: 현재 `api/utils/admin_auth.py`의 Basic 인증 미들웨어가 `/health` 외 전체를 보호한다. 요청 주체는 `api/dependencies.py`의 `get_actor_id()`로 얻는다.
+- **인증·권한**: httpOnly 쿠키 JWT(`api/utils/auth_cookies.py`, PyJWT) + double-submit CSRF(`api/utils/csrf.py`, 쿠키 인증 쓰기 요청에 `X-CSRF-Token` 필수). `api/dependencies.py`: `get_current_user`(서명·만료 + status=active + `token_version` 일치 → 정지·비밀번호 변경 시 즉시 무효), `require_active_user`(임시 비밀번호면 403), `require_admin`, `ensure_owner_or_admin`(시작·중지·삭제·보고서 재생성). 조회·SSE는 모든 활성 사용자(공동 참여). 계정은 가입 신청 → 관리자 승인 또는 관리자 발급. 최초 관리자는 시작 시 `ADMIN_EMAIL`/`ADMIN_INITIAL_PASSWORD`로 생성. 실행 제한은 `DiscussionService._check_user_limits`(관리자 제외). 웹 페이지(`web/`)는 공개, 데이터 API는 인증 필요. 테스트는 `tests/conftest.py`의 `create_user`/`LoggedInClient`를 쓴다.
 - **설정/프롬프트**: 프롬프트는 코드에 쓰지 않고 `config/prompts.yaml`(엔진·모더레이터·페르소나 생성), `config/rag_prompts.yaml`에 둔다. 조회는 `config_loader.prompts.render("turn_actions.present", ...)` 형태. 페르소나 템플릿은 `config/persona_templates.yaml`.
 
 재설계 진행 계획(Phase 0~5)과 미완료 항목은 git 로그와 `docs/`를 확인한다. README의 `python main.py` 사용법은 오래된 내용이다.

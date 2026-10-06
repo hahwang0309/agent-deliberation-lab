@@ -4,7 +4,7 @@
 from pathlib import Path
 
 import yaml
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
 
 from api.schemas.persona import (
@@ -15,7 +15,9 @@ from api.schemas.persona import (
 )
 from src.generators.persona_generator import PersonaGenerator
 
-router = APIRouter(prefix="/api/v1/personas", tags=["Personas"])
+from api.dependencies import require_active_user
+
+router = APIRouter(prefix="/api/v1/personas", tags=["Personas"], dependencies=[Depends(require_active_user)])
 
 TEMPLATES_PATH = Path(__file__).resolve().parents[2] / "config" / "persona_templates.yaml"
 

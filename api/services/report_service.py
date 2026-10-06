@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from api.models.discussion import DiscussionStatus
 from api.models.report import DiscussionReport, ReportStatus
+from api.models.user import User
+from api.dependencies import ensure_owner_or_admin
 from api.runtime import persistence, registry
 from api.runtime.registry import AlreadyRunningError
 from api.services.discussion_service import DiscussionService
@@ -28,8 +30,9 @@ class ReportService:
         return report
 
     @staticmethod
-    def regenerate(db: Session, discussion_id: str) -> None:
+    def regenerate(db: Session, discussion_id: str, user: User) -> None:
         discussion = DiscussionService.get(db, discussion_id)
+        ensure_owner_or_admin(discussion.created_by, user)
         if discussion.status not in DiscussionStatus.TERMINAL:
             raise _error(status.HTTP_409_CONFLICT, "INVALID_STATUS",
                          f"종료된 토론만 보고서를 생성할 수 있습니다. (현재: {discussion.status})")

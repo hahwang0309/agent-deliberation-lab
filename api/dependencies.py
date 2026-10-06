@@ -1,117 +1,56 @@
 """
-FastAPI 의존성
+FastAPI 인증·권한 의존성
+
+인증 수단: access_token 쿠키 (브라우저) 또는 Authorization: Bearer (스크립트)
+유효 조건: 서명·만료 정상 + 사용자 status=active + token_version 일치 (정지·비밀번호 변경 시 즉시 무효)
 """
 from typing import Optional
-from fastapi import Depends, HTTPException, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+
 from api.database import get_db
-from api.models.user import User
+from api.models.user import User, UserStatus
+from api.utils.auth_cookies import ACCESS_COOKIE
 from api.utils.security import decode_token
 
-# HTTP Bearer 토큰 스키마
-security = HTTPBearer()
-optional_security = HTTPBearer(auto_error=False)
+
+def _error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"error": {"code": code, "message": message}})
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
-) -> User:
-    """
-    현재 인증된 사용자 조회
-    
-    Args:
-        credentials: Bearer 토큰
-        db: 데이터베이스 세션
-        
-    Returns:
-        현재 사용자
-        
-    Raises:
-        HTTPException: 인증 실패
-    """
-    token = credentials.credentials
-    
-    # 토큰 디코딩
-    payload = decode_token(token)
-    
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "error": {
-                    "code": "INVALID_TOKEN",
-                    "message": "유효하지 않은 토큰입니다."
-                }
-            },
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "error": {
-                    "code": "INVALID_TOKEN",
-                    "message": "유효하지 않은 토큰입니다."
-                }
-            },
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    # 사용자 조회
-    user = db.query(User).filter(User.id == user_id).first()
-    
-    if not user or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "error": {
-                    "code": "USER_NOT_FOUND",
-                    "message": "사용자를 찾을 수 없습니다."
-                }
-            },
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
+def _token_from_request(request: Request) -> Optional[str]:
+    token = request.cookies.get(ACCESS_COOKIE)
+    if token:
+        return token
+    scheme, _, credentials = request.headers.get("authorization", "").partition(" ")
+    return credentials if scheme.lower() == "bearer" and credentials else None
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """로그인한 활성 사용자 (비밀번호 변경이 필요한 상태도 허용)"""
+    token = _token_from_request(request)
+    payload = decode_token(token, "access") if token else None
+    user = db.get(User, payload["sub"]) if payload else None
+    if user is None or user.status != UserStatus.ACTIVE or user.token_version != payload.get("ver"):
+        raise _error(status.HTTP_401_UNAUTHORIZED, "AUTH_REQUIRED", "로그인이 필요합니다.")
     return user
 
 
-def get_optional_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
-    db: Session = Depends(get_db)
-) -> Optional[User]:
-    """
-    선택적으로 인증된 사용자 조회 (비로그인도 허용)
-
-    Args:
-        credentials: Bearer 토큰 (선택)
-        db: 데이터베이스 세션
-
-    Returns:
-        현재 사용자 또는 None
-    """
-    if not credentials:
-        return None
-
-    token = credentials.credentials
-    payload = decode_token(token)
-
-    if not payload or payload.get("type") != "access":
-        return None
-
-    user_id = payload.get("sub")
-    if not user_id:
-        return None
-
-    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+def require_active_user(user: User = Depends(get_current_user)) -> User:
+    """일반 기능 사용 가능 사용자 (임시 비밀번호 상태면 변경 먼저)"""
+    if user.must_change_password:
+        raise _error(status.HTTP_403_FORBIDDEN, "PASSWORD_CHANGE_REQUIRED", "비밀번호를 먼저 변경해야 합니다.")
     return user
 
 
+def require_admin(user: User = Depends(require_active_user)) -> User:
+    if not user.is_admin:
+        raise _error(status.HTTP_403_FORBIDDEN, "ADMIN_REQUIRED", "관리자 권한이 필요합니다.")
+    return user
 
-def get_actor_id() -> str:
-    """현재 요청 주체 ID (관리자 Basic 인증 단계: 관리자 계정명). 계정 시스템 도입 시 사용자 ID로 대체."""
-    from api.config import settings
-    return settings.ADMIN_USERNAME
+
+def ensure_owner_or_admin(owner_id: str, user: User) -> None:
+    """토론 시작·중지·삭제·보고서 재생성: 생성자 또는 관리자만"""
+    if owner_id != user.id and not user.is_admin:
+        raise _error(status.HTTP_403_FORBIDDEN, "FORBIDDEN", "토론 생성자 또는 관리자만 할 수 있습니다.")

@@ -15,6 +15,7 @@ from api.runtime import persistence
 from api.runtime import runtime as runtime_module
 from api.schemas.discussion import CreateDiscussionRequest
 from api.services.discussion_service import DiscussionService
+from tests.conftest import create_user
 
 SUBTOPICS = "1. Economic impact on households\n2. Ethical considerations for society\n3. Technical feasibility today"
 
@@ -52,7 +53,7 @@ def _create(max_statements=4):
             personas=[dict(name="Alice", **persona), dict(name="Bob", **persona)],
             max_statements=max_statements,
         )
-        return DiscussionService.create(db, request, created_by="tester").id
+        return DiscussionService.create(db, request, user=create_user()).id
     finally:
         db.close()
 

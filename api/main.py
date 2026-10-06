@@ -12,17 +12,26 @@ from pydantic import ValidationError
 from pathlib import Path
 from api.config import settings
 from api.database import init_db
-from api.utils.admin_auth import AdminBasicAuthMiddleware
+from api.database import SessionLocal
+from api.services.auth_service import AuthService
+from api.utils.csrf import CSRFMiddleware
+from api.utils.security import check_secret_key
 from src.utils.logger import setup_logging
 
 setup_logging(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
+check_secret_key()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """앱 시작/종료 처리"""
     init_db()
+    db = SessionLocal()
+    try:
+        AuthService.ensure_initial_admin(db)
+    finally:
+        db.close()
     interrupted = mark_active_as_interrupted()
     if interrupted:
         logger.warning("Marked %d discussions from previous process as interrupted", interrupted)
@@ -31,7 +40,7 @@ async def lifespan(app: FastAPI):
     logger.info("API server shutting down...")
     await registry.shutdown()
 
-from api.routers import auth_router, users_router, discussions_router, messages_router, personas_router, config_router, reports_router
+from api.routers import auth_router, users_router, discussions_router, messages_router, personas_router, config_router, reports_router, admin_router
 from api.runtime import registry
 from api.runtime.persistence import mark_active_as_interrupted
 
@@ -45,24 +54,22 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 관리자 인증 (CORS보다 먼저 등록 → CORS가 바깥에서 preflight 처리)
-if not settings.ADMIN_PASSWORD:
-    raise RuntimeError("ADMIN_PASSWORD가 설정되지 않았습니다. .env에 ADMIN_PASSWORD를 설정하세요.")
+# CSRF (쿠키 인증 상태 변경 요청). 로그인 전 단계·토큰 갱신·로그아웃은 제외
 app.add_middleware(
-    AdminBasicAuthMiddleware,
-    username=settings.ADMIN_USERNAME,
-    password=settings.ADMIN_PASSWORD,
-    exempt_paths=["/health"],
+    CSRFMiddleware,
+    exempt_paths=["/api/v1/auth/login", "/api/v1/auth/signup-request", "/api/v1/auth/refresh",
+                  "/api/v1/auth/logout"],
 )
 
-# CORS 설정
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS: 기본은 같은 출처만 (CORS_ORIGINS를 지정한 경우에만 허용)
+if settings.cors_origins_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 # 라우터 등록
@@ -73,6 +80,7 @@ app.include_router(messages_router)
 app.include_router(personas_router)
 app.include_router(config_router)
 app.include_router(reports_router)
+app.include_router(admin_router)
 
 
 @app.get("/api", tags=["헬스체크"])

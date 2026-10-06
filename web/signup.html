@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>가입 신청 · 페르소나 토론</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<main>
+  <section class="card auth-box">
+    <h2>가입 신청</h2>
+    <form id="form">
+      <label for="email">이메일</label>
+      <input id="email" type="text" autocomplete="username" required>
+      <label for="name">이름</label>
+      <input id="name" type="text" maxlength="50" required>
+      <label for="organization">소속 (선택)</label>
+      <input id="organization" type="text" maxlength="100">
+      <label for="password">비밀번호 (10자 이상)</label>
+      <input id="password" type="password" autocomplete="new-password" required>
+      <label for="note">신청 사유 (선택)</label>
+      <textarea id="note" maxlength="1000"></textarea>
+      <div class="actions"><button class="primary" type="submit">신청</button></div>
+    </form>
+    <div id="error" class="error"></div>
+    <div id="done" class="notice" hidden>신청이 접수되었습니다. 관리자 승인 후 <a href="/login.html">로그인</a>할 수 있습니다.</div>
+  </section>
+</main>
+<script src="/js/api.js"></script>
+<script>
+document.getElementById("form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  document.getElementById("error").textContent = "";
+  try {
+    await api("/auth/signup-request", { method: "POST", body: {
+      email: document.getElementById("email").value.trim(),
+      name: document.getElementById("name").value.trim(),
+      organization: document.getElementById("organization").value.trim() || null,
+      password: document.getElementById("password").value,
+      note: document.getElementById("note").value.trim() || null,
+    }});
+    document.getElementById("form").hidden = true;
+    document.getElementById("done").hidden = false;
+  } catch (e) {
+    document.getElementById("error").textContent = e.message;
+  }
+};
+</script>
+</body>
+</html>

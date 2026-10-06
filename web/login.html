@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>로그인 · 페르소나 토론</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<main>
+  <section class="card auth-box">
+    <h2>로그인</h2>
+    <form id="form">
+      <label for="email">이메일</label>
+      <input id="email" type="text" autocomplete="username" required>
+      <label for="password">비밀번호</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div class="actions"><button class="primary" type="submit">로그인</button></div>
+    </form>
+    <div id="error" class="error"></div>
+    <p class="muted">계정이 없으면 <a href="/signup.html">가입 신청</a>하세요. 관리자 승인 후 로그인할 수 있습니다.</p>
+  </section>
+</main>
+<script src="/js/api.js"></script>
+<script>
+const next = new URLSearchParams(location.search).get("next");
+document.getElementById("form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  document.getElementById("error").textContent = "";
+  try {
+    const me = await api("/auth/login", { method: "POST", body: {
+      email: document.getElementById("email").value.trim(),
+      password: document.getElementById("password").value,
+    }});
+    // 같은 출처 경로만 허용 (오픈 리다이렉트 방지)
+    const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    location.href = me.must_change_password ? "/change-password.html" : target;
+  } catch (e) {
+    document.getElementById("error").textContent = e.message;
+  }
+};
+</script>
+</body>
+</html>

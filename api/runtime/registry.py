@@ -33,6 +33,12 @@ class DiscussionRegistry:
     def running_count(self) -> int:
         return len(self._runtimes)
 
+    def running_ids(self) -> list:
+        return list(self._runtimes)
+
+    def report_ids(self) -> list:
+        return list(self._report_tasks)
+
     def start(self, discussion_id: str) -> DiscussionRuntime:
         if discussion_id in self._runtimes:
             raise AlreadyRunningError(discussion_id)

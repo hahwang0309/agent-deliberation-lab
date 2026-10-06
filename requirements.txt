@@ -14,8 +14,7 @@ alembic>=1.17.0
 psycopg2-binary>=2.9.0
 
 # Authentication & Security
-python-jose[cryptography]>=3.5.0
-passlib[bcrypt]>=1.7.4
+PyJWT>=2.10.0
 bcrypt>=5.0.0
 
 # Configuration & Environment

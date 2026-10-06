@@ -8,17 +8,15 @@ import pytest
 from api.runtime import registry, reports
 from api.runtime import runtime as runtime_module
 from tests.report_stubs import NARRATIVE, StubLLM
-from tests.test_events_api import AUTH, PERSONA, parse_sse  # noqa: F401
+from tests.conftest import LoggedInClient, create_user
+from tests.test_events_api import PERSONA, parse_sse
 from tests.test_runtime import FakeBundle
-
-import httpx
-from api.main import app
 
 
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test", auth=AUTH)
+    return LoggedInClient(create_user(daily_limit=100))
 
 
 async def _create(client, max_statements):

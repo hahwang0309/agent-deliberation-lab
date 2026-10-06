@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>관리자 · 페르소나 토론</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="top"><h1>관리자</h1></header>
+<main>
+  <div class="tabs">
+    <button data-tab="pending" class="active">가입 요청</button>
+    <button data-tab="users">사용자</button>
+    <button data-tab="issue">계정 발급</button>
+    <button data-tab="discussions">토론</button>
+  </div>
+  <div id="error" class="error"></div>
+  <div id="notice" class="notice" hidden></div>
+
+  <section class="card" data-panel="pending">
+    <h2>승인 대기</h2>
+    <table><thead><tr><th>이메일</th><th>이름·소속</th><th>신청 사유</th><th>신청일</th><th></th></tr></thead>
+      <tbody id="pending-rows"></tbody></table>
+  </section>
+
+  <section class="card" data-panel="users" hidden>
+    <h2>사용자</h2>
+    <p class="muted">동시 실행·일일 시작 수를 비우면 기본값(config.yaml limits)이 적용됩니다. 관리자는 제한이 없습니다.</p>
+    <table><thead><tr><th>이메일</th><th>이름</th><th>권한</th><th>상태</th><th>동시</th><th>일일</th><th></th></tr></thead>
+      <tbody id="user-rows"></tbody></table>
+  </section>
+
+  <section class="card" data-panel="issue" hidden>
+    <h2>계정 발급</h2>
+    <form id="issue-form">
+      <div class="row">
+        <div><label for="issue-email">이메일</label><input id="issue-email" type="text" required></div>
+        <div><label for="issue-name">이름</label><input id="issue-name" type="text" maxlength="50" required></div>
+      </div>
+      <div class="row">
+        <div><label for="issue-org">소속 (선택)</label><input id="issue-org" type="text" maxlength="100"></div>
+        <div><label for="issue-role">권한</label>
+          <select id="issue-role"><option value="user">사용자</option><option value="admin">관리자</option></select></div>
+      </div>
+      <div class="actions"><button class="primary" type="submit">발급</button></div>
+    </form>
+  </section>
+
+  <section class="card" data-panel="discussions" hidden>
+    <h2>전체 토론</h2>
+    <p id="runtime" class="muted"></p>
+    <table><thead><tr><th>주제</th><th>생성자</th><th>상태</th><th>발언</th><th>토큰 (입력/출력)</th><th>생성</th><th></th></tr></thead>
+      <tbody id="discussion-rows"></tbody></table>
+  </section>
+</main>
+
+<script src="/js/api.js"></script>
+<script>
+let me;
+const ROLE = { user: "사용자", admin: "관리자" };
+const USER_STATUS = { pending: "승인 대기", active: "활성", suspended: "정지", rejected: "거절" };
+const errorBox = document.getElementById("error");
+const noticeBox = document.getElementById("notice");
+
+function show(message) { errorBox.textContent = ""; noticeBox.textContent = message; noticeBox.hidden = !message; }
+async function run(fn) {
+  errorBox.textContent = "";
+  try { await fn(); } catch (e) { errorBox.textContent = e.message; }
+}
+function tempPasswordNotice(user, temp) {
+  show(`${user.email} 임시 비밀번호: ${temp}\n이 화면을 벗어나면 다시 볼 수 없습니다. 사용자에게 전달하세요 (첫 로그인 시 변경 필요).`);
+}
+
+async function loadPending() {
+  const users = await api("/admin/users?status=pending");
+  document.getElementById("pending-rows").replaceChildren(...(users.length ? users.map(u => el("tr", {},
+    el("td", {}, u.email),
+    el("td", {}, u.name, u.organization ? el("div", { class: "muted" }, u.organization) : null),
+    el("td", {}, u.signup_note || ""),
+    el("td", { class: "muted" }, formatDate(u.created_at)),
+    el("td", {}, el("div", { class: "actions" },
+      el("button", { class: "primary", onclick: () => run(async () => { await api(`/admin/users/${u.id}/approve`, { method: "POST" }); show(`${u.email} 승인`); await loadPending(); }) }, "승인"),
+      el("button", { class: "danger", onclick: () => run(async () => { await api(`/admin/users/${u.id}/reject`, { method: "POST" }); show(`${u.email} 거절`); await loadPending(); }) }, "거절"))),
+  )) : [el("tr", {}, el("td", { colspan: "5", class: "muted" }, "대기 중인 신청이 없습니다."))]));
+}
+
+async function loadUsers() {
+  const users = await api("/admin/users");
+  document.getElementById("user-rows").replaceChildren(...users.map(u => {
+    const concurrent = el("input", { type: "number", min: "0", placeholder: "기본" });
+    const daily = el("input", { type: "number", min: "0", placeholder: "기본" });
+    concurrent.value = u.max_concurrent ?? "";
+    daily.value = u.daily_limit ?? "";
+    const self = u.id === me.id;
+    const actions = [];
+    if (u.status === "active" && !self) actions.push(["정지", "suspend", "danger"]);
+    if (u.status === "suspended") actions.push(["재활성화", "reactivate", ""]);
+    if (u.status === "rejected") actions.push(["승인", "approve", ""]);
+    return el("tr", {},
+      el("td", {}, u.email),
+      el("td", {}, u.name),
+      el("td", {}, ROLE[u.role]),
+      el("td", {}, USER_STATUS[u.status] || u.status),
+      el("td", {}, concurrent),
+      el("td", {}, daily),
+      el("td", {}, el("div", { class: "actions" },
+        el("button", { onclick: () => run(async () => {
+          const body = concurrent.value === "" && daily.value === "" ? { clear_limits: true }
+            : { max_concurrent: concurrent.value === "" ? null : Number(concurrent.value),
+                daily_limit: daily.value === "" ? null : Number(daily.value) };
+          await api(`/admin/users/${u.id}`, { method: "PATCH", body });
+          show(`${u.email} 제한 저장`);
+        }) }, "제한 저장"),
+        self ? null : el("button", { onclick: () => run(async () => {
+          await api(`/admin/users/${u.id}`, { method: "PATCH", body: { role: u.role === "admin" ? "user" : "admin" } });
+          show(`${u.email} 권한 변경`); await loadUsers();
+        }) }, u.role === "admin" ? "관리자 해제" : "관리자 지정"),
+        ...actions.map(([label, action, cls]) => el("button", { class: cls, onclick: () => run(async () => {
+          await api(`/admin/users/${u.id}/${action}`, { method: "POST" }); show(`${u.email} ${label}`); await loadUsers();
+        }) }, label)),
+        el("button", { onclick: () => run(async () => {
+          if (!confirm(`${u.email}의 비밀번호를 초기화할까요? 로그인 중인 세션이 끊깁니다.`)) return;
+          const r = await api(`/admin/users/${u.id}/reset-password`, { method: "POST" });
+          tempPasswordNotice(r.user, r.temp_password);
+        }) }, "비밀번호 초기화"))));
+  }));
+}
+
+async function loadDiscussions() {
+  const [data, runtime] = await Promise.all([api("/discussions?page_size=100"), api("/admin/runtime")]);
+  document.getElementById("runtime").textContent =
+    `실행 중 ${runtime.running.length} / 최대 ${runtime.max_running} · 보고서 작업 ${runtime.reports.length}`;
+  document.getElementById("discussion-rows").replaceChildren(...data.items.map(d => el("tr", {},
+    el("td", {}, el("a", { href: `/discussion.html?id=${encodeURIComponent(d.id)}` }, d.topic)),
+    el("td", {}, d.created_by_name || d.created_by),
+    el("td", {}, statusBadge(d.status)),
+    el("td", {}, d.total_messages),
+    el("td", { class: "muted" }, `${d.prompt_tokens.toLocaleString()} / ${d.completion_tokens.toLocaleString()}`),
+    el("td", { class: "muted" }, formatDate(d.created_at)),
+    el("td", {}, ["running", "awaiting_human", "reporting"].includes(d.status)
+      ? el("button", { class: "danger", onclick: () => run(async () => {
+          await api(`/discussions/${d.id}/stop`, { method: "POST", body: { reason: "관리자 중지" } });
+          show("중지했습니다."); await loadDiscussions();
+        }) }, "중지") : null),
+  )));
+}
+
+const loaders = { pending: loadPending, users: loadUsers, issue: async () => {}, discussions: loadDiscussions };
+document.querySelectorAll(".tabs button").forEach(button => button.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b === button));
+  document.querySelectorAll("[data-panel]").forEach(p => p.hidden = p.dataset.panel !== button.dataset.tab);
+  show("");
+  run(loaders[button.dataset.tab]);
+});
+
+document.getElementById("issue-form").onsubmit = (ev) => {
+  ev.preventDefault();
+  run(async () => {
+    const r = await api("/admin/users", { method: "POST", body: {
+      email: document.getElementById("issue-email").value.trim(),
+      name: document.getElementById("issue-name").value.trim(),
+      organization: document.getElementById("issue-org").value.trim() || null,
+      role: document.getElementById("issue-role").value,
+    }});
+    ev.target.reset();
+    tempPasswordNotice(r.user, r.temp_password);
+  });
+};
+
+requireLogin({ admin: true }).then(user => { me = user; run(loadPending); }).catch(() => {});
+</script>
+</body>
+</html>

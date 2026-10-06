@@ -44,7 +44,7 @@ main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
 .card h2 { font-size: 16px; margin: 0 0 14px; }
 
 label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
-input[type=text], input[type=number], textarea, select {
+input[type=text], input[type=password], input[type=number], textarea, select {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -130,3 +130,12 @@ ol.subtopics li.current { font-weight: 600; color: var(--accent); }
 .badge.agreed { background: #e6f6ec; color: #1f7a3d; }
 .badge.partial { background: #fff6e0; color: #8a5a00; }
 .badge.disagreed { background: #fdecea; color: var(--danger); }
+
+/* 계정 */
+header.top .nav { margin-left: auto; display: flex; gap: 14px; align-items: center; font-size: 14px; }
+.auth-box { max-width: 420px; margin: 60px auto; }
+.notice { background: var(--accent-weak); border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-top: 12px; white-space: pre-wrap; }
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+td .actions { margin-top: 0; }
+td input[type=number] { width: 70px; }

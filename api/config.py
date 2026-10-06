@@ -45,23 +45,26 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./discussion_api.db"
     # PostgreSQL 예시: "postgresql://user:password@localhost/dbname"
 
-    # JWT 설정
-    SECRET_KEY: str = "your-secret-key-change-this-in-production"
+    # JWT 설정 (SECRET_KEY: 32자 이상 무작위 값 필수 — 미설정·기본값이면 서버 시작 불가)
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1시간
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7일
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # 인증 쿠키 (HTTPS 운영 시 COOKIE_SECURE=true)
+    COOKIE_SECURE: bool = False
 
     # 보안 설정
-    PASSWORD_MIN_LENGTH: int = 8
+    PASSWORD_MIN_LENGTH: int = 10
     MAX_LOGIN_ATTEMPTS: int = 5
     LOGIN_ATTEMPT_TIMEOUT: int = 300  # 5분 (초)
 
-    # 관리자 Basic 인증 (전체 앱 보호, ADMIN_PASSWORD 미설정 시 서버 시작 불가)
-    ADMIN_USERNAME: str = "admin"
-    ADMIN_PASSWORD: str = ""
+    # 최초 관리자 (관리자 계정이 하나도 없을 때만 시작 시 생성, 첫 로그인 후 비밀번호 변경 강제)
+    ADMIN_EMAIL: str = ""
+    ADMIN_INITIAL_PASSWORD: str = ""
 
-    # CORS 설정 (쉼표로 구분된 문자열)
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
+    # CORS 설정 (쉼표로 구분된 문자열, 비우면 같은 출처만 허용)
+    CORS_ORIGINS: str = ""
 
     class Config:
         env_file = ".env"
@@ -71,9 +74,7 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         """CORS origins를 리스트로 반환"""
-        if self.CORS_ORIGINS == "*":
-            return ["*"]
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
 
 # API 설정 인스턴스

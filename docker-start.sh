@@ -30,9 +30,9 @@ if [ -z "$OPENAI_API_KEY" ] || [ "$OPENAI_API_KEY" = "your-openai-api-key-here" 
     exit 1
 fi
 
-if [ -z "$ADMIN_PASSWORD" ]; then
-    echo "❌ ADMIN_PASSWORD가 설정되지 않았습니다!"
-    echo "📝 .env 파일에서 ADMIN_PASSWORD를 설정하세요."
+if [ ${#SECRET_KEY} -lt 32 ]; then
+    echo "❌ SECRET_KEY가 없거나 32자 미만입니다!"
+    echo "📝 생성: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
     exit 1
 fi
 
@@ -112,7 +112,7 @@ echo "  🎉 배포 완료!"
 echo "=========================================="
 echo ""
 echo "📍 서비스 접속 정보:"
-echo "   - 메인 페이지:   http://localhost:8106/  (관리자 인증 필요)"
+echo "   - 메인 페이지:   http://localhost:8106/  (로그인 필요, 최초 관리자: .env의 ADMIN_EMAIL)"
 echo "   - API 문서:      http://localhost:8106/docs"
 echo "   - 헬스체크:      http://localhost:8106/health"
 echo ""

@@ -8,5 +8,6 @@ from api.routers.messages import router as messages_router
 from api.routers.personas import router as personas_router
 from api.routers.config import router as config_router
 from api.routers.reports import router as reports_router
+from api.routers.admin import router as admin_router
 
-__all__ = ["auth_router", "users_router", "discussions_router", "messages_router", "personas_router", "config_router", "reports_router"]
+__all__ = ["auth_router", "users_router", "discussions_router", "messages_router", "personas_router", "config_router", "reports_router", "admin_router"]

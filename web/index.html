@@ -56,10 +56,13 @@
   <section class="card">
     <h2>토론 목록</h2>
     <table>
-      <thead><tr><th>주제</th><th>상태</th><th>발언</th><th>생성</th></tr></thead>
+      <thead><tr><th>주제</th><th>생성자</th><th>상태</th><th>발언</th><th>생성</th></tr></thead>
       <tbody id="discussion-rows"></tbody>
     </table>
-    <div class="actions"><button id="refresh">새로고침</button></div>
+    <div class="actions">
+      <button id="refresh">새로고침</button>
+      <label class="checks" style="margin:0"><input id="mine" type="checkbox"> 내 토론만</label>
+    </div>
   </section>
 </main>
 
@@ -120,9 +123,11 @@ async function loadTemplates() {
 }
 
 async function loadDiscussions() {
-  const data = await api("/discussions?page_size=50");
+  const mine = document.getElementById("mine").checked ? "&mine=true" : "";
+  const data = await api(`/discussions?page_size=50${mine}`);
   const rows = data.items.map(d => el("tr", {},
     el("td", {}, el("a", { href: `/discussion.html?id=${encodeURIComponent(d.id)}` }, d.topic)),
+    el("td", {}, d.created_by_name || ""),
     el("td", {}, statusBadge(d.status)),
     el("td", {}, d.total_messages),
     el("td", { class: "muted" }, formatDate(d.created_at)),
@@ -180,9 +185,15 @@ document.getElementById("generate").onclick = async (ev) => {
 document.getElementById("create").onclick = () => create(true);
 document.getElementById("create-draft").onclick = () => create(false);
 document.getElementById("refresh").onclick = loadDiscussions;
+document.getElementById("mine").onchange = loadDiscussions;
 
-loadTemplates().catch(e => document.getElementById("create-error").textContent = e.message);
-loadDiscussions().catch(e => document.getElementById("create-error").textContent = e.message);
+requireLogin().then(me => {
+  if (me.role !== "admin") {  // 비용이 큰 기능은 관리자만 (서버도 403으로 막음)
+    ["web-search", "belief-reasoning"].forEach(idName => document.getElementById(idName).closest("label").hidden = true);
+  }
+  loadTemplates().catch(e => document.getElementById("create-error").textContent = e.message);
+  loadDiscussions().catch(e => document.getElementById("create-error").textContent = e.message);
+}).catch(() => {});
 </script>
 </body>
 </html>

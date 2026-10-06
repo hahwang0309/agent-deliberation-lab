@@ -62,6 +62,8 @@ let streaming = null;  // 현재 스트리밍 중인 발언 DOM
 let source = null;
 let currentSubtopic = null;
 let reportPoll = null;
+let me = null;
+let canControl = false;  // 시작·중지·삭제·보고서 재생성: 생성자 또는 관리자
 
 const LABELS = { agreed: "합의", partial: "부분 합의", disagreed: "이견", insufficient: "판단 보류" };
 const STANCES = { agree: "찬성", partially_agree: "부분 찬성", disagree: "반대", no_position: "입장 없음" };
@@ -181,16 +183,16 @@ function highlightSubtopic() {
 
 function setStatus(status) {
   document.getElementById("status").replaceChildren(statusBadge(status));
-  document.getElementById("start").hidden = status !== "draft";
-  document.getElementById("stop").hidden = !ACTIVE.includes(status);
-  document.getElementById("delete").hidden = ACTIVE.includes(status);
+  document.getElementById("start").hidden = !canControl || status !== "draft";
+  document.getElementById("stop").hidden = !canControl || !ACTIVE.includes(status);
+  document.getElementById("delete").hidden = !canControl || ACTIVE.includes(status);
   if (TERMINAL.includes(status)) {
     clearStreaming();
     if (source) { source.close(); source = null; }
     loadDetail();  // 사용량 등 최종 값 갱신
     loadReport();
   }
-  document.getElementById("report-generate").hidden = !TERMINAL.includes(status);
+  document.getElementById("report-generate").hidden = !canControl || !TERMINAL.includes(status);
 }
 
 function connect() {
@@ -209,6 +211,13 @@ function connect() {
     streaming.querySelector(".body").textContent += d.delta;
   });
   source.addEventListener("utterance_aborted", clearStreaming);
+  // 인증 만료 등으로 연결이 영구 종료되면 토큰을 갱신(api가 401 시 refresh)한 뒤 이어서 재접속
+  source.onerror = () => {
+    if (source && source.readyState === EventSource.CLOSED) {
+      source = null;
+      api(`/discussions/${encodeURIComponent(id)}`).then(() => setTimeout(connect, 1000)).catch(() => {});
+    }
+  };
   source.addEventListener("subtopics", e => {
     const list = JSON.parse(e.data).subtopics;
     currentSubtopic = list[0];
@@ -226,13 +235,14 @@ function connect() {
 async function loadDetail() {
   const d = await api(`/discussions/${encodeURIComponent(id)}`);
   document.title = d.topic;
+  canControl = !!me && (me.role === "admin" || d.created_by === me.id);
   document.getElementById("topic").textContent = d.topic;
   currentSubtopic = d.current_subtopic;
   renderSubtopics(d.subtopics);
   document.getElementById("participants").replaceChildren(...d.participants.map(p =>
     el("div", { style: "margin-bottom:8px" }, el("strong", {}, p.name), el("div", { class: "muted" }, `${p.role} · ${p.model}`))));
   document.getElementById("usage").textContent =
-    `LLM 호출 ${d.llm_calls}회 · 토큰 ${d.prompt_tokens + d.completion_tokens}`;
+    `생성자 ${d.created_by_name || "-"} · LLM 호출 ${d.llm_calls}회 · 토큰 ${d.prompt_tokens + d.completion_tokens}`;
   if (d.error) document.getElementById("error").textContent = d.error;
   return d;
 }
@@ -266,7 +276,8 @@ document.getElementById("delete").onclick = async () => {
   } catch (e) { document.getElementById("error").textContent = e.message; }
 };
 
-loadDetail()
+requireLogin()
+  .then(user => { me = user; return loadDetail(); })
   .then(d => { setStatus(d.status); connect(); })
   .catch(e => document.getElementById("error").textContent = e.message);
 </script>

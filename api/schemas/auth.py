@@ -1,98 +1,74 @@
 """
-인증 관련 스키마
+인증·계정 스키마
 """
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
 from datetime import datetime
-import re
+from typing import Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
-class RegisterRequest(BaseModel):
-    """회원가입 요청"""
-    email: EmailStr = Field(..., max_length=255, description="이메일 주소")
-    password: str = Field(..., min_length=8, description="비밀번호 (최소 8자, 영문+숫자+특수문자)")
-    name: str = Field(..., min_length=2, max_length=50, description="이름")
-    organization: Optional[str] = Field(None, max_length=100, description="조직/회사명")
-    
-    @field_validator('password')
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        """비밀번호 유효성 검사"""
-        if len(v) < 8:
-            raise ValueError('비밀번호는 최소 8자 이상이어야 합니다.')
-        if not re.search(r'[A-Za-z]', v):
-            raise ValueError('비밀번호는 영문자를 포함해야 합니다.')
-        if not re.search(r'\d', v):
-            raise ValueError('비밀번호는 숫자를 포함해야 합니다.')
-        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', v):
-            raise ValueError('비밀번호는 특수문자를 포함해야 합니다.')
-        return v
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "email": "user@example.com",
-                "password": "SecurePass123!",
-                "name": "김철수",
-                "organization": "테크 스타트업"
-            }
-        }
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
-
-class RegisterResponse(BaseModel):
-    """회원가입 응답"""
-    user_id: str
-    email: str
-    name: str
-    organization: Optional[str] = None
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
-
-
-class LoginRequest(BaseModel):
-    """로그인 요청"""
-    email: EmailStr
-    password: str
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "email": "user@example.com",
-                "password": "SecurePass123!"
-            }
-        }
-
-
-class UserInfo(BaseModel):
-    """사용자 정보 (로그인 응답용)"""
     id: str
     email: str
     name: str
     organization: Optional[str] = None
-    
-    class Config:
-        from_attributes = True
+    role: str
+    status: str
+    must_change_password: bool = False
+    created_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
 
 
-class LoginResponse(BaseModel):
-    """로그인 응답"""
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int = 3600
-    user: UserInfo
+class SignupRequest(BaseModel):
+    email: EmailStr = Field(..., max_length=255)
+    password: str = Field(..., max_length=200)
+    name: str = Field(..., min_length=1, max_length=50)
+    organization: Optional[str] = Field(None, max_length=100)
+    note: Optional[str] = Field(None, max_length=1000, description="가입 사유 (관리자 승인 참고)")
 
 
-class TokenRefreshRequest(BaseModel):
-    """토큰 갱신 요청"""
-    refresh_token: str
+class LoginRequest(BaseModel):
+    # 등록된 이메일을 조회만 하므로 형식 검사 없음 (ADMIN_EMAIL에 예약 도메인을 쓴 경우에도 로그인 가능)
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., max_length=200)
 
 
-class TokenRefreshResponse(BaseModel):
-    """토큰 갱신 응답"""
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int = 3600
+class UpdateMeRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=50)
+    organization: Optional[str] = Field(None, max_length=100)
 
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., max_length=200)
+    new_password: str = Field(..., max_length=200)
+
+
+# ---------- 관리자 ----------
+
+class AdminUserResponse(UserResponse):
+    signup_note: Optional[str] = None
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    max_concurrent: Optional[int] = None
+    daily_limit: Optional[int] = None
+
+
+class IssueUserRequest(BaseModel):
+    email: EmailStr = Field(..., max_length=255)
+    name: str = Field(..., min_length=1, max_length=50)
+    organization: Optional[str] = Field(None, max_length=100)
+    role: Literal["user", "admin"] = "user"
+
+
+class UpdateUserRequest(BaseModel):
+    role: Optional[Literal["user", "admin"]] = None
+    max_concurrent: Optional[int] = Field(None, ge=0, le=100, description="NULL이면 기본값")
+    daily_limit: Optional[int] = Field(None, ge=0, le=1000, description="NULL이면 기본값")
+    clear_limits: bool = Field(False, description="true면 사용자별 제한을 지우고 기본값 사용")
+
+
+class TempPasswordResponse(BaseModel):
+    user: AdminUserResponse
+    temp_password: str = Field(description="1회만 표시. 사용자는 첫 로그인 후 변경해야 함")

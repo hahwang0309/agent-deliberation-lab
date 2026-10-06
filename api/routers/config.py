@@ -2,16 +2,14 @@
 설정 API 라우터
 """
 from fastapi import APIRouter, Depends
-from typing import Optional
 
-from api.dependencies import get_current_user, get_optional_user
-from api.models.user import User
+from api.dependencies import require_active_user
 from api.schemas.config import SystemConfigResponse, LLMProvidersResponse
 from api.schemas.error import ErrorResponse
 from api.services.config_service import ConfigService
 
 
-router = APIRouter(prefix="/api/v1/config", tags=["Config"])
+router = APIRouter(prefix="/api/v1/config", tags=["Config"], dependencies=[Depends(require_active_user)])
 
 
 @router.get(
@@ -26,9 +24,7 @@ router = APIRouter(prefix="/api/v1/config", tags=["Config"])
         }
     }
 )
-async def get_system_config(
-    _current_user: Optional[User] = Depends(get_optional_user)
-) -> SystemConfigResponse:
+async def get_system_config() -> SystemConfigResponse:
     """
     시스템 설정 조회
     
@@ -59,9 +55,7 @@ async def get_system_config(
         }
     }
 )
-async def get_llm_providers_status(
-    _current_user: Optional[User] = Depends(get_optional_user)
-) -> LLMProvidersResponse:
+async def get_llm_providers_status() -> LLMProvidersResponse:
     """
     LLM 프로바이더 상태 조회
     

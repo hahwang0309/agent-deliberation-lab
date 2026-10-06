@@ -71,6 +71,7 @@ class DiscussionResponse(BaseModel):
     completion_tokens: int = 0
     llm_calls: int = 0
     created_by: str
+    created_by_name: Optional[str] = None
     stopped_by: Optional[str] = None
     stop_reason: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -87,7 +88,11 @@ class DiscussionListItem(BaseModel):
     topic: str
     status: str
     total_messages: int = 0
+    consensus_score: Optional[float] = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     created_by: str
+    created_by_name: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
