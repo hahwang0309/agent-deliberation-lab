@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from pathlib import Path
 from api.config import settings
 from api.database import init_db
+from api.utils.admin_auth import AdminBasicAuthMiddleware
 from api.routers import auth_router, users_router, discussions_router, messages_router, analytics_router, personas_router, export_router, config_router, investigations_router
 from api.routers.batch_analyses import router as batch_analyses_router
 
@@ -67,6 +68,16 @@ app = FastAPI(
     """,
     docs_url="/docs",
     redoc_url="/redoc"
+)
+
+# 관리자 인증 (CORS보다 먼저 등록 → CORS가 바깥에서 preflight 처리)
+if not settings.ADMIN_PASSWORD:
+    raise RuntimeError("ADMIN_PASSWORD가 설정되지 않았습니다. .env에 ADMIN_PASSWORD를 설정하세요.")
+app.add_middleware(
+    AdminBasicAuthMiddleware,
+    username=settings.ADMIN_USERNAME,
+    password=settings.ADMIN_PASSWORD,
+    exempt_paths=["/health"],
 )
 
 # CORS 설정

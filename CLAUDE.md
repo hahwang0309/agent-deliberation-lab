@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Setup
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env            # OPENAI_API_KEY 필수, DATABASE_URL 기본 sqlite:///./discussion_api.db
+cp .env.example .env            # OPENAI_API_KEY·ADMIN_PASSWORD 필수, DATABASE_URL 기본 sqlite:///./discussion_api.db
 
 # API 서버 (frontend/ 정적 파일도 함께 서빙) — http://localhost:8000, 문서 /docs
 python start_api.py             # DEBUG=True면 reload
@@ -34,6 +34,7 @@ python test_full_flow.py                # 루트의 test_*.py: API 엔드투엔�
 - **`api/` — FastAPI 서비스**: `routers/` → `services/` → `models/`(SQLAlchemy) / `schemas/`(Pydantic) / `mappers/` 계층. `api/main.py`가 모든 라우터를 등록하고 `frontend/*.html`을 서빙한다. API 서비스는 `src.utils.llm_provider`, `src.models.personas`, `src.services.rag_service`를 import해 엔진을 재사용한다.
 
 핵심 흐름:
+- **인증**: 관리자 1인 전용 시스템. `api/utils/admin_auth.py`의 ASGI 미들웨어가 `/health`를 제외한 전체(API·프론트·SSE)에 HTTP Basic 인증을 요구한다. 라우터 내부의 `"guest"` 사용자 처리는 레거시이며, 인증 경계는 이 미들웨어다.
 - **행정조사(investigation) 분석**: `api/services/investigation_discussion_service.py`가 페르소나 자동 생성(`persona_auto_generator.py`) → 이슈별 라운드 토론(필요 시 RAG 웹검색) → 루브릭 평가 → 최종 판정/보고서 생성을 수행한다. `moderator_agent.py`가 진행을 담당한다.
 - **실시간 스트리밍**: 서비스가 이벤트를 `api/utils/event_broker.py`(싱글톤 Pub/Sub)에 발행하고, 라우터가 SSE(`sse-starlette`)로 클라이언트에 전달한다.
 - **설정/프롬프트**: 프롬프트는 코드에 쓰지 않고 `config/prompts.yaml`, `config/rag_prompts.yaml`에 둔다. `config/config_loader.py`가 `config.yaml`(llm/discussion/advanced_discussion/ui/system)과 프롬프트를 로드하며, `api/config.py`의 `get_prompts()`로 API에서 접근한다. 환경변수 설정은 `api/config.py`(pydantic-settings)가 `.env`에서 읽는다.

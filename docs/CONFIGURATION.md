@@ -180,6 +180,12 @@ query_classification:
 # Required for basic operation
 OPENAI_API_KEY=sk-...
 
+# 관리자 인증 (필수). 미설정 시 서버가 시작되지 않음.
+# API·프론트엔드·SSE 전체가 HTTP Basic 인증으로 보호됨 (/health 제외).
+# Basic 인증은 비밀번호를 평문에 가깝게 전송하므로 외부 공개 시 HTTPS 필수.
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-me
+
 # Optional for enhanced features
 TAVILY_API_KEY=tvly-...
 ```

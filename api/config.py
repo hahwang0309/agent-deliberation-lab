@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     MAX_LOGIN_ATTEMPTS: int = 5
     LOGIN_ATTEMPT_TIMEOUT: int = 300  # 5분 (초)
 
+    # 관리자 Basic 인증 (전체 앱 보호, ADMIN_PASSWORD 미설정 시 서버 시작 불가)
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str = ""
+
     # CORS 설정 (쉼표로 구분된 문자열)
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
 
