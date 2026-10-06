@@ -1,0 +1,116 @@
+# Multi-Agent Persona Discussion System Configuration
+
+# LLM 설정
+llm:
+  # 기본 모델 설정
+  default_models:
+    openai: "gpt-4"
+    gemini: "gemini-pro"
+    claude: "claude-3-opus-20240229"
+    mistral: "mistral-large-latest"
+  
+  # 공통 파라미터
+  temperature: 0.7
+  max_tokens: 500  # 3-8 문장 정도
+  
+  # 빠른 데모용 설정
+  quick_demo:
+    model: "gpt-3.5-turbo"
+    temperature: 0.7
+    max_tokens: 400
+
+# 토론 설정
+discussion:
+  # 발언 길이 제한
+  response_length:
+    min_sentences: 3
+    max_sentences: 8
+    display_limit: 0  # 0이면 전체 표시, 양수면 해당 글자수까지만 표시
+  
+  # 토론 구조
+  default_rounds: 2
+  max_context_messages: 5  # 컨텍스트로 전달할 이전 메시지 수
+  
+  # 페르소나 생성
+  persona:
+    default_count: 3
+    max_count: 5
+    perspectives:
+      - strongly_advocate  # 강력한 지지자
+      - skeptical_critic   # 회의적 비판자
+      - contrarian        # 반대론자
+      - pragmatic_realist # 실용적 현실주의자
+      - radical_challenger # 급진적 도전자
+    # 언어 스타일 다양성
+    communication_styles:
+      - "analytical_precise"  # 분석적이고 정확한
+      - "empathetic_storyteller"  # 공감적이고 스토리텔링
+      - "pragmatic_direct"  # 실용적이고 직설적
+      - "philosophical_questioning"  # 철학적이고 질문형
+      - "data_driven_empirical"  # 데이터 중심적
+
+# 고급 토론 설정
+advanced_discussion:
+  # 에이전트 역할
+  agent_roles:
+    - moderator
+    - expert
+    - critic
+    - synthesizer
+    - questioner
+  
+  # 토론 단계
+  phases:
+    - opening
+    - exploration
+    - debate
+    - synthesis
+    - conclusion
+  
+  # 단계별 설정
+  phase_settings:
+    exploration:
+      min_speakers: 2
+      max_speakers: 5
+    debate:
+      enable_critics: true
+      counter_arguments: true
+    synthesis:
+      summarize_key_points: true
+      consensus_check: true
+
+# UI 설정
+ui:
+  # Rich 콘솔 설정
+  console:
+    use_emoji: true
+    panel_width: 80
+  
+  # 색상 테마
+  colors:
+    agent_a: "cyan"
+    agent_b: "magenta"
+    agent_c: "green"
+    moderator: "yellow"
+    system: "blue"
+    error: "red"
+  
+  # 토론 출력 설정
+  output:
+    show_thinking: true  # "생각 중..." 메시지 표시
+    show_round_info: true
+    show_statistics: true
+
+# 시스템 설정
+system:
+  # 로깅
+  logging:
+    enabled: false
+    level: "INFO"
+    file: "discussion.log"
+  
+  # 성능
+  performance:
+    async_timeout: 30  # 초
+    retry_attempts: 3
+    cache_responses: false

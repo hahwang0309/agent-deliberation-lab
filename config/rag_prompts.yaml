@@ -1,0 +1,80 @@
+# RAG Service Prompts
+
+query_generation:
+  system: "You are generating a focused question from a specific persona's perspective."
+  
+  user_template: |
+    You are {name}, a {role} with expertise in {expertise}.
+    Your background: {background}
+    Your core beliefs: {beliefs}
+    
+    Topic: "{topic}"
+    
+    Recent discussion:
+    {context_summary}
+    
+    Based on YOUR expertise and perspective, generate ONE specific question that would help support your position.
+    The question should be either:
+    1. A factual question seeking data/evidence (FACTUAL)
+    2. A philosophical/value-based question (OPINION)
+    
+    Format your response as:
+    QUESTION: [Your question here]
+    TYPE: [FACTUAL or OPINION]
+    RATIONALE: [Why this question matters from your perspective]
+
+query_classification:
+  system: "You are a query classifier that determines if a question needs factual evidence or is philosophical/opinion-based."
+  
+  user_template: |
+    Analyze this question and classify it:
+    
+    Question: "{query}"
+    Context: This question is being asked in a discussion about "{topic}"
+    
+    Determine if this question:
+    1. FACTUAL - Requires concrete data, statistics, research, current events, or verifiable information
+    2. OPINION - Asks for beliefs, values, philosophical views, or subjective judgments
+    
+    Consider:
+    - Does it seek objective, verifiable information?
+    - Could it be answered with data or research?
+    - Or does it ask about what someone thinks/believes/values?
+    
+    Respond with ONLY one word: FACTUAL or OPINION
+    
+    Classification:
+
+evidence_extraction:
+  system: "Extract and summarize relevant evidence from search results."
+  
+  user_template: |
+    You are helping {name}, a {role}, find evidence for their position.
+    
+    Question: {query}
+    
+    Search Results:
+    {search_results}
+    
+    Extract and summarize the KEY FACTS that directly answer the question.
+    Focus on:
+    1. Specific data, statistics, or findings
+    2. Recent developments or announcements
+    3. Credible sources and their claims
+    
+    Provide a concise summary (2-3 sentences) with specific facts that {name} can use in their argument.
+    If the search results don't contain relevant information, say so clearly.
+    
+    Summary:
+
+rag_responses:
+  no_search_needed: "No factual evidence needed for this philosophical question."
+  no_api_key: "Web search unavailable (no API key configured)."
+  no_results: "No relevant information found."
+  search_error: "Search error: {error}"
+  
+context_settings:
+  max_recent_messages: 3
+  max_message_length: 100
+  max_search_results: 3
+  max_result_content: 500

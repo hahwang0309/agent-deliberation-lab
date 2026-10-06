@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>행정조사 중복성 검토 시스템 - AI 분석 체험</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 40px 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 32px;
+        }
+
+        .header .subtitle {
+            color: #666;
+            font-size: 18px;
+            margin-bottom: 20px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .status.online {
+            background: #10b981;
+            color: white;
+        }
+
+        .status.offline {
+            background: #ef4444;
+            color: white;
+        }
+
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin-right: 20px;
+            flex-shrink: 0;
+        }
+
+        .step-title {
+            font-size: 24px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+            font-size: 16px;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .big-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 18px 36px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 700;
+            width: 100%;
+            transition: all 0.3s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .big-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+        }
+
+        .big-button:active {
+            transform: translateY(0);
+        }
+
+        .big-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border-left: 5px solid #3b82f6;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: 15px;
+        }
+
+        .info-box strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #1e40af;
+        }
+
+        .stream-container {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .stream-container.active {
+            display: block;
+        }
+
+        .stream-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            font-weight: bold;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stream-status {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .stream-messages {
+            max-height: 700px;
+            overflow-y: auto;
+            border: 3px solid #667eea;
+            border-top: none;
+            border-radius: 0 0 10px 10px;
+            padding: 20px;
+            background: #f9fafb;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message .author {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .message .content {
+            color: #333;
+            line-height: 1.6;
+            font-size: 15px;
+            white-space: pre-wrap;
+        }
+
+        .message .metadata {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .message.event {
+            background: #fef3c7;
+            border-left-color: #f59e0b;
+        }
+
+        .message.search {
+            background: #dbeafe;
+            border-left-color: #3b82f6;
+        }
+
+        .message.error {
+            background: #fee2e2;
+            border-left-color: #ef4444;
+        }
+
+        .quick-links {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .quick-links a {
+            flex: 1;
+            text-align: center;
+            padding: 12px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #667eea;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .quick-links a:hover {
+            background: #e5e7eb;
+            transform: translateY(-2px);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .example-button {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 8px;
+            transition: all 0.2s;
+        }
+
+        .example-button:hover {
+            background: #e5e7eb;
+        }
+
+        .persona-count {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .persona-count button {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .persona-count button.selected {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>[TEST] 행정조사 중복성 검토 시스템</h1>
+            <p class="subtitle">AI 페르소나들이 두 조사의 중복 여부를 검토합니다</p>
+            <span class="status" id="apiStatus">API 연결 확인 중...</span>
+            <div class="quick-links">
+                <a href="http://localhost:8000/docs" target="_blank">[API] API 문서</a>
+                <a href="#" onclick="checkHealth(); return false;">[REFRESH] 새로고침</a>
+            </div>
+        </div>
+
+        <!-- Step 1: 조사 A -->
+        <div class="card">
+            <div class="step-header">
+                <div class="step-number">1</div>
+                <div class="step-title">조사 A 입력</div>
+            </div>
+            <div class="info-box">
+                <strong>[INFO] 첫 번째 행정조사 정보</strong>
+                조사번호, 부처, 조사명, 법령근거, 조사대상, 조사목적, 조사범위, 조사기간, 담당부서 등을 입력하세요.
+            </div>
+            <div class="form-group">
+                <label>조사 A 내용</label>
+                <textarea id="investigationA" placeholder="조사번호: TEST-001&#10;부처: 국세청&#10;조사명: 법인세 신고 내역 검증 조사&#10;...">조사번호: TEST-001
+부처: 국세청
+조사명: 법인세 신고 내역 검증 조사
+법령근거: 국세기본법 제81조의8
+조사대상: 주식회사 ABC (사업자번호: 123-45-67890)
+조사목적: 2022년 법인세 신고 내역의 정확성 검증
+조사범위: 2022년 법인세 신고서, 재무제표, 장부
+조사기간: 2023-01-15 ~ 2023-02-15
+담당부서: 국세청 조사국</textarea>
+            </div>
+            <button class="example-button" onclick="loadExampleA()">예시 A 불러오기</button>
+        </div>
+
+        <!-- Step 2: 조사 B -->
+        <div class="card">
+            <div class="step-header">
+                <div class="step-number">2</div>
+                <div class="step-title">조사 B 입력</div>
+            </div>
+            <div class="info-box">
+                <strong>[INFO] 두 번째 행정조사 정보</strong>
+                비교할 다른 행정조사의 정보를 입력하세요.
+            </div>
+            <div class="form-group">
+                <label>조사 B 내용</label>
+                <textarea id="investigationB" placeholder="조사번호: TEST-002&#10;부처: 서울지방국세청&#10;조사명: 부가가치세 신고 내역 검증 조사&#10;...">조사번호: TEST-002
+부처: 서울지방국세청
+조사명: 부가가치세 신고 내역 검증 조사
+법령근거: 부가가치세법 제5조
+조사대상: 주식회사 ABC (사업자번호: 123-45-67890)
+조사목적: 2022년 부가가치세 신고 내역의 정확성 검증
+조사범위: 2022년 부가가치세 신고서, 매출 장부, 세금계산서
+조사기간: 2023-03-01 ~ 2023-04-01
+담당부서: 서울지방국세청 조사과</textarea>
+            </div>
+            <button class="example-button" onclick="loadExampleB()">예시 B 불러오기</button>
+        </div>
+
+        <!-- Step 3: 설정 및 시작 -->
+        <div class="card">
+            <div class="step-header">
+                <div class="step-number">3</div>
+                <div class="step-title">분석 설정 및 시작</div>
+            </div>
+            <div class="info-box">
+                <strong>[SETTINGS] 분석 설정</strong>
+                페르소나 수를 선택하세요 (3~7명)
+            </div>
+            <div class="form-group">
+                <label>페르소나 수</label>
+                <div class="persona-count">
+                    <button onclick="setPersonaCount(3)" class="selected" data-count="3">3명</button>
+                    <button onclick="setPersonaCount(4)" data-count="4">4명</button>
+                    <button onclick="setPersonaCount(5)" data-count="5">5명</button>
+                    <button onclick="setPersonaCount(6)" data-count="6">6명</button>
+                    <button onclick="setPersonaCount(7)" data-count="7">7명</button>
+                </div>
+            </div>
+            <button class="big-button" id="startButton" onclick="startAnalysis()">
+                분석 시작하기
+            </button>
+        </div>
+
+        <!-- 실시간 스트리밍 -->
+        <div class="stream-container" id="streamContainer">
+            <div class="stream-header">
+                <span class="stream-status"></span>
+                <span>실시간 분석 진행 중</span>
+            </div>
+            <div class="stream-messages" id="streamMessages"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let selectedPersonaCount = 3;
+
+        // API 상태 체크
+        async function checkHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                const data = await res.json();
+                const statusEl = document.getElementById('apiStatus');
+                statusEl.textContent = '[OK] API 연결됨';
+                statusEl.className = 'status online';
+            } catch (error) {
+                const statusEl = document.getElementById('apiStatus');
+                statusEl.textContent = '[ERROR] API 연결 실패';
+                statusEl.className = 'status offline';
+            }
+        }
+
+        function setPersonaCount(count) {
+            selectedPersonaCount = count;
+            document.querySelectorAll('.persona-count button').forEach(btn => {
+                btn.classList.toggle('selected', parseInt(btn.dataset.count) === count);
+            });
+        }
+
+        function loadExampleA() {
+            document.getElementById('investigationA').value = `조사번호: TEST-001
+부처: 국세청
+조사명: 법인세 신고 내역 검증 조사
+법령근거: 국세기본법 제81조의8
+조사대상: 주식회사 ABC (사업자번호: 123-45-67890)
+조사목적: 2022년 법인세 신고 내역의 정확성 검증
+조사범위: 2022년 법인세 신고서, 재무제표, 장부
+조사기간: 2023-01-15 ~ 2023-02-15
+담당부서: 국세청 조사국`;
+        }
+
+        function loadExampleB() {
+            document.getElementById('investigationB').value = `조사번호: TEST-002
+부처: 서울지방국세청
+조사명: 부가가치세 신고 내역 검증 조사
+법령근거: 부가가치세법 제5조
+조사대상: 주식회사 ABC (사업자번호: 123-45-67890)
+조사목적: 2022년 부가가치세 신고 내역의 정확성 검증
+조사범위: 2022년 부가가치세 신고서, 매출 장부, 세금계산서
+조사기간: 2023-03-01 ~ 2023-04-01
+담당부서: 서울지방국세청 조사과`;
+        }
+
+        async function startAnalysis() {
+            const investigationA = document.getElementById('investigationA').value.trim();
+            const investigationB = document.getElementById('investigationB').value.trim();
+
+            if (!investigationA || !investigationB) {
+                alert('[WARNING] 두 조사 정보를 모두 입력해주세요.');
+                return;
+            }
+
+            const button = document.getElementById('startButton');
+            button.disabled = true;
+            button.innerHTML = '<span class="loading"></span> 분석 시작 중...';
+
+            const container = document.getElementById('streamContainer');
+            const messagesDiv = document.getElementById('streamMessages');
+            container.classList.add('active');
+            messagesDiv.innerHTML = '<div class="message event"><div class="content">[START] 분석 시작 중...</div></div>';
+
+            try {
+                // POST /api/v1/investigations/stream
+                const response = await fetch(`${API_BASE}/api/v1/investigations/stream`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify({
+                        investigation_a: investigationA,
+                        investigation_b: investigationB,
+                        persona_count: selectedPersonaCount,
+                        max_rounds: 1  // 빠른 테스트를 위해 라운드 1개만
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
+                button.innerHTML = '[OK] 분석 진행 중';
+                button.style.background = '#10b981';
+
+                // SSE 스트리밍 처리
+                await handleSSEStream(response);
+
+                // 완료
+                button.innerHTML = '[OK] 분석 완료';
+                button.disabled = false;
+                button.style.background = '';
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('[ERROR] 오류 발생: ' + error.message);
+                button.disabled = false;
+                button.innerHTML = '분석 시작하기';
+                button.style.background = '';
+
+                messagesDiv.innerHTML += `<div class="message error"><div class="content">[ERROR] ${error.message}</div></div>`;
+            }
+        }
+
+        // SSE 스트리밍 처리
+        async function handleSSEStream(response) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            const messagesDiv = document.getElementById('streamMessages');
+            messagesDiv.innerHTML = '<div class="message event"><div class="content">[OK] 연결됨! 분석이 시작됩니다...</div></div>';
+
+            let currentPersona = null;
+            let currentContent = '';
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n\n');
+
+                    // 마지막 불완전한 이벤트는 버퍼에 보관
+                    buffer = lines.pop();
+
+                    for (const eventText of lines) {
+                        if (!eventText.trim()) continue;
+
+                        const eventLines = eventText.split('\n');
+                        let eventType = 'message';
+                        let eventData = null;
+
+                        for (const line of eventLines) {
+                            if (line.startsWith('event: ')) {
+                                eventType = line.slice(7).trim();
+                            } else if (line.startsWith('data: ')) {
+                                try {
+                                    eventData = JSON.parse(line.slice(6));
+                                } catch (e) {
+                                    console.error('Parse error:', e, line);
+                                }
+                            }
+                        }
+
+                        if (eventData) {
+                            addStreamMessage(eventType, eventData);
+
+                            // 완료 이벤트 처리
+                            if (eventType === 'completed') {
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Stream error:', error);
+                const errorMsg = document.createElement('div');
+                errorMsg.className = 'message error';
+                errorMsg.innerHTML = `<div class="content">[ERROR] 스트림 오류: ${error.message}</div>`;
+                messagesDiv.appendChild(errorMsg);
+            }
+        }
+
+        // 현재 발언 중인 메시지 추적
+        let currentMessageEl = null;
+
+        function addStreamMessage(eventType, data) {
+            const container = document.getElementById('streamMessages');
+
+            if (eventType === 'personas_generated') {
+                // 페르소나 생성 완료
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message event';
+                const personas = data.personas || [];
+                const personaList = personas.map(p => `  - ${p.name} (${p.role})`).join('\n');
+                messageEl.innerHTML = `
+                    <div class="author">[PERSONAS] 페르소나 생성</div>
+                    <div class="content">총 ${data.count}명의 페르소나 생성\n${personaList}</div>
+                `;
+                container.appendChild(messageEl);
+                container.scrollTop = container.scrollHeight;
+
+            } else if (eventType === 'round_start') {
+                // 라운드 시작
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message event';
+                messageEl.innerHTML = `
+                    <div class="author">[ROUND] 라운드 ${data.round}</div>
+                    <div class="content">${data.issue}</div>
+                `;
+                container.appendChild(messageEl);
+                container.scrollTop = container.scrollHeight;
+
+            } else if (eventType === 'persona_speaking') {
+                // 발언 시작 - 새 메시지 엘리먼트 생성
+                currentMessageEl = document.createElement('div');
+                currentMessageEl.className = 'message';
+                currentMessageEl.innerHTML = `
+                    <div class="author">[SPEAKING] ${data.name}</div>
+                    <div class="content"></div>
+                `;
+                container.appendChild(currentMessageEl);
+                container.scrollTop = container.scrollHeight;
+
+            } else if (eventType === 'persona_token') {
+                // 토큰 스트리밍 - 실시간 업데이트
+                if (currentMessageEl) {
+                    const contentDiv = currentMessageEl.querySelector('.content');
+                    contentDiv.textContent = data.accumulated_text;
+                    container.scrollTop = container.scrollHeight;
+                }
+
+            } else if (eventType === 'persona_statement_complete') {
+                // 발언 완료 - 웹 검색 메타데이터 표시
+                if (currentMessageEl) {
+                    const ragMeta = data.rag_metadata;
+                    if (ragMeta && ragMeta.rag_used) {
+                        const metadataDiv = document.createElement('div');
+                        metadataDiv.className = 'metadata';
+                        const sources = ragMeta.sources || [];
+                        const sourceList = sources.slice(0, 3).map((s, i) => `${i+1}. ${s}`).join('\n');
+                        metadataDiv.innerHTML = `
+                            <strong>[SEARCH] 웹 검색 사용됨</strong>
+                            <div>검색 질문: ${ragMeta.rag_query}</div>
+                            <div>참고 소스 (${sources.length}개):\n${sourceList}</div>
+                        `;
+                        currentMessageEl.appendChild(metadataDiv);
+                        currentMessageEl.classList.add('search');
+                    }
+                }
+                currentMessageEl = null;
+
+            } else if (eventType === 'completed') {
+                // 분석 완료
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message event';
+                messageEl.innerHTML = `
+                    <div class="author">[OK] 분석 완료</div>
+                    <div class="content">Analysis ID: ${data.analysis_id}</div>
+                `;
+                container.appendChild(messageEl);
+                container.scrollTop = container.scrollHeight;
+
+            } else if (eventType === 'error') {
+                // 오류
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message error';
+                messageEl.innerHTML = `
+                    <div class="author">[ERROR] 오류 발생</div>
+                    <div class="content">${data.error}</div>
+                `;
+                container.appendChild(messageEl);
+                container.scrollTop = container.scrollHeight;
+
+            } else {
+                // 기타 이벤트
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message event';
+                messageEl.innerHTML = `
+                    <div class="author">[${eventType}]</div>
+                    <div class="content">${JSON.stringify(data, null, 2)}</div>
+                `;
+                container.appendChild(messageEl);
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        // 초기화
+        checkHealth();
+        setInterval(checkHealth, 30000); // 30초마다 상태 체크
+    </script>
+</body>
+</html>

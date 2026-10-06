@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>행정조사 중복 판별 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* 마크다운 스타일링 */
+        .markdown-body h1 { font-size: 2em; font-weight: bold; margin: 1em 0 0.5em; }
+        .markdown-body h2 { font-size: 1.5em; font-weight: bold; margin: 1em 0 0.5em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; }
+        .markdown-body h3 { font-size: 1.25em; font-weight: bold; margin: 0.8em 0 0.4em; }
+        .markdown-body h4 { font-size: 1.1em; font-weight: bold; margin: 0.6em 0 0.3em; }
+        .markdown-body p { margin: 0.8em 0; line-height: 1.6; }
+        .markdown-body ul, .markdown-body ol { margin: 0.8em 0; padding-left: 2em; }
+        .markdown-body li { margin: 0.3em 0; }
+        .markdown-body table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+        .markdown-body th { background-color: #f3f4f6; padding: 0.6em; border: 1px solid #d1d5db; font-weight: bold; }
+        .markdown-body td { padding: 0.6em; border: 1px solid #d1d5db; }
+        .markdown-body code { background: #f3f4f6; padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace; }
+        .markdown-body strong { font-weight: bold; color: #1f2937; }
+        .markdown-body hr { border: none; border-top: 2px solid #e5e7eb; margin: 2em 0; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- Header -->
+        <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-3">🔍 행정조사 중복 판별 시스템</h1>
+            <p class="text-gray-600 text-lg">AI 페르소나 토론을 통한 지능형 중복 판별 서비스</p>
+            <div class="mt-4 flex items-center gap-4">
+                <span id="apiStatus" class="px-4 py-2 rounded-full text-sm font-semibold bg-gray-200 text-gray-700">
+                    API 연결 확인 중...
+                </span>
+                <a href="/docs" target="_blank" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                    📚 API 문서 보기
+                </a>
+            </div>
+        </div>
+
+        <!-- Input Form -->
+        <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">📝 행정조사 정보 입력</h2>
+            
+            <div class="grid md:grid-cols-2 gap-8">
+                <!-- 행정조사 A -->
+                <div class="border-2 border-blue-200 rounded-lg p-6 bg-blue-50">
+                    <h3 class="text-xl font-bold text-blue-800 mb-4">📋 행정조사 A</h3>
+                    <textarea 
+                        id="investigationA" 
+                        rows="12"
+                        class="w-full px-4 py-3 border-2 border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                        placeholder="조사번호: 7-34-1
+부처: 국토부
+조사명: 도시개발사업 시행 관련 보고 및 검사
+법령근거: 도시개발법 제74조제1항
+법령내용:
+① 지정권자나 특별자치도지사ㆍ시장(대도시 시장은 제외한다)ㆍ군수 또는 구청장은 도시개발사업의 시행과 관련하여 필요하다고 인정하면 시행자에게 필요한 보고를 하게 하거나 자료를 제출하도록 명할 수 있으며, 소속 공무원에게 도시개발사업에 관한 업무와 회계에 관한 사항을 검사하게 할 수 있다."></textarea>
+                </div>
+
+                <!-- 행정조사 B -->
+                <div class="border-2 border-green-200 rounded-lg p-6 bg-green-50">
+                    <h3 class="text-xl font-bold text-green-800 mb-4">📋 행정조사 B</h3>
+                    <textarea 
+                        id="investigationB" 
+                        rows="12"
+                        class="w-full px-4 py-3 border-2 border-green-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
+                        placeholder="조사번호: 7-34-2
+부처: 국토부
+조사명: 민관 공동 도시개발사업 시행 관련 보고 및 검사
+법령근거: 도시개발법 제74조제2항
+법령내용:
+② 국토교통부장관은 도시개발사업의 관리ㆍ감독을 위하여 필요하다고 인정하면 민간참여자 선정, 시행 및 운영실태에 대하여 지정권자에게 필요한 보고를 하게 하거나 자료를 제출하도록 명할 수 있다."></textarea>
+                </div>
+            </div>
+
+            <!-- Options -->
+            <div class="mt-6 space-y-4">
+                <div class="flex items-center gap-6 flex-wrap">
+                    <label class="flex items-center gap-2 text-gray-700">
+                        <span class="font-medium">최소 라운드:</span>
+                        <input type="number" id="minRounds" value="3" min="2" max="5" class="w-16 px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </label>
+                    <label class="flex items-center gap-2 text-gray-700">
+                        <span class="font-medium">최대 라운드:</span>
+                        <input type="number" id="maxRounds" value="8" min="3" max="15" class="w-16 px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </label>
+                    <label class="flex items-center gap-2 text-gray-700">
+                        <span class="font-medium">페르소나 수:</span>
+                        <input type="number" id="personaCount" placeholder="자동" min="3" max="7" class="w-20 px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </label>
+                </div>
+                
+                <!-- 웹 검색 옵션 -->
+                <div class="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" id="enableWebSearch" class="mt-1 w-5 h-5 text-purple-600 focus:ring-2 focus:ring-purple-500">
+                        <div>
+                            <span class="font-medium text-purple-900">🔍 웹 검색 활성화 (RAG)</span>
+                            <p class="text-sm text-purple-700 mt-1">각 페르소나가 최신 법령, 판례, 규정 등을 실시간으로 검색하여 근거를 보강합니다. (Tavily API 필요)</p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Submit Button -->
+            <button 
+                id="analyzeBtn"
+                onclick="startAnalysis()"
+                class="mt-6 w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-lg font-bold text-lg hover:from-blue-700 hover:to-indigo-700 transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                🚀 중복 판별 분석 시작
+            </button>
+        </div>
+
+        <!-- Status -->
+        <div id="statusCard" class="hidden bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div class="flex items-center gap-4">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div>
+                    <p id="statusText" class="text-lg font-semibold text-gray-800">분석 중...</p>
+                    <p id="statusDetail" class="text-sm text-gray-600">페르소나 생성 및 토론을 진행하고 있습니다.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div id="resultsCard" class="hidden bg-white rounded-xl shadow-lg p-8">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">📊 분석 결과</h2>
+            
+            <!-- 최종 판정 -->
+            <div id="verdictSection" class="mb-8 p-6 rounded-lg border-4"></div>
+
+            <!-- 합의 상태 -->
+            <div id="consensusSection" class="mb-8"></div>
+
+            <!-- 페르소나 정보 -->
+            <div id="personasSection" class="mb-8"></div>
+
+            <!-- 토론 내용 -->
+            <div id="discussionSection" class="mb-8"></div>
+
+            <!-- 보고서 섹션 -->
+            <div id="reportSection" class="mb-8 hidden">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">📄 상세 보고서</h3>
+                <div class="bg-white border-2 border-gray-200 rounded-lg p-6 markdown-body max-h-96 overflow-y-auto">
+                    <div id="reportContent"></div>
+                </div>
+            </div>
+
+            <!-- 보고서 다운로드 -->
+            <div class="flex gap-4">
+                <button
+                    id="downloadBtn"
+                    onclick="downloadReport()"
+                    class="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 transition">
+                    📄 보고서 다운로드 (Markdown)
+                </button>
+                <button
+                    onclick="resetForm()"
+                    class="flex-1 bg-gray-600 text-white py-3 rounded-lg font-bold hover:bg-gray-700 transition">
+                    🔄 새로운 분석 시작
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API 기본 URL (상대 경로 사용 - 같은 서버에서 서빙되므로)
+        const API_BASE = window.location.origin;
+        let currentAnalysisId = null;
+
+        // API 상태 확인
+        async function checkHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                if (res.ok) {
+                    document.getElementById('apiStatus').textContent = '✅ API 연결됨';
+                    document.getElementById('apiStatus').className = 'px-4 py-2 rounded-full text-sm font-semibold bg-green-100 text-green-700';
+                }
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = '❌ API 연결 실패';
+                document.getElementById('apiStatus').className = 'px-4 py-2 rounded-full text-sm font-semibold bg-red-100 text-red-700';
+            }
+        }
+
+        // 분석 시작
+        async function startAnalysis() {
+            const invA = document.getElementById('investigationA').value.trim();
+            const invB = document.getElementById('investigationB').value.trim();
+
+            if (!invA || !invB) {
+                alert('⚠️ 두 개의 행정조사 정보를 모두 입력해주세요.');
+                return;
+            }
+
+            const minRounds = parseInt(document.getElementById('minRounds').value) || 3;
+            const maxRounds = parseInt(document.getElementById('maxRounds').value) || 8;
+            const personaCount = document.getElementById('personaCount').value ? parseInt(document.getElementById('personaCount').value) : null;
+            const enableWebSearch = document.getElementById('enableWebSearch').checked;
+
+            // UI 업데이트
+            document.getElementById('analyzeBtn').disabled = true;
+            document.getElementById('statusCard').classList.remove('hidden');
+            document.getElementById('resultsCard').classList.add('hidden');
+            updateStatus('분석 요청 중...', '서버에 요청을 전송하고 있습니다.');
+
+            try {
+                // 분석 요청
+                const response = await fetch(`${API_BASE}/api/v1/investigations`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        investigation_a: invA,
+                        investigation_b: invB,
+                        min_rounds: minRounds,
+                        max_rounds: maxRounds,
+                        persona_count: personaCount,
+                        enable_openness_adjustment: enableWebSearch  // RAG 웹 검색 활성화
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                currentAnalysisId = data.analysis_id;
+
+                updateStatus('분석 진행 중...', `분석 ID: ${currentAnalysisId}`);
+
+                // 폴링으로 결과 확인
+                pollAnalysisStatus();
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert(`❌ 오류 발생: ${error.message}`);
+                document.getElementById('analyzeBtn').disabled = false;
+                document.getElementById('statusCard').classList.add('hidden');
+            }
+        }
+
+        // 상태 폴링
+        async function pollAnalysisStatus() {
+            let attempts = 0;
+            const maxAttempts = 600; // 10분 (1초 * 600)
+
+            // 즉시 첫 체크 실행
+            const checkStatus = async () => {
+                attempts++;
+                updateStatus(`분석 진행 중... (${attempts}초 경과)`, '페르소나들이 토론하고 있습니다.');
+
+                try {
+                    const response = await fetch(`${API_BASE}/api/v1/investigations/${currentAnalysisId}`);
+                    const data = await response.json();
+
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        displayResults(data);
+                        return true; // 완료
+                    } else if (data.status === 'failed') {
+                        clearInterval(interval);
+                        alert('❌ 분석 실패: 서버 오류가 발생했습니다.');
+                        resetForm();
+                        return true; // 종료
+                    }
+
+                    if (attempts >= maxAttempts) {
+                        clearInterval(interval);
+                        alert('⏱️ 타임아웃: 분석이 너무 오래 걸리고 있습니다.');
+                        resetForm();
+                        return true; // 종료
+                    }
+                } catch (error) {
+                    console.error('Polling error:', error);
+                }
+                return false; // 계속 폴링
+            };
+
+            // 즉시 첫 번째 체크
+            await checkStatus();
+
+            // 이후 1초마다 체크
+            const interval = setInterval(checkStatus, 1000);
+        }
+
+        // 상태 업데이트
+        function updateStatus(text, detail) {
+            document.getElementById('statusText').textContent = text;
+            document.getElementById('statusDetail').textContent = detail;
+        }
+
+        // 결과 표시
+        function displayResults(data) {
+            document.getElementById('statusCard').classList.add('hidden');
+            document.getElementById('resultsCard').classList.remove('hidden');
+            document.getElementById('analyzeBtn').disabled = false;
+
+            // 최종 판정
+            const verdict = data.final_verdict;
+            const verdictClass = verdict === '중복' ? 'bg-red-100 border-red-500' : 
+                                verdict === '비중복' ? 'bg-green-100 border-green-500' : 
+                                'bg-yellow-100 border-yellow-500';
+            const verdictIcon = verdict === '중복' ? '⚠️' : verdict === '비중복' ? '✅' : '⚡';
+
+            document.getElementById('verdictSection').className = `mb-8 p-6 rounded-lg border-4 ${verdictClass}`;
+            document.getElementById('verdictSection').innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-2xl font-bold mb-2">${verdictIcon} 최종 판정: ${verdict}</h3>
+                        <p class="text-gray-700">${data.final_verdict_details || '토론을 통해 결정되었습니다.'}</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-3xl font-bold">${((data.consensus_status?.consensus_level || 0) * 100).toFixed(0)}%</div>
+                        <div class="text-sm text-gray-600">합의도</div>
+                    </div>
+                </div>
+            `;
+
+            // 합의 상태
+            if (data.consensus_status) {
+                const consensus = data.consensus_status;
+                document.getElementById('consensusSection').innerHTML = `
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">💬 토론 합의 상태</h3>
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div class="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                            <h4 class="font-bold text-green-800 mb-2">✅ 합의된 사항 (${consensus.agreed_points?.length || 0}개)</h4>
+                            <ul class="space-y-1">
+                                ${(consensus.agreed_points || []).map(p => `<li class="text-sm text-gray-700">• ${p}</li>`).join('')}
+                            </ul>
+                        </div>
+                        <div class="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+                            <h4 class="font-bold text-red-800 mb-2">⚠️ 불일치 사항 (${consensus.disagreed_points?.length || 0}개)</h4>
+                            <ul class="space-y-1">
+                                ${(consensus.disagreed_points || []).map(p => `<li class="text-sm text-gray-700">• ${p}</li>`).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 페르소나 정보
+            if (data.personas && data.personas.length > 0) {
+                document.getElementById('personasSection').innerHTML = `
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">👥 참여 페르소나 (${data.personas.length}명)</h3>
+                    <div class="grid md:grid-cols-3 gap-4">
+                        ${data.personas.map(p => `
+                            <div class="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                                <h4 class="font-bold text-blue-800 mb-1">${p.name}</h4>
+                                <p class="text-sm text-gray-600 mb-2">${p.role}</p>
+                                <p class="text-xs text-gray-500">전문분야: ${p.expertise}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            // 토론 내용
+            if (data.rounds && data.rounds.length > 0) {
+                document.getElementById('discussionSection').innerHTML = `
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">🗣️ 토론 진행 (총 ${data.total_rounds}라운드)</h3>
+                    <div class="space-y-4 max-h-96 overflow-y-auto">
+                        ${data.rounds.slice(0, 5).map(r => `
+                            <div class="bg-gray-50 border-2 border-gray-200 rounded-lg p-4">
+                                <h4 class="font-bold text-gray-800 mb-2">라운드 ${r.round_number} - ${r.phase}</h4>
+                                <p class="text-sm text-gray-600 mb-2">${r.moderator_guide?.substring(0, 150)}...</p>
+                                <div class="text-xs text-gray-500">
+                                    발언자 수: ${Object.keys(r.persona_statements || {}).length}명
+                                </div>
+                            </div>
+                        `).join('')}
+                        ${data.rounds.length > 5 ? `<p class="text-sm text-gray-500 text-center">... 외 ${data.rounds.length - 5}개 라운드</p>` : ''}
+                    </div>
+                `;
+            }
+
+            // 보고서 표시
+            if (data.report) {
+                document.getElementById('reportSection').classList.remove('hidden');
+                const reportHtml = marked.parse(data.report);
+                document.getElementById('reportContent').innerHTML = reportHtml;
+            }
+        }
+
+        // 보고서 다운로드
+        async function downloadReport() {
+            if (!currentAnalysisId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/investigations/${currentAnalysisId}/report?format=markdown`);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `report_${currentAnalysisId}.md`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                alert('❌ 보고서 다운로드 실패: ' + error.message);
+            }
+        }
+
+        // 폼 리셋
+        function resetForm() {
+            document.getElementById('analyzeBtn').disabled = false;
+            document.getElementById('statusCard').classList.add('hidden');
+            document.getElementById('resultsCard').classList.add('hidden');
+            currentAnalysisId = null;
+        }
+
+        // 초기화
+        checkHealth();
+        setInterval(checkHealth, 30000);
+    </script>
+</body>
+</html>
+
