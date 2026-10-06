@@ -58,6 +58,9 @@ class DiscussionConfig:
     
     # 소주제 설정
     max_subtopics: int = 5  # 최대 소주제 개수
+
+    # 사람 개입
+    human_followup_responses: int = 1  # 사람 발언 직후 그 발언에 응답하는 AI 발언 수 (발언 예산을 넘어도 수행)
     
     # 페르소나 진화 가중치
     evidence_score_max: float = 0.6      # 증거 점수 최대값

@@ -12,6 +12,7 @@ from api.models.discussion import DiscussionStatus
 from api.models.message import SpeakerType
 from api.runtime import persistence
 from api.runtime.broker import EventBroker
+from api.runtime.intervention import HumanDesk
 from api.runtime.reports import run_report_job
 from api.runtime.usage import UsageCounter
 from config.config_loader import config_loader
@@ -36,6 +37,11 @@ class DiscussionRuntime:
         self.task: Optional[asyncio.Task] = None
         self.stop_request: Optional[Dict[str, Optional[str]]] = None
         self._participant_ids: Dict[str, str] = {}
+        self.desk = HumanDesk(self)  # 사람 발언 대기열·발언권
+
+    @property
+    def persona_names(self):
+        return self._participant_ids.keys()
 
     # ---------- 외부 조회 ----------
 
@@ -45,6 +51,7 @@ class DiscussionRuntime:
             "status": self.status,
             "last_seq": self.last_seq,
             "current_utterance": dict(self.current_utterance) if self.current_utterance else None,
+            "hands": self.desk.state(),
         }
 
     # ---------- 실행 ----------
@@ -68,15 +75,15 @@ class DiscussionRuntime:
                 max_statements=config["max_statements"],
             )
 
-            await self._set_status(DiscussionStatus.RUNNING, started_at=persistence.utcnow(), error=None)
+            await self.set_status(DiscussionStatus.RUNNING, started_at=persistence.utcnow(), error=None)
             topic = data["topic"] if not data["description"] else f"{data['topic']}\n\n{data['description']}"
-            async for event in engine.stream(topic, language=data["language"]):
+            async for event in engine.stream(topic, language=data["language"], gate=self.desk):
                 await self._handle(event)
 
             if self._report_eligible():
-                await self._set_status(DiscussionStatus.REPORTING)
+                await self.set_status(DiscussionStatus.REPORTING)
                 await run_report_job(self.discussion_id, self.broker)
-            await self._set_status(DiscussionStatus.COMPLETED, completed_at=persistence.utcnow())
+            await self.set_status(DiscussionStatus.COMPLETED, completed_at=persistence.utcnow())
 
         except asyncio.CancelledError:
             await self._on_cancelled()
@@ -84,16 +91,17 @@ class DiscussionRuntime:
         except Exception as e:
             logger.exception("Discussion %s failed", self.discussion_id)
             self._abort_utterance()
-            await self._set_status(DiscussionStatus.FAILED, error=f"{type(e).__name__}: {e}")
+            await self.set_status(DiscussionStatus.FAILED, error=f"{type(e).__name__}: {e}")
         finally:
             totals = usage.totals()
             await asyncio.shield(asyncio.to_thread(persistence.add_usage, self.discussion_id, **totals))
 
     async def _on_cancelled(self) -> None:
         self._abort_utterance()
+        self.desk.abort()
         was_reporting = self.status == DiscussionStatus.REPORTING
         req = self.stop_request or {}
-        await asyncio.shield(self._set_status(
+        await asyncio.shield(self.set_status(
             DiscussionStatus.STOPPED, stopped_at=persistence.utcnow(),
             stopped_by=req.get("by"), stop_reason=req.get("reason"),
         ))
@@ -111,7 +119,7 @@ class DiscussionRuntime:
                                 {"speaker": self.current_utterance["speaker"]})
             self.current_utterance = None
 
-    async def _set_status(self, status: str, **fields: Any) -> None:
+    async def set_status(self, status: str, **fields: Any) -> None:
         self.status = status
         await asyncio.to_thread(persistence.update_discussion, self.discussion_id, status=status, **fields)
         payload = {"status": status}
@@ -138,18 +146,27 @@ class DiscussionRuntime:
             self.broker.publish(self.discussion_id, "chunk", {"speaker": event.speaker, "delta": event.content})
 
         elif event.kind == "utterance":
-            seq = self.last_seq + 1
             speaker_type = SpeakerType.MODERATOR if event.speaker_type == "moderator" else SpeakerType.AI
-            message = await asyncio.to_thread(
-                persistence.save_message, self.discussion_id, seq, speaker_type, event.speaker,
-                event.content, event.action, event.meta,
+            await self.save_and_publish(
+                speaker_type, event.speaker, event.content, event.action, event.meta,
                 participant_id=self._participant_ids.get(event.speaker) if speaker_type == SpeakerType.AI else None,
             )
-            self.last_seq = seq
             self.current_utterance = None
             if speaker_type == SpeakerType.AI:
                 self.ai_messages += 1
             if event.action == "transition" and event.meta.get("subtopic"):
                 await asyncio.to_thread(persistence.update_discussion, self.discussion_id,
                                         current_subtopic=event.meta["subtopic"][:200])
-            self.broker.publish(self.discussion_id, "message", message, id=seq)
+
+    async def save_and_publish(self, speaker_type: str, speaker: str, content: str, action: Optional[str] = None,
+                               meta: Optional[Dict[str, Any]] = None, participant_id: Optional[str] = None,
+                               user_id: Optional[str] = None) -> Dict[str, Any]:
+        """완성된 발언에 다음 seq를 붙여 저장한 뒤 발행 (persist-then-publish)"""
+        seq = self.last_seq + 1
+        message = await asyncio.to_thread(
+            persistence.save_message, self.discussion_id, seq, speaker_type, speaker, content, action, meta,
+            participant_id=participant_id, user_id=user_id,
+        )
+        self.last_seq = seq
+        self.broker.publish(self.discussion_id, "message", message, id=seq)
+        return message

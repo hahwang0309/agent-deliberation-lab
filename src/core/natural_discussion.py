@@ -7,7 +7,7 @@ import logging
 import random
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Protocol
 
 from config.config_loader import config_loader
 from config.discussion_config import get_config
@@ -29,6 +29,7 @@ class ActionType(Enum):
     CHALLENGE = "challenge"    # 도전/반박
     EXAMPLE = "example"        # 구체적 예시
     SYNTHESIZE = "synthesize"  # 종합
+    RESPOND_TO_HUMAN = "respond_to_human"  # 사람 참가자 발언에 응답
 
 
 @dataclass
@@ -49,6 +50,21 @@ class EngineEvent:
     meta: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class HumanInput:
+    """사람 참가자 발언 (저장·발행은 게이트 구현이 이미 마친 상태)"""
+    name: str
+    content: str
+    seq: Optional[int] = None
+    user_id: Optional[str] = None
+
+
+class InterventionGate(Protocol):
+    """발화가 끝날 때마다 호출되는 사람 개입 지점. 대기 중인 발언을 받아 반환한다 (없으면 빈 목록)."""
+
+    async def after_utterance(self) -> List[HumanInput]: ...
+
+
 class NaturalDiscussion:
     """자연스러운 토론 시스템"""
 
@@ -64,10 +80,15 @@ class NaturalDiscussion:
         self.agent_turn_count = {agent.persona.name: 0 for agent in agents}
         self.last_speakers: List[str] = []
 
+        # 사람 개입: 응답해야 할 사람 발언과 남은 후속 응답 수
+        self.pending_human: Optional[HumanInput] = None
+        self.pending_followups = 0
+
         self.config = get_config()
 
-    async def stream(self, topic: str, language: Optional[str] = None) -> AsyncIterator[EngineEvent]:
-        """토론 실행 - 진행 상황을 EngineEvent로 yield"""
+    async def stream(self, topic: str, language: Optional[str] = None,
+                     gate: Optional[InterventionGate] = None) -> AsyncIterator[EngineEvent]:
+        """토론 실행 - 진행 상황을 EngineEvent로 yield. gate가 있으면 발화가 끝날 때마다 사람 개입을 받는다."""
         if not language:
             language = LanguageDetector.detect_language(topic)
         for agent in self.agents:
@@ -79,7 +100,8 @@ class NaturalDiscussion:
             if subtopics:
                 yield EngineEvent(kind="subtopics", meta={"subtopics": subtopics})
 
-        while self.turn_count < self.max_statements:
+        # 발언 예산이 끝나도 사람 발언에 대한 후속 응답은 수행한다
+        while self.turn_count < self.max_statements or self.pending_followups > 0:
             speaker, action = self._select_next_speaker()
             if not speaker:
                 break
@@ -97,6 +119,7 @@ class NaturalDiscussion:
             rag = speaker.last_rag_result
             meta = {
                 "turn": self.turn_count,
+                "in_reply_to_seq": self.pending_human.seq if action == ActionType.RESPOND_TO_HUMAN and self.pending_human else None,
                 "rag_used": rag is not None,
                 "rag_query": rag.query if rag else None,
                 "sources": rag.sources if rag else None,
@@ -109,20 +132,38 @@ class NaturalDiscussion:
 
             self._update_state(speaker)
             self._process_evolution(speaker, response, topic)
+            if action == ActionType.RESPOND_TO_HUMAN:
+                self.pending_followups -= 1
+            await self._human_checkpoint(gate)
 
-            if self.moderator and self._should_moderator_intervene():
+            if self.moderator and self.pending_followups == 0 and self._should_moderator_intervene():
                 event = await self._moderator_intervention(topic)
                 if event:
                     yield event
+                    await self._human_checkpoint(gate)
 
             self.turn_count += 1
 
         logger.info("Discussion completed: turns=%d messages=%d", self.turn_count, len(self.messages))
 
+    async def _human_checkpoint(self, gate: Optional[InterventionGate]) -> None:
+        """사람 개입 지점: 받은 발언을 대화에 넣고 다음 AI 발언이 응답하도록 예약"""
+        if gate is None:
+            return
+        for human in await gate.after_utterance():
+            self.messages.append(Message(role="user", content=human.content, agent_name=human.name,
+                                         metadata={"speaker_type": "human", "seq": human.seq}))
+            self.pending_human = human
+            self.pending_followups = self.config.human_followup_responses
+
     def _select_next_speaker(self) -> tuple[Optional[DiscussionAgent], Optional[ActionType]]:
         """다음 발언자와 액션 선택 - 진행도에 따른 자연스러운 흐름"""
         eligible = [a for a in self.agents
                     if self.agent_turn_count[a.persona.name] < self.config.max_turns_per_agent]
+        if self.pending_followups > 0:
+            candidates = [a for a in (eligible or self.agents) if a.persona.name not in self.last_speakers[-1:]]
+            pool = candidates or eligible or self.agents
+            return min(pool, key=lambda a: self.agent_turn_count[a.persona.name]), ActionType.RESPOND_TO_HUMAN
         if not eligible:
             return None, None
 
@@ -165,6 +206,10 @@ class NaturalDiscussion:
         target = self._find_challengeable_point() if action == ActionType.CHALLENGE else (
             self.messages[-1] if self.messages else None)
         excerpt_len = 150 if action == ActionType.RESPOND else 100
+
+        if action == ActionType.RESPOND_TO_HUMAN and self.pending_human:
+            return prompts.render("turn_actions.respond_to_human", topic=topic,
+                                  human_name=self.pending_human.name, remark=self.pending_human.content)
 
         return prompts.render(
             f"turn_actions.{action.value}",

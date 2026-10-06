@@ -22,6 +22,8 @@ issue_extraction:
     - claim: one sentence summarizing what that participant said about the issue.
     - evidence_seqs: the [seq] numbers of the messages that support this position (must be numbers that appear in the transcript).
     - Moderator messages are not positions.
+    - Human participants (type: human) are full participants. If a human expressed a view, record their stance
+      on the matching issue exactly like an AI participant's; a question that clearly implies a view also counts.
     {language_instruction}
   user: |
     Discussion topic: {topic}

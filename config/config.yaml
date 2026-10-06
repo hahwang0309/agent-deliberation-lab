@@ -67,6 +67,8 @@ limits:
   user_max_concurrent: 1    # 일반 사용자 동시 실행 토론 수 (관리자 무제한, 사용자별 override 가능)
   user_daily_starts: 5      # 일반 사용자 하루(UTC) 토론 시작 수
   user_expensive_features: false  # 일반 사용자에게 웹검색·신념추론 허용 여부 (LLM 호출 급증)
+  max_human_turns_per_user: 5   # 토론 1건에서 한 사람이 발언할 수 있는 횟수
+  max_human_chars: 1000         # 사람 발언 최대 글자 수
 
 # 종합보고서 (src/services/consensus_report.py)
 report:
