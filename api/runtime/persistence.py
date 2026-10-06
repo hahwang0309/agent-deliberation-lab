@@ -67,6 +67,8 @@ def load_discussion(discussion_id: str) -> Dict[str, Any]:
             "status": d.status,
             "config": dict(d.config or {}),
             "last_seq": d.last_seq or 0,
+            "subtopics": d.subtopics or [],
+            "current_subtopic": d.current_subtopic,
             "participants": [
                 {"id": p.id, "name": p.name, "provider": p.llm_provider, "model": p.model,
                  "persona": p.persona_data or {}}

@@ -85,6 +85,36 @@ class NaturalDiscussion:
         self.pending_followups = 0
 
         self.config = get_config()
+        self.restored = False
+
+    def restore(self, prior_messages: List[Message], subtopics: Optional[List[str]] = None,
+                current_subtopic: Optional[str] = None) -> None:
+        """중단된 토론을 저장된 발언으로 복원 (페르소나 진화 상태는 복원하지 않음)
+
+        prior_messages: role assistant(AI) / moderator / user(사람, metadata speaker_type=human)
+        """
+        self.messages = list(prior_messages)
+        for msg in self.messages:
+            if msg.role in AI_ROLES:
+                self.turn_count += 1
+                if msg.agent_name in self.agent_turn_count:
+                    self.agent_turn_count[msg.agent_name] += 1
+                self.last_speakers = (self.last_speakers + [msg.agent_name])[-3:]
+
+        # 마지막 발언이 응답받지 못한 사람 발언이면 이어서 응답하도록 예약
+        spoken = [m for m in self.messages if m.role != "moderator"]
+        if spoken and spoken[-1].metadata.get("speaker_type") == "human":
+            last = spoken[-1]
+            self.pending_human = HumanInput(last.agent_name, last.content, last.metadata.get("seq"))
+            self.pending_followups = self.config.human_followup_responses
+
+        if self.moderator and subtopics:
+            self.moderator.subtopics = list(subtopics)
+            # DB의 current_subtopic은 200자로 잘려 저장되므로 앞부분으로 비교
+            prefix = (current_subtopic or "")[:200]
+            self.moderator.current_subtopic_idx = next(
+                (i for i, s in enumerate(subtopics) if s[:200] == prefix), 0)
+        self.restored = True
 
     async def stream(self, topic: str, language: Optional[str] = None,
                      gate: Optional[InterventionGate] = None) -> AsyncIterator[EngineEvent]:
@@ -96,9 +126,10 @@ class NaturalDiscussion:
 
         if self.moderator:
             self.moderator.language = language
-            subtopics = await self.moderator.generate_subtopics(topic)
-            if subtopics:
-                yield EngineEvent(kind="subtopics", meta={"subtopics": subtopics})
+            if not self.restored:  # 재개 시에는 기존 소주제 유지
+                subtopics = await self.moderator.generate_subtopics(topic)
+                if subtopics:
+                    yield EngineEvent(kind="subtopics", meta={"subtopics": subtopics})
 
         # 발언 예산이 끝나도 사람 발언에 대한 후속 응답은 수행한다
         while self.turn_count < self.max_statements or self.pending_followups > 0:

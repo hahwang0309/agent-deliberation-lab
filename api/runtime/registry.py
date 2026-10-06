@@ -39,13 +39,13 @@ class DiscussionRegistry:
     def report_ids(self) -> list:
         return list(self._report_tasks)
 
-    def start(self, discussion_id: str) -> DiscussionRuntime:
+    def start(self, discussion_id: str, resume: bool = False) -> DiscussionRuntime:
         if discussion_id in self._runtimes:
             raise AlreadyRunningError(discussion_id)
         if len(self._runtimes) >= self.max_running:
             raise CapacityError(self.max_running)
 
-        runtime = DiscussionRuntime(discussion_id, self.broker, schedule_report=self.start_report)
+        runtime = DiscussionRuntime(discussion_id, self.broker, schedule_report=self.start_report, resume=resume)
         runtime.task = asyncio.create_task(runtime.run(), name=f"discussion:{discussion_id}")
         runtime.task.add_done_callback(lambda _t: self._runtimes.pop(discussion_id, None))
         self._runtimes[discussion_id] = runtime

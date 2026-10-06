@@ -5,26 +5,24 @@ RAG 빠른 테스트
 import asyncio
 import os
 from dotenv import load_dotenv
-from rich.console import Console
 
-console = Console()
 
 async def quick_test():
     load_dotenv()
     
     # 1. Import 테스트
-    console.print("[yellow]Testing imports...[/yellow]")
+    print("Testing imports...")
     from src.models import Persona
     from src.services.rag_service import RAGService, QueryType
-    console.print("[green]✅ Imports OK[/green]")
+    print("✅ Imports OK")
     
     # 2. RAG 초기화 테스트
-    console.print("\n[yellow]Testing RAG initialization...[/yellow]")
+    print("\nTesting RAG initialization...")
     rag = RAGService()
-    console.print("[green]✅ RAG initialized[/green]")
+    print("✅ RAG initialized")
     
     # 3. Query Generation 테스트
-    console.print("\n[yellow]Testing query generation...[/yellow]")
+    print("\nTesting query generation...")
     
     persona = Persona(
         name="TestAgent",
@@ -42,12 +40,12 @@ async def quick_test():
         None
     )
     
-    console.print(f"Generated query: {result.query}")
-    console.print(f"Query type: {result.query_type.value}")
-    console.print("[green]✅ Query generation works[/green]")
+    print(f"Generated query: {result.query}")
+    print(f"Query type: {result.query_type.value}")
+    print("✅ Query generation works")
     
     # 4. Query Router 테스트
-    console.print("\n[yellow]Testing query router...[/yellow]")
+    print("\nTesting query router...")
     
     factual_q = "What are the latest statistics on AI adoption in 2024?"
     opinion_q = "Should we trust AI systems?"
@@ -55,32 +53,32 @@ async def quick_test():
     fact_type = await rag.query_router.classify_query(factual_q, "AI")
     opinion_type = await rag.query_router.classify_query(opinion_q, "AI")
     
-    console.print(f"Factual query classified as: {fact_type.value}")
-    console.print(f"Opinion query classified as: {opinion_type.value}")
+    print(f"Factual query classified as: {fact_type.value}")
+    print(f"Opinion query classified as: {opinion_type.value}")
     
     if fact_type == QueryType.FACTUAL and opinion_type == QueryType.OPINION:
-        console.print("[green]✅ Query routing works correctly[/green]")
+        print("✅ Query routing works correctly")
     else:
-        console.print("[yellow]⚠️ Query routing may need adjustment[/yellow]")
+        print("⚠️ Query routing may need adjustment")
     
     # 5. Web Search 테스트
     if os.getenv("TAVILY_API_KEY"):
-        console.print("\n[yellow]Testing web search...[/yellow]")
+        print("\nTesting web search...")
         from src.services.web_search import WebSearchService
         
         search = WebSearchService()
         results = await search.search("OpenAI GPT-4 2024", max_results=1)
         
         if results:
-            console.print(f"Found {len(results)} search results")
-            console.print(f"First result: {results[0].title[:50]}...")
-            console.print("[green]✅ Web search works[/green]")
+            print(f"Found {len(results)} search results")
+            print(f"First result: {results[0].title[:50]}...")
+            print("✅ Web search works")
         else:
-            console.print("[yellow]⚠️ No search results[/yellow]")
+            print("⚠️ No search results")
     else:
-        console.print("\n[yellow]⚠️ Skipping web search (no API key)[/yellow]")
+        print("\n⚠️ Skipping web search (no API key)")
     
-    console.print("\n[bold green]✅ All basic RAG functions working![/bold green]")
+    print("\n[bold green]✅ All basic RAG functions working![/bold green]")
 
 if __name__ == "__main__":
     asyncio.run(quick_test())

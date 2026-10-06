@@ -94,27 +94,39 @@ class DiscussionService:
 
     @staticmethod
     def start(db: Session, discussion_id: str, user: User) -> None:
+        DiscussionService._launch(db, discussion_id, user, resume=False)
+
+    @staticmethod
+    def resume(db: Session, discussion_id: str, user: User) -> None:
+        """서버 재시작으로 중단된(interrupted) 토론을 저장된 발언에서 이어서 진행 (일일 시작 수에는 미포함)"""
+        DiscussionService._launch(db, discussion_id, user, resume=True)
+
+    @staticmethod
+    def _launch(db: Session, discussion_id: str, user: User, resume: bool) -> None:
         discussion = DiscussionService.get(db, discussion_id)
         ensure_owner_or_admin(discussion.created_by, user)
-        if discussion.status != DiscussionStatus.DRAFT:
+        required = DiscussionStatus.INTERRUPTED if resume else DiscussionStatus.DRAFT
+        if discussion.status != required:
+            action = "이어서 진행" if resume else "시작"
             raise _error(status.HTTP_409_CONFLICT, "INVALID_STATUS",
-                         f"draft 상태의 토론만 시작할 수 있습니다. (현재: {discussion.status})")
+                         f"{required} 상태의 토론만 {action}할 수 있습니다. (현재: {discussion.status})")
         for p in discussion.participants:
             if not LLMFactory.get_available_providers().get(LLMProvider(p.llm_provider)):
                 raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "LLM_UNAVAILABLE",
                              f"{p.llm_provider} API 키가 설정되지 않았습니다.")
         if not user.is_admin:
-            DiscussionService._check_user_limits(db, discussion.created_by, user)
+            DiscussionService._check_user_limits(db, discussion.created_by, user, check_daily=not resume)
         if registry.running_count() >= registry.max_running:
             raise _error(status.HTTP_429_TOO_MANY_REQUESTS, "CAPACITY_EXCEEDED",
                          f"동시에 실행할 수 있는 토론 수({registry.max_running})를 초과했습니다.")
 
         # 제한 계산이 즉시 반영되도록 상태·시작 시각을 먼저 기록 (런타임이 다시 갱신)
         discussion.status = DiscussionStatus.RUNNING
-        discussion.started_at = datetime.now(timezone.utc)
+        if not resume:
+            discussion.started_at = datetime.now(timezone.utc)
         db.commit()
         try:
-            registry.start(discussion_id)
+            registry.start(discussion_id, resume=resume)
         except AlreadyRunningError:
             raise _error(status.HTTP_409_CONFLICT, "ALREADY_RUNNING", "이미 실행 중인 토론입니다.")
         except CapacityError as e:
@@ -122,7 +134,7 @@ class DiscussionService:
                          f"동시에 실행할 수 있는 토론 수({e.args[0]})를 초과했습니다.")
 
     @staticmethod
-    def _check_user_limits(db: Session, owner_id: str, user: User) -> None:
+    def _check_user_limits(db: Session, owner_id: str, user: User, check_daily: bool = True) -> None:
         limits = config_loader.config.limits
         max_concurrent = user.max_concurrent if user.max_concurrent is not None else limits.user_max_concurrent
         daily_limit = user.daily_limit if user.daily_limit is not None else limits.user_daily_starts
@@ -134,6 +146,8 @@ class DiscussionService:
             raise _error(status.HTTP_403_FORBIDDEN, "CONCURRENT_LIMIT_EXCEEDED",
                          f"동시에 실행할 수 있는 토론은 {max_concurrent}개입니다.")
 
+        if not check_daily:
+            return
         today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         started_today = (db.query(Discussion)
                          .filter(Discussion.created_by == owner_id, Discussion.started_at >= today)

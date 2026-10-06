@@ -18,7 +18,7 @@ from api.runtime.usage import UsageCounter
 from config.config_loader import config_loader
 from src.core.natural_discussion import EngineEvent
 from src.discussion import ParticipantSpec, create_discussion
-from src.models.personas import LLMProvider, Persona
+from src.models.personas import LLMProvider, Message, Persona
 from src.utils.llm_provider import LLMBundle
 
 logger = logging.getLogger(__name__)
@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 
 class DiscussionRuntime:
     def __init__(self, discussion_id: str, broker: EventBroker,
-                 schedule_report: Optional[Callable[[str], Any]] = None):
+                 schedule_report: Optional[Callable[[str], Any]] = None, resume: bool = False):
         self.discussion_id = discussion_id
+        self.resume = resume  # interrupted 토론을 저장된 발언에서 이어서 진행
         self.broker = broker
         self.schedule_report = schedule_report  # 중지 후 보고서 생성을 별도 태스크로 예약
         self.ai_messages = 0
@@ -75,7 +76,11 @@ class DiscussionRuntime:
                 max_statements=config["max_statements"],
             )
 
-            await self.set_status(DiscussionStatus.RUNNING, started_at=persistence.utcnow(), error=None)
+            if self.resume:
+                await self._restore(engine, data)
+                await self.set_status(DiscussionStatus.RUNNING, error=None)
+            else:
+                await self.set_status(DiscussionStatus.RUNNING, started_at=persistence.utcnow(), error=None)
             topic = data["topic"] if not data["description"] else f"{data['topic']}\n\n{data['description']}"
             async for event in engine.stream(topic, language=data["language"], gate=self.desk):
                 await self._handle(event)
@@ -95,6 +100,21 @@ class DiscussionRuntime:
         finally:
             totals = usage.totals()
             await asyncio.shield(asyncio.to_thread(persistence.add_usage, self.discussion_id, **totals))
+
+    async def _restore(self, engine, data: Dict[str, Any]) -> None:
+        rows = await asyncio.to_thread(persistence.list_messages_after, self.discussion_id, 0, 100000)
+        role = {SpeakerType.AI: "assistant", SpeakerType.MODERATOR: "moderator", SpeakerType.HUMAN: "user"}
+        engine.restore(
+            [Message(role=role.get(r["speaker_type"], "system"), content=r["content"], agent_name=r["speaker"],
+                     metadata={**r["meta"], "speaker_type": r["speaker_type"], "seq": r["seq"]})
+             for r in rows if r["speaker_type"] in role],
+            subtopics=data["subtopics"], current_subtopic=data["current_subtopic"],
+        )
+        self.ai_messages = sum(r["speaker_type"] == SpeakerType.AI for r in rows)
+        for r in rows:
+            if r["speaker_type"] == SpeakerType.HUMAN and r["user_id"]:
+                self.desk.turns[r["user_id"]] = self.desk.turns.get(r["user_id"], 0) + 1
+                self.desk.display_names.setdefault(r["user_id"], r["speaker"])
 
     async def _on_cancelled(self) -> None:
         self._abort_utterance()

@@ -24,8 +24,6 @@ pydantic-settings>=2.10.0
 pyyaml>=6.0.2
 email-validator>=2.3.0
 
-# CLI 출력
-rich>=14.0.0
 
 # Async HTTP (웹 검색)
 aiohttp>=3.13.0

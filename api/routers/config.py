@@ -15,8 +15,8 @@ router = APIRouter(prefix="/api/v1/config", tags=["Config"], dependencies=[Depen
 @router.get(
     "",
     response_model=SystemConfigResponse,
-    summary="시스템 설정 조회 (게스트 지원)",
-    description="시스템 설정, 기능, 제한 사항, API 요청 제한을 조회합니다. 로그인 선택사항.",
+    summary="시스템 설정 조회",
+    description="시스템 설정, 기능, 제한 사항, API 요청 제한을 조회합니다.",
     responses={
         200: {
             "description": "성공",
@@ -46,8 +46,8 @@ async def get_system_config() -> SystemConfigResponse:
 @router.get(
     "/llm-providers",
     response_model=LLMProvidersResponse,
-    summary="LLM 프로바이더 상태 (게스트 지원)",
-    description="사용 가능한 LLM 프로바이더 및 모델 목록을 조회합니다. 로그인 선택사항.",
+    summary="LLM 프로바이더 상태",
+    description="사용 가능한 LLM 프로바이더 및 모델 목록을 조회합니다.",
     responses={
         200: {
             "description": "성공",

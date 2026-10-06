@@ -57,6 +57,14 @@ async def start_discussion(discussion_id: str, db: Session = Depends(get_db),
     return {"id": discussion_id, "status": "running"}
 
 
+@router.post("/{discussion_id}/resume", status_code=status.HTTP_202_ACCEPTED,
+             summary="중단된 토론 이어서 진행 (서버 재시작으로 interrupted된 토론)")
+async def resume_discussion(discussion_id: str, db: Session = Depends(get_db),
+                            user: User = Depends(require_active_user)):
+    DiscussionService.resume(db, discussion_id, user)
+    return {"id": discussion_id, "status": "running"}
+
+
 @router.post("/{discussion_id}/stop", summary="토론 중지")
 async def stop_discussion(discussion_id: str, request: Optional[StopDiscussionRequest] = None,
                           db: Session = Depends(get_db), user: User = Depends(require_active_user)):

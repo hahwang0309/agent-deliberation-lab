@@ -42,7 +42,7 @@ alembic check                               # 모델과 마이그레이션 일�
 - **인증·권한**: httpOnly 쿠키 JWT(`api/utils/auth_cookies.py`, PyJWT) + double-submit CSRF(`api/utils/csrf.py`, 쿠키 인증 쓰기 요청에 `X-CSRF-Token` 필수). `api/dependencies.py`: `get_current_user`(서명·만료 + status=active + `token_version` 일치 → 정지·비밀번호 변경 시 즉시 무효), `require_active_user`(임시 비밀번호면 403), `require_admin`, `ensure_owner_or_admin`(시작·중지·삭제·보고서 재생성). 조회·SSE는 모든 활성 사용자(공동 참여). 계정은 가입 신청 → 관리자 승인 또는 관리자 발급. 최초 관리자는 시작 시 `ADMIN_EMAIL`/`ADMIN_INITIAL_PASSWORD`로 생성. 실행 제한은 `DiscussionService._check_user_limits`(관리자 제외). 웹 페이지(`web/`)는 공개, 데이터 API는 인증 필요. 테스트는 `tests/conftest.py`의 `create_user`/`LoggedInClient`를 쓴다.
 - **설정/프롬프트**: 프롬프트는 코드에 쓰지 않고 `config/prompts.yaml`(엔진·모더레이터·페르소나 생성), `config/rag_prompts.yaml`에 둔다. 조회는 `config_loader.prompts.render("turn_actions.present", ...)` 형태. 페르소나 템플릿은 `config/persona_templates.yaml`.
 
-재설계 진행 계획(Phase 0~5)과 미완료 항목은 git 로그와 `docs/`를 확인한다. README의 `python main.py` 사용법은 오래된 내용이다.
+상세 문서는 `docs/`(architecture, api-reference, configuration, deployment, development, testing, troubleshooting, changelog)에 있다. 중단된(`interrupted`) 토론은 `POST /discussions/{id}/resume`으로 재개하며, 엔진의 `NaturalDiscussion.restore()`가 저장된 발언으로 턴 수·소주제를 복원한다.
 
 ## Project Rules
 
