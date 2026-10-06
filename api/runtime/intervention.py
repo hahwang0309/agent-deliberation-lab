@@ -142,11 +142,13 @@ class HumanDesk:
         paused = False
         try:
             while self.queue:
-                hand = self.queue.popleft()
-                floor = self.floor = Floor(hand.user_id, hand.name)
-                if not paused:
+                if not paused:  # 상태를 먼저 기록해 발언권이 보이는 시점엔 항상 awaiting_human
                     await self.rt.set_status(DiscussionStatus.AWAITING_HUMAN)
                     paused = True
+                if not self.queue:  # 상태 기록 중 취소된 경우
+                    break
+                hand = self.queue.popleft()
+                floor = self.floor = Floor(hand.user_id, hand.name)
                 self.rt.broker.publish(self.rt.discussion_id, "floor_granted",
                                        {"user_id": floor.user_id, "name": floor.name, "floor_id": floor.floor_id})
                 self._publish_state()
