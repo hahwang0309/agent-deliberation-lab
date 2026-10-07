@@ -75,6 +75,8 @@ alembic/        DB 마이그레이션
 
 **사전·사후 설문:** `src/services/survey.py`가 토론 전후로 참가자(AI)에게 같은 문항을 독립 호출(구조화 출력)로 묻습니다. 발언 중 분석이 추정한 입장 x와 별개의 표준 측정이며, 인간 공론조사의 사전·사후 설문과 같은 형식입니다. 결과는 `survey_responses` 테이블(참가자 × 문항 × 시점 1행)에 저장됩니다.
 
+**기준선 모드:** `experiment.mode = "baseline"`이면 `_select_turn`이 순서대로 돌아가는 발언(`reply`)만 고르고, 발언 프롬프트에는 주제·명제·참가자만 들어갑니다. 상태 기반 진행과 같은 구조(명제, 발언 수, 종결 라운드)에서 장치의 효과만 비교하기 위한 것입니다.
+
 **실험 조건:** `src/core/experiment.py`의 `engine_settings()`가 기본 설정(`config/discussion_config.py`) 사본에 토론별 조건을 덮어써 엔진·에이전트에 넘깁니다. 진행 장치 on/off, 동역학 파라미터, 참가자별 고집도·temperature, 분석 모델 분리를 지원합니다. 조건은 `discussions.config.experiment`에 저장됩니다.
 
 **재개:** 상태는 매 분석 시 메시지 `meta.debate`에 스냅숏으로 저장되고, 재개 시 마지막 스냅숏으로 복원합니다. 스냅숏이 없는 이전 토론은 AI 발언 수를 진행 계획에 대입해 위치를 정합니다.

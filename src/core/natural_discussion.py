@@ -50,6 +50,7 @@ class ActionType(Enum):
     DEVILS_ADVOCATE = "devils_advocate"      # 성급한 합의에 대한 반대 검토
     CLOSING = "closing"                      # 종결 발언
     RESPOND_TO_HUMAN = "respond_to_human"    # 사람 참가자 발언에 응답
+    REPLY = "reply"                          # 기준선 모드의 일반 발언 (발화 행위 지정 없음)
 
 
 TARGETED_ACTIONS = (ActionType.AGREE_EXTEND, ActionType.EXAMPLE, ActionType.REBUT, ActionType.UNDERCUT,
@@ -197,6 +198,9 @@ class NaturalDiscussion:
         # 고정 명제: 지정하면 모더레이터가 명제를 만들지 않는다 (인간 토의와 같은 질문으로 비교할 때)
         self.fixed_propositions = [p for p in (propositions or []) if p.strip()] or None
         self.survey = survey  # 사전·사후 설문 (src/services/survey.py)
+        # 기준선 모드: 순서대로 돌아가며 앞 발언에 답하는 단순 토론 (발화 행위·응답 의무·중재·입장 안내 없음).
+        # 발언 분석은 측정용으로만 돌고 진행에는 쓰지 않는다.
+        self.baseline = self.config.engine_mode == "baseline"
         self.messages: List[Message] = []
 
         self.debate = DebateState(DynamicsParams(
@@ -355,7 +359,7 @@ class NaturalDiscussion:
                 yield event
 
             # 참가자가 2명이면 교착을 중재할 제3자가 없으므로 모더레이터가 지목 질문
-            if (self.moderator and len(self.agents) == 2 and not self.closing_started
+            if (self.moderator and len(self.agents) == 2 and not self.closing_started and not self.baseline
                     and self.config.use_stalemate_mediation
                     and self.statements_on_subtopic < self._current_budget()  # 답할 발언이 남아 있을 때만
                     and self.debate.stalemate_pair(self.config.stalemate_exchanges)):
@@ -437,6 +441,9 @@ class NaturalDiscussion:
             remaining = [a for a in self.agents if a.persona.name not in self.closing_done]
             return Turn(remaining[0], ActionType.CLOSING) if remaining else None
 
+        if self.baseline:
+            return self._baseline_turn(last)
+
         # 3. 입장 표명: 이 명제에서 아직 말하지 않은 참가자 (명제마다 시작 순서를 바꿈)
         offset = self.subtopic_idx % len(self.agents)
         rotated = self.agents[offset:] + self.agents[:offset]
@@ -486,6 +493,12 @@ class NaturalDiscussion:
             action = ActionType.REBUT if self.alternation % 2 else ActionType.UNDERCUT
         return Turn(speaker, action, target)
 
+    def _baseline_turn(self, last: Optional[str]) -> Turn:
+        """기준선: 참가자 목록 순서대로 돌아가며 발언"""
+        names = [a.persona.name for a in self.agents]
+        nxt = (names.index(last) + 1) % len(names) if last in names else 0
+        return Turn(self.agents[nxt], ActionType.REPLY)
+
     # ---------- 발언 ----------
 
     def _stance_note(self, name: str) -> str:
@@ -507,8 +520,19 @@ class NaturalDiscussion:
     def _build_prompt(self, topic: str, turn: Turn) -> str:
         prompts = config_loader.prompts
         name = turn.speaker.persona.name
-        commitments = self.debate.participants[name].commitments
         others = [n for n in self.debate.participants if n != name]
+        if self.baseline:  # 입장 안내·공약·상호 양보 없이 주제·명제·참가자만
+            parts = [prompts.render(
+                "turn_actions.baseline_frame", topic=topic,
+                proposition=self.propositions[self.subtopic_idx] if self.propositions else topic,
+                roster=", ".join(self._describe(n, with_values=False) for n in others))]
+            if turn.action == ActionType.RESPOND_TO_HUMAN and self.pending_human:
+                parts.append(prompts.render("turn_actions.respond_to_human", human_name=self.pending_human.name,
+                                            remark=self.pending_human.content))
+            else:
+                parts.append(prompts.render(f"turn_actions.{turn.action.value}"))
+            return "\n".join(parts)
+        commitments = self.debate.participants[name].commitments
         parts = [prompts.render(
             "turn_actions.frame", topic=topic,
             proposition=self.propositions[self.subtopic_idx] if self.propositions else topic,

@@ -185,6 +185,14 @@ turn_actions:
     Arguments you have already made: {commitments}
     Do not repeat these arguments. Add a new reason or evidence, answer the specific point in front of you,
     or openly concede what you now accept.
+  # 기준선 모드(experiment.mode = baseline)의 머리말과 일반 발언
+  baseline_frame: |
+    Topic: {topic}
+    Proposition under discussion: {proposition}
+    Other participants: {roster}
+  reply: |
+    Continue the discussion. Respond to what the others have said so far and give your own view on the
+    proposition, with your reasons.
   # 상대가 직전에 양보한 점 (상호 양보 규범)
   reciprocity: |
     Since you last spoke, others acknowledged these points of yours:

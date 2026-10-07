@@ -350,3 +350,31 @@ async def test_api_survey_is_stored_listed_and_deleted_with_discussion(monkeypat
 
         assert (await client.delete(f"/api/v1/discussions/{discussion_id}")).status_code == 204
     assert persistence.list_survey(discussion_id) == []
+
+
+# ---------- 기준선 모드 (E2) ----------
+
+@pytest.mark.asyncio
+async def test_baseline_is_round_robin_reply_without_state_driven_moves():
+    engine = make_engine(["A", "B", "C"], 12, analyzer_fn=challenge_fn, experiment={"mode": "baseline"})
+    events = await run(engine)
+    said = [u for u in utterances(events) if u.speaker_type == "ai"]
+    assert [u.action for u in said] == ["reply"] * 9 + ["closing"] * 3  # 응답 의무·중재·반대 검토 없음
+    assert [u.speaker for u in said[:9]] == ["A", "B", "C"] * 3          # 순서대로
+    assert any(e.kind == "analysis" for e in events)                       # 분석은 측정용으로 계속 기록
+
+    prompt = engine._build_prompt("topic", engine._baseline_turn("A"))
+    assert "Continue the discussion" in prompt and "Arguments you have already made" not in prompt
+    assert "Your current position" not in prompt and "acknowledged these points" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_baseline_two_people_get_no_moderator_mediation_and_same_structure():
+    events = await run(make_engine(["A", "B"], 10, analyzer_fn=challenge_fn, experiment={"mode": "baseline"}))
+    assert not any(u.action == "mediation" for u in utterances(events))
+    stateful = await run(make_engine(["A", "B"], 10, analyzer_fn=challenge_fn))
+    # 비교 공정성: 명제·발언 수·종결 라운드는 같다
+    count = lambda evs: sum(u.speaker_type == "ai" for u in utterances(evs))  # noqa: E731
+    subtopics = lambda evs: next(e for e in evs if e.kind == "subtopics").meta["subtopics"]  # noqa: E731
+    assert count(events) == count(stateful) == 10 and subtopics(events) == subtopics(stateful)
+    assert ai_actions(events)[-2:] == ai_actions(stateful)[-2:] == ["closing", "closing"]

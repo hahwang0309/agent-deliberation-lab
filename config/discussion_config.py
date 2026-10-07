@@ -79,6 +79,9 @@ class DiscussionConfig:
     stubbornness_open: float = 0.3    # 성격에 개방적·유연 등이 있으면
     stubbornness_firm: float = 0.75   # 성격에 완고·원칙적 등이 있으면
 
+    # 엔진 모드: stateful(상태 기반 진행) | baseline(순서대로 앞 발언에 답하는 단순 토론, 비교 기준선)
+    engine_mode: str = "stateful"
+
     # 진행 장치 on/off (실험 조건으로 끌 수 있음, src/core/experiment.py)
     use_reply_obligation: bool = True     # 반박·질문을 받은 참가자의 응답 의무
     use_stalemate_mediation: bool = True  # 교착 시 제3자 중재·제3안 (2명이면 모더레이터 지목 질문)
