@@ -43,6 +43,14 @@ class DiscussionService:
         names = [p.name for p in request.personas]
         if len(set(names)) != len(names):
             raise _error(status.HTTP_400_BAD_REQUEST, "DUPLICATE_PERSONA_NAME", "페르소나 이름이 중복됩니다.")
+        if request.experiment is not None:
+            if not user.is_admin and not limits.user_expensive_features:
+                # 분석 모델 지정 등으로 비용이 크게 달라질 수 있어 웹 검색과 같은 정책을 따른다
+                raise _error(status.HTTP_403_FORBIDDEN, "FEATURE_RESTRICTED", "실험 조건은 관리자만 지정할 수 있습니다.")
+            unknown = set(request.experiment.participants) - set(names)
+            if unknown:
+                raise _error(status.HTTP_400_BAD_REQUEST, "UNKNOWN_PARTICIPANT",
+                             f"실험 조건의 참가자 이름이 페르소나에 없습니다: {', '.join(sorted(unknown))}")
 
         discussion = Discussion(
             topic=request.topic,
@@ -54,6 +62,7 @@ class DiscussionService:
                 "use_moderator": request.use_moderator,
                 "enable_web_search": request.enable_web_search,
                 "enable_belief_reasoning": request.enable_belief_reasoning,
+                **({"experiment": request.experiment.model_dump(exclude_none=True)} if request.experiment else {}),
             },
             created_by=user.id,
         )

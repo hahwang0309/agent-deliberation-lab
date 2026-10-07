@@ -16,6 +16,7 @@ from api.runtime.intervention import HumanDesk
 from api.runtime.reports import run_report_job
 from api.runtime.usage import UsageCounter
 from config.config_loader import config_loader
+from src.core.experiment import ExperimentConfig
 from src.core.natural_discussion import EngineEvent
 from src.discussion import ParticipantSpec, create_discussion
 from src.models.personas import LLMProvider, Message, Persona
@@ -74,6 +75,7 @@ class DiscussionRuntime:
                 enable_web_search=config.get("enable_web_search", False),
                 enable_belief_reasoning=config.get("enable_belief_reasoning", False),
                 max_statements=config["max_statements"],
+                experiment=ExperimentConfig(**config["experiment"]) if config.get("experiment") else None,
             )
 
             if self.resume:

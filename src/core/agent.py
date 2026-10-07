@@ -11,7 +11,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from config.config_loader import config_loader
-from config.discussion_config import get_config
+from config.discussion_config import DiscussionConfig, get_config
 from src.models.personas import LLMProvider, Message, Persona
 from src.services.belief_reasoning import BeliefReasoningService
 from src.services.rag_service import RAGService
@@ -34,8 +34,11 @@ class DiscussionAgent:
     def __init__(self, persona: Persona, llm: Optional[BaseChatModel] = None,
                  provider: Optional[LLMProvider] = None,
                  enable_web_search: bool = False, enable_belief_reasoning: bool = False,
-                 aux_llm: Optional[BaseChatModel] = None):
+                 aux_llm: Optional[BaseChatModel] = None, config: Optional[DiscussionConfig] = None,
+                 stubbornness: Optional[float] = None):
         self.persona = persona
+        self.config = config or get_config()  # 토론별 설정 (실험 조건 반영)
+        self.stubbornness_override = stubbornness
         self.provider = provider or LLMFactory.default_provider()
         self.language = "auto"
         self.statement_count = 0
@@ -52,8 +55,11 @@ class DiscussionAgent:
 
     @property
     def stubbornness(self) -> float:
-        """입장 동역학의 고집도 s: 성격 특성으로 정함 (개방적이면 낮게, 원칙적·완고하면 높게)"""
-        config = get_config()
+        """입장 동역학의 고집도 s: 실험 조건으로 지정했으면 그 값, 아니면 성격 특성으로 정함
+        (개방적이면 낮게, 원칙적·완고하면 높게)"""
+        if self.stubbornness_override is not None:
+            return self.stubbornness_override
+        config = self.config
         traits = " ".join(self.persona.personality).lower()
         if any(t in traits for t in FIRM_TRAITS):
             return config.stubbornness_firm
@@ -83,7 +89,7 @@ class DiscussionAgent:
     async def _prepare_response(self, prompt: str, context: List[Message] = None):
         """응답 준비 - CoT, RAG, 프롬프트 생성 공통 로직"""
         prompts = config_loader.prompts
-        config = get_config()
+        config = self.config
 
         reasoning = None
         if self.belief_reasoning:

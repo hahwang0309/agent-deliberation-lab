@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from config.config_loader import config_loader
+from src.core.experiment import ExperimentConfig
 
 _limits = config_loader.config.limits
 
@@ -38,6 +39,8 @@ class CreateDiscussionRequest(BaseModel):
     use_moderator: bool = True
     enable_web_search: bool = False
     enable_belief_reasoning: bool = False
+    experiment: Optional[ExperimentConfig] = Field(
+        None, description="실험 조건 (진행 장치 on/off, 동역학 파라미터, 참가자별 고집도·temperature, 분석 모델)")
 
 
 class ParticipantResponse(BaseModel):

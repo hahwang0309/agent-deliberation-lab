@@ -59,6 +59,18 @@
 ```
 
 - 페르소나는 2~5명입니다. `llm_provider`와 `model`을 비우면 `config.yaml` 기본값이 쓰입니다.
+- `experiment`(선택): 이 토론에만 적용되는 실험 조건입니다. 일반 사용자는 지정할 수 없습니다(403 `FEATURE_RESTRICTED`). 조건의 참가자 이름이 페르소나에 없으면 400 `UNKNOWN_PARTICIPANT`, 알 수 없는 키나 범위 밖 값은 422입니다. 저장된 조건은 상세 응답의 `config.experiment`에서 볼 수 있습니다. 항목은 [configuration.md](configuration.md#실험-조건-토론별)를 참고하세요.
+
+```json
+"experiment": {
+  "label": "no-latitude",
+  "mechanisms": {"latitude": false, "closing_round": false},
+  "dynamics": {"concession_cap": 0.1},
+  "agent_temperature": 0.7,
+  "analyzer": {"provider": "claude", "model": "claude-sonnet-5-5"},
+  "participants": {"박정의": {"stubbornness": 0.9, "temperature": 1.0}}
+}
+```
 - 일반 사용자는 `enable_web_search`와 `enable_belief_reasoning`을 켤 수 없습니다(403 `FEATURE_RESTRICTED`).
 
 ## 메시지·실시간 이벤트

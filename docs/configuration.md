@@ -92,3 +92,25 @@
 | `config/persona_templates.yaml` | 화면의 페르소나 템플릿 목록 |
 
 프롬프트를 바꾸면 서버를 재시작해야 적용됩니다.
+
+## 실험 조건 (토론별)
+
+토론 생성 요청의 `experiment`로 이 토론에만 적용할 조건을 지정합니다(`src/core/experiment.py`). 엔진은 기본 설정의 **사본**에 조건을 덮어써서 사용하므로, 조건이 다른 토론을 동시에 실행해도 서로 간섭하지 않고 전역 설정도 바뀌지 않습니다. 비운 항목은 위 기본값을 씁니다.
+
+| 키 | 의미 |
+|---|---|
+| `label` | 조건 이름 (분석 시 구분용) |
+| `mechanisms.analysis` | 발언 분석. 끄면 토론 상태와 입장 동역학이 모두 없음 |
+| `mechanisms.reply_obligation` | 반박·질문을 받은 참가자의 응답 의무 |
+| `mechanisms.stalemate_mediation` | 교착 시 제3자 중재·제3안 (2명이면 모더레이터 지목 질문) |
+| `mechanisms.devils_advocate` | 성급한 합의 시 반대 검토 |
+| `mechanisms.closing_round` | 종결 라운드. 끄면 발언 수 전체가 본론에 쓰임 |
+| `mechanisms.latitude` | 수용·거부 범위. 끄면 거리와 무관하게 수용하고 반발이 없음 (순수 Friedkin–Johnsen) |
+| `mechanisms.concession_shift` | 양보에 따른 입장 이동. 끄면 양보는 기록만 함 |
+| `dynamics.*` | 위 표의 동역학 파라미터 (`dynamics_step`, `dynamics_anchor`, `accept_wide` 등) |
+| `stalemate_exchanges`, `consensus_spread`, `max_subtopics`, `context_messages`, `context_chars` | 위 표의 같은 이름 값 |
+| `agent_temperature` / `moderator_temperature` | 참가자 기본 / 모더레이터 temperature (기본 0.7 / 0.5). 발언 분석은 항상 0 |
+| `analyzer` | 발언 분석 모델 `{provider, model}`. 비우면 첫 참가자의 모델 (판정자와 참가자 모델을 분리할 때 사용) |
+| `participants.{이름}` | 참가자별 `stubbornness`(0~1, 비우면 성격 키워드로 정함), `temperature` |
+
+`mechanisms.latitude`나 `concession_shift`를 끄면 `dynamics`의 해당 값보다 우선합니다. 알 수 없는 키는 거부되므로 오타로 조건이 무시되지 않습니다.

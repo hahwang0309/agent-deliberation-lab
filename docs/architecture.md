@@ -71,6 +71,8 @@ alembic/        DB 마이그레이션
 - 현재 입장과 최근 이동("A의 발언 뒤 +0.30")을 다음 발언 프롬프트에 넣습니다.
 - 사람의 입장은 관찰만 하고 시뮬레이션하지 않습니다.
 
+**실험 조건:** `src/core/experiment.py`의 `engine_settings()`가 기본 설정(`config/discussion_config.py`) 사본에 토론별 조건을 덮어써 엔진·에이전트에 넘깁니다. 진행 장치 on/off, 동역학 파라미터, 참가자별 고집도·temperature, 분석 모델 분리를 지원합니다. 조건은 `discussions.config.experiment`에 저장됩니다.
+
 **재개:** 상태는 매 분석 시 메시지 `meta.debate`에 스냅숏으로 저장되고, 재개 시 마지막 스냅숏으로 복원합니다. 스냅숏이 없는 이전 토론은 AI 발언 수를 진행 계획에 대입해 위치를 정합니다.
 
 ## 실시간 전송 (SSE)

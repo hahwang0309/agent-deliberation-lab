@@ -79,6 +79,16 @@ class DiscussionConfig:
     stubbornness_open: float = 0.3    # 성격에 개방적·유연 등이 있으면
     stubbornness_firm: float = 0.75   # 성격에 완고·원칙적 등이 있으면
 
+    # 진행 장치 on/off (실험 조건으로 끌 수 있음, src/core/experiment.py)
+    use_reply_obligation: bool = True     # 반박·질문을 받은 참가자의 응답 의무
+    use_stalemate_mediation: bool = True  # 교착 시 제3자 중재·제3안 (2명이면 모더레이터 지목 질문)
+    use_devils_advocate: bool = True      # 성급한 합의 시 반대 검토
+    use_closing_round: bool = True        # 마지막 종결 라운드
+
+    # LLM temperature
+    agent_temperature: float = 0.7
+    moderator_temperature: float = 0.5
+
     # 사람 개입
     human_followup_responses: int = 1  # 사람 발언 직후 그 발언에 응답하는 AI 발언 수 (명제 예산을 쓰고, 예산이 끝났으면 추가 발언)
 

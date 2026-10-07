@@ -23,7 +23,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, field_validator
 
 from config.config_loader import config_loader
-from config.discussion_config import get_config
+from config.discussion_config import DiscussionConfig, get_config
 from src.core.agent import DiscussionAgent
 from src.core.debate_state import Challenge, DebateState, DynamicsParams
 from src.core.moderator import DiscussionModerator
@@ -159,10 +159,10 @@ class DebatePlan:
     closing: int        # 종결 라운드 발언 수
 
 
-def plan_debate(n_agents: int, max_statements: int, max_subtopics: int) -> DebatePlan:
+def plan_debate(n_agents: int, max_statements: int, max_subtopics: int, closing_round: bool = True) -> DebatePlan:
     """명제 수와 예산: 명제마다 '전원 입장 표명 + 상호 응답 1회 이상'(N+1발언)이 들어가도록"""
     n = max(1, n_agents)
-    closing = n if max_statements - n >= n + 1 else 0
+    closing = n if closing_round and max_statements - n >= n + 1 else 0
     body = max_statements - closing
     k = max(1, min(max_subtopics, body // (n + 1)))
     return DebatePlan(budgets=split_budget(body, k), closing=closing)
@@ -183,12 +183,13 @@ class Turn:
 
 class NaturalDiscussion:
     def __init__(self, agents: List[DiscussionAgent], moderator: Optional[DiscussionModerator] = None,
-                 max_statements: int = 20, analyzer: Optional[BaseChatModel] = None):
+                 max_statements: int = 20, analyzer: Optional[BaseChatModel] = None,
+                 config: Optional[DiscussionConfig] = None):
         self.agents = agents
         self.moderator = moderator
         self.max_statements = max_statements
         self.analyzer = analyzer  # 발언 분석용 LLM (없으면 상태 분석 없이 진행 규칙만 적용)
-        self.config = get_config()
+        self.config = config or get_config()  # 토론별 설정 (실험 조건 반영, src/core/experiment.py)
         self.messages: List[Message] = []
 
         self.debate = DebateState(DynamicsParams(
@@ -198,7 +199,8 @@ class NaturalDiscussion:
             self.debate.ensure(agent.persona.name, "ai", agent.stubbornness)
 
         # 진행 상태
-        self.plan = plan_debate(len(agents), max_statements, self.config.max_subtopics)
+        self.plan = plan_debate(len(agents), max_statements, self.config.max_subtopics,
+                                closing_round=self.config.use_closing_round)
         self.propositions: List[str] = []
         self.subtopic_idx = 0
         self.statements_on_subtopic = 0
@@ -334,6 +336,7 @@ class NaturalDiscussion:
 
             # 참가자가 2명이면 교착을 중재할 제3자가 없으므로 모더레이터가 지목 질문
             if (self.moderator and len(self.agents) == 2 and not self.closing_started
+                    and self.config.use_stalemate_mediation
                     and self.statements_on_subtopic < self._current_budget()  # 답할 발언이 남아 있을 때만
                     and self.debate.stalemate_pair(self.config.stalemate_exchanges)):
                 event = await self._moderator_mediation(topic)
@@ -414,7 +417,7 @@ class NaturalDiscussion:
         names = [a.persona.name for a in others]
 
         # 4. 교착: 서로 반박만 주고받으면 응답 의무보다 먼저 제3자가 중재하거나 제3안 제시
-        pair = self.debate.stalemate_pair(self.config.stalemate_exchanges)
+        pair = self.debate.stalemate_pair(self.config.stalemate_exchanges) if self.config.use_stalemate_mediation else None
         if pair and len(self.agents) >= 3:
             thirds = [a for a in others if a.persona.name not in pair] or [a for a in self.agents if a.persona.name not in pair]
             if thirds:
@@ -424,7 +427,7 @@ class NaturalDiscussion:
                 return Turn(self._least_spoken(thirds), action, parties=pair)
 
         # 5. 응답 의무: 답하지 않은 반박·질문을 받은 참가자
-        challenge = self.debate.open_challenge_for(names)
+        challenge = self.debate.open_challenge_for(names) if self.config.use_reply_obligation else None
         if challenge:
             speaker = self._agent(challenge.target)
             target = self._message_by_seq(challenge.seq) or self._latest_from_others(speaker.persona.name)
@@ -433,7 +436,7 @@ class NaturalDiscussion:
         # 6. 성급한 합의: 반박 없이 입장이 모여 있으면 가장 먼 참가자가 반대 검토
         all_names = [a.persona.name for a in self.agents]
         spread = self.debate.spread(all_names)
-        if (not self.devils_advocate_used and self.debate.attacks_in_subtopic == 0
+        if (self.config.use_devils_advocate and not self.devils_advocate_used and self.debate.attacks_in_subtopic == 0
                 and spread is not None and spread < self.config.consensus_spread):
             values = {n: self.debate.stance(n) for n in names}
             mean = sum(v for v in self.debate.stances().values() if v is not None) / len(all_names)
