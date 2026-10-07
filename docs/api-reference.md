@@ -109,7 +109,7 @@
 
 | 메서드 | 경로 | 권한 | 설명 |
 |---|---|---|---|
-| GET | `/discussions/{id}/report` | 활성 사용자 | `{status: pending\|ready\|failed, consensus_score, ai_score, human_score, consensus_label, content}`. 없으면 404 |
+| GET | `/discussions/{id}/report` | 활성 사용자 | `{status: pending\|ready\|failed, consensus_score(종합), ai_score(AI간), human_score(인간간, 사람 2명 이상), ai_human_score(AI-인간간, 사람 참여 시), consensus_label, content}`. 없으면 404 |
 | POST | `/discussions/{id}/report` | 생성자·관리자 | 종료된 토론의 보고서 (재)생성. AI 발언이 부족하면 409 `INSUFFICIENT_MESSAGES` |
 | GET | `/discussions/{id}/report/export?format=md\|json` | 활성 사용자 | 첨부 파일로 내려받기 |
 

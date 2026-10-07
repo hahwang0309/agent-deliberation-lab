@@ -14,23 +14,25 @@ def pos(name, stance, kind="ai"):
     return {"participant": name, "stance": stance, "participant_type": kind, "claim": "c", "evidence_seqs": []}
 
 
-def test_agreement_measures_convergence_on_either_side():
+def test_pairwise_agreement_values():
+    # 찬성 1, 부분찬성 0.7, 반대 0 / 쌍 일치도 = 1 - |차이|
     assert agreement([pos("a", "agree"), pos("b", "agree")]) == 1.0
-    assert agreement([pos("a", "disagree"), pos("b", "disagree")]) == 1.0       # 반대로 합의
-    assert agreement([pos("a", "agree"), pos("b", "disagree")]) == 0.5
-    assert agreement([pos("a", "agree"), pos("b", "agree"), pos("c", "disagree")]) == pytest.approx(0.6667)
-    assert agreement([pos("a", "agree"), pos("b", "partially_agree")]) == 0.85
-    assert agreement([pos("a", "partially_agree"), pos("b", "partially_agree")]) == 0.7
-    assert agreement([pos("a", "agree"), pos("b", "no_position")]) is None      # 입장 2개 미만
+    assert agreement([pos("a", "disagree"), pos("b", "disagree")]) == 1.0                 # 반대로 일치
+    assert agreement([pos("a", "agree"), pos("b", "disagree")]) == 0.0
+    assert agreement([pos("a", "agree"), pos("b", "agree"), pos("c", "disagree")]) == 0.3333  # (1+0+0)/3
+    assert agreement([pos("a", "agree"), pos("b", "partially_agree")]) == 0.7
+    assert agreement([pos("a", "partially_agree"), pos("b", "partially_agree")]) == 1.0
+    assert agreement([pos("a", "agree"), pos("b", "agree"), pos("c", "partially_agree")]) == 0.8  # (1+0.7+0.7)/3
+    assert agreement([pos("a", "agree"), pos("b", "no_position")]) is None                # 입장 2개 미만
     assert agreement([]) is None
 
 
-def test_partial_agreement_does_not_count_toward_opposition():
+def test_partial_agreement_against_disagreement_is_not_consensus():
     # 실제 Claude 실행에서 [반대, 부분찬성]이 0.75(부분 합의)로 나오던 회귀 방지
     opposed = [pos("a", "disagree"), pos("b", "partially_agree")]
-    assert agreement(opposed) == 0.5
+    assert agreement(opposed) == 0.3
     assert label_for(agreement(opposed), 0.8, 0.6) == "disagreed"
-    assert direction(opposed) == "oppose"
+    assert direction(opposed) == "split"
 
 
 def test_single_stance_issue_is_insufficient_and_excluded_from_score():
@@ -41,19 +43,33 @@ def test_single_stance_issue_is_insufficient_and_excluded_from_score():
     assert summary["scores"]["overall"] == 1.0
 
 
-def test_score_issues_splits_ai_and_human_and_labels():
+def test_four_scores_overall_ai_human_and_ai_human():
     issues = [
         {"title": "i1", "positions": [pos("A", "agree"), pos("B", "agree"), pos("H", "disagree", "human"),
                                       pos("H2", "disagree", "human")]},
         {"title": "i2", "positions": [pos("A", "agree"), pos("B", "disagree")]},
     ]
     summary = score_issues(issues, agreed_threshold=0.8, partial_threshold=0.6)
-    assert issues[0]["scores"] == {"overall": 0.5, "ai": 1.0, "human": 1.0}
+    # i1: 6쌍 중 AI끼리·사람끼리 2쌍만 일치 → 2/6, AI간 1, 인간간 1, AI-인간간 4쌍 모두 0
+    assert issues[0]["scores"] == {"overall": 0.3333, "ai": 1.0, "human": 1.0, "ai_human": 0.0}
     assert issues[0]["label"] == "disagreed" and issues[0]["direction"] == "split"
-    assert issues[1]["scores"] == {"overall": 0.5, "ai": 0.5, "human": None}
-    # 종합: (0.5*4 + 0.5*2)/6, AI: (1.0*2 + 0.5*2)/4, 사람: 1.0 (i1만)
-    assert summary["scores"] == {"overall": 0.5, "ai": 0.75, "human": 1.0}
+    assert issues[1]["scores"] == {"overall": 0.0, "ai": 0.0, "human": None, "ai_human": None}
+    # 쌍 개수 가중: 종합 (0.3333*6 + 0*1)/7, AI간 (1*1 + 0*1)/2, 인간간 i1만, AI-인간간 i1만
+    assert summary["scores"] == {"overall": 0.2857, "ai": 0.5, "human": 1.0, "ai_human": 0.0}
     assert summary["label"] == "disagreed"
+
+
+def test_single_human_has_no_human_score_but_has_ai_human_score():
+    issues = [{"title": "i", "positions": [pos("A", "agree"), pos("B", "partially_agree"),
+                                           pos("H", "agree", "human")]}]
+    summary = score_issues(issues, 0.8, 0.6)
+    # 종합 (0.7+1+0.7)/3, AI간 0.7, 인간간 없음(사람 1명), AI-인간간 (1+0.7)/2
+    assert summary["scores"] == {"overall": 0.8, "ai": 0.7, "human": None, "ai_human": 0.85}
+
+
+def test_no_human_has_no_ai_human_score():
+    summary = score_issues([{"title": "i", "positions": [pos("A", "agree"), pos("B", "agree")]}], 0.8, 0.6)
+    assert summary["scores"]["human"] is None and summary["scores"]["ai_human"] is None
 
 
 TRANSCRIPT = [TranscriptMessage(1, "Alice", "ai", "x"), TranscriptMessage(2, "Moderator", "moderator", "q"),

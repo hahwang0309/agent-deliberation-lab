@@ -67,35 +67,53 @@ class ReportGenerationError(Exception):
 
 
 # ---------- 점수 계산 (결정적) ----------
+# 쌍별 일치도: 입장을 수치화(찬성 1, 부분찬성 w, 반대 0)하고 두 참가자의 일치도 = 1 - |차이|.
+# 종합 = 모든 쌍, AI간 = AI끼리, 인간간 = 사람끼리, AI-인간간 = AI×사람 쌍의 평균.
 
-def _sides(positions: List[Dict[str, Any]], partial_weight: float) -> Optional[tuple]:
-    """(지지 점수, 반대 점수). 지지 = (찬성 + w·부분찬성)/n, 반대 = 반대/n. 입장 없으면 None."""
-    stated = [p for p in positions if p["stance"] != "no_position"]
-    if not stated:
+def _stated(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [p for p in positions if p["stance"] != "no_position"]
+
+
+def _value(stance: str, partial_weight: float) -> float:
+    return {"agree": 1.0, "partially_agree": partial_weight, "disagree": 0.0}[stance]
+
+
+def _pairs_within(positions: List[Dict[str, Any]]) -> List[tuple]:
+    stated = _stated(positions)
+    return [(stated[i], stated[j]) for i in range(len(stated)) for j in range(i + 1, len(stated))]
+
+
+def _pairs_between(group_a: List[Dict[str, Any]], group_b: List[Dict[str, Any]]) -> List[tuple]:
+    return [(a, b) for a in _stated(group_a) for b in _stated(group_b)]
+
+
+def _pair_score(pairs: List[tuple], partial_weight: float) -> Optional[float]:
+    """쌍 목록의 평균 일치도 (쌍이 없으면 None)"""
+    if not pairs:
         return None
-    n = len(stated)
-    support = (sum(p["stance"] == "agree" for p in stated)
-               + partial_weight * sum(p["stance"] == "partially_agree" for p in stated)) / n
-    oppose = sum(p["stance"] == "disagree" for p in stated) / n
-    return support, oppose
+    total = sum(1 - abs(_value(a["stance"], partial_weight) - _value(b["stance"], partial_weight))
+                for a, b in pairs)
+    return round(total / len(pairs), 4)
 
 
 def agreement(positions: List[Dict[str, Any]], partial_weight: float = 0.7) -> Optional[float]:
-    """입장 분포의 수렴도 = max(지지 점수, 반대 점수). 입장을 밝힌 참가자가 2명 미만이면 None.
+    """같은 집단 안 참가자 쌍의 평균 일치도. 입장을 밝힌 참가자가 2명 미만이면 None."""
+    return _pair_score(_pairs_within(positions), partial_weight)
 
-    부분 찬성은 지지 쪽에만 w만큼 기여한다 (반대와 부분 찬성이 맞서면 합의로 보지 않음).
-    """
-    if sum(p["stance"] != "no_position" for p in positions) < 2:
+
+def cross_agreement(group_a: List[Dict[str, Any]], group_b: List[Dict[str, Any]],
+                    partial_weight: float = 0.7) -> Optional[float]:
+    """두 집단 사이(예: AI × 사람) 쌍의 평균 일치도. 한쪽이라도 입장이 없으면 None."""
+    return _pair_score(_pairs_between(group_a, group_b), partial_weight)
+
+
+def direction(positions: List[Dict[str, Any]]) -> Optional[str]:
+    """입장 쏠림 방향: support(명제 지지 쪽이 많음) | oppose | split"""
+    stated = _stated(positions)
+    if not stated:
         return None
-    return round(max(_sides(positions, partial_weight)), 4)
-
-
-def direction(positions: List[Dict[str, Any]], partial_weight: float = 0.7) -> Optional[str]:
-    """수렴 방향: support(명제 지지) | oppose(명제 반대) | split"""
-    sides = _sides(positions, partial_weight)
-    if sides is None:
-        return None
-    support, oppose = sides
+    support = sum(p["stance"] in ("agree", "partially_agree") for p in stated)
+    oppose = sum(p["stance"] == "disagree" for p in stated)
     if support > oppose:
         return "support"
     if oppose > support:
@@ -120,27 +138,30 @@ def _weighted_mean(pairs: List[tuple]) -> Optional[float]:
     return round(sum(s * w for s, w in valid) / total, 4) if total else None
 
 
+SCORE_KEYS = ("overall", "ai", "human", "ai_human")
+
+
 def score_issues(issues: List[Dict[str, Any]], agreed_threshold: float,
                  partial_threshold: float, partial_weight: float = 0.7) -> Dict[str, Any]:
-    """쟁점별 종합/AI/사람 수렴도와 라벨, 토론 전체 점수를 계산해 issues에 기록하고 요약을 반환"""
-    overall_pairs, ai_pairs, human_pairs = [], [], []
+    """쟁점별 종합/AI간/인간간/AI-인간간 일치도와 라벨을 issues에 기록하고, 쌍 개수로 가중 평균한 전체 점수를 반환"""
+    weighted = {key: [] for key in SCORE_KEYS}
     for issue in issues:
         positions = issue["positions"]
         ai = [p for p in positions if p["participant_type"] == "ai"]
         human = [p for p in positions if p["participant_type"] == "human"]
-        stated = lambda ps: sum(p["stance"] != "no_position" for p in ps)  # noqa: E731
-
-        issue["scores"] = {"overall": agreement(positions, partial_weight), "ai": agreement(ai, partial_weight),
-                           "human": agreement(human, partial_weight)}
+        pair_sets = {
+            "overall": _pairs_within(positions),
+            "ai": _pairs_within(ai),
+            "human": _pairs_within(human),        # 사람이 1명 이하면 쌍이 없어 None
+            "ai_human": _pairs_between(ai, human),
+        }
+        issue["scores"] = {key: _pair_score(pairs, partial_weight) for key, pairs in pair_sets.items()}
         issue["label"] = label_for(issue["scores"]["overall"], agreed_threshold, partial_threshold)
-        issue["direction"] = direction(positions, partial_weight)
+        issue["direction"] = direction(positions)
+        for key, pairs in pair_sets.items():
+            weighted[key].append((issue["scores"][key], len(pairs)))
 
-        overall_pairs.append((issue["scores"]["overall"], stated(positions)))
-        ai_pairs.append((issue["scores"]["ai"], stated(ai)))
-        human_pairs.append((issue["scores"]["human"], stated(human)))
-
-    scores = {"overall": _weighted_mean(overall_pairs), "ai": _weighted_mean(ai_pairs),
-              "human": _weighted_mean(human_pairs)}
+    scores = {key: _weighted_mean(values) for key, values in weighted.items()}
     return {
         "scores": scores,
         "label": label_for(scores["overall"], agreed_threshold, partial_threshold),
@@ -268,6 +289,17 @@ STANCE_TEXT = {"agree": "찬성", "partially_agree": "부분 찬성", "disagree"
 DIRECTION_TEXT = {"support": "지지 쪽", "oppose": "반대 쪽", "split": "양분"}
 
 
+SCORE_LABELS = {"overall": "종합", "ai": "AI간", "human": "인간간", "ai_human": "AI-인간간"}
+
+
+def score_line(report: Dict[str, Any]) -> str:
+    """'종합 80% (합의) · AI간 85% · AI-인간간 70%' — 계산되지 않은 점수(예: 사람 1명의 인간간)는 생략"""
+    scores = report["scores"]
+    parts = [f"종합 {_pct(scores.get('overall'))} ({LABEL_TEXT.get(report.get('label'), '-')})"]
+    parts += [f"{SCORE_LABELS[k]} {_pct(scores[k])}" for k in ("ai", "human", "ai_human") if scores.get(k) is not None]
+    return " · ".join(parts)
+
+
 def _pct(score: Optional[float]) -> str:
     return "-" if score is None else f"{round(score * 100)}%"
 
@@ -279,8 +311,7 @@ def to_markdown(report: Dict[str, Any]) -> str:
     lines = [
         f"# 종합보고서: {report['topic']}",
         "",
-        f"- 합의 정도: 종합 {_pct(scores['overall'])} ({LABEL_TEXT.get(report.get('label'), '-')})"
-        f" · AI {_pct(scores['ai'])} · 사람 {_pct(scores['human'])}",
+        f"- 합의 정도: {score_line(report)}",
         f"- 참가자: {', '.join(p['name'] + (' (사람)' if p['type'] == 'human' else '') for p in report['participants'])}",
         "",
         "## 요약",
@@ -306,8 +337,9 @@ def to_markdown(report: Dict[str, Any]) -> str:
     for title, key in (("열린 질문", "open_questions"), ("제언", "recommendations")):
         items = narrative.get(key) or []
         lines += [f"## {title}", ""] + [f"- {item}" for item in items] + ([""] if items else ["- 없음", ""])
-    lines.append(f"> 합의 정도는 쟁점별 수렴도의 가중 평균입니다. 수렴도 = max(지지, 반대), "
-                 f"지지 = (찬성 + {report.get('partial_weight', 0.7)}×부분찬성)/입장 수, 반대 = 반대/입장 수. "
+    lines.append(f"> 합의 정도는 참가자 쌍의 평균 일치도입니다. 입장을 찬성 1, 부분찬성 {report.get('partial_weight', 0.7)}, "
+                 f"반대 0으로 바꾸고 두 참가자의 일치도를 1 − |차이|로 계산합니다. 종합은 모든 쌍, AI간·인간간은 같은 집단 안의 쌍, "
+                 f"AI-인간간은 AI와 사람 사이의 쌍을 쓰며 쟁점별 쌍 개수로 가중 평균합니다. "
                  f"합의 ≥ {_pct(report['thresholds']['agreed'])}, 부분 합의 ≥ {_pct(report['thresholds']['partial'])}. "
-                 f"입장을 밝힌 참가자가 2명 미만인 쟁점은 판단 보류로 점수에서 제외합니다.")
+                 f"입장을 밝힌 참가자가 2명 미만인 쟁점은 판단 보류로 제외합니다.")
     return "\n".join(lines) + "\n"

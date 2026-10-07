@@ -34,21 +34,27 @@ async def test_completed_discussion_gets_report_before_completed_status(client):
         assert (await client.post(f"/api/v1/discussions/{discussion_id}/start")).status_code == 202
         events = parse_sse((await client.get(f"/api/v1/discussions/{discussion_id}/events")).text)
         names = [e for e, _, _ in events]
-        statuses = [d["status"] for e, _, d in events if e == "status"]
-        assert statuses == ["running", "reporting", "completed"]
+        # 클라이언트가 보는 상태 = 접속 시 snapshot + 이후 status 이벤트 (running 이벤트는 접속 전에 지나갈 수 있음)
+        observed = [d["status"] for e, _, d in events if e in ("snapshot", "status")]
+        distinct = [st for i, st in enumerate(observed) if i == 0 or st != observed[i - 1]]
+        assert distinct[-2:] == ["reporting", "completed"]
+        order = ["draft", "running", "reporting", "completed"]
+        assert [order.index(st) for st in distinct] == sorted(order.index(st) for st in distinct)
         assert names.index("report_ready") < len(names) - 1
 
         report = (await client.get(f"/api/v1/discussions/{discussion_id}/report")).json()
         assert report["status"] == "ready" and report["model"] == "stub-model"
-        assert report["consensus_score"] == 0.5 and report["consensus_label"] == "disagreed"
+        # 가짜 LLM 쟁점: [찬성, 반대] → 쌍 일치도 0
+        assert report["consensus_score"] == 0.0 and report["consensus_label"] == "disagreed"
+        assert report["ai_score"] == 0.0 and report["human_score"] is None and report["ai_human_score"] is None
         assert report["content"]["disagreed"] == ["Proposition"]
-        assert (await client.get(f"/api/v1/discussions/{discussion_id}")).json()["consensus_score"] == 0.5
+        assert (await client.get(f"/api/v1/discussions/{discussion_id}")).json()["consensus_score"] == 0.0
 
         md = await client.get(f"/api/v1/discussions/{discussion_id}/report/export?format=md")
         assert md.status_code == 200 and md.text.startswith("# 종합보고서: Universal basic income?")
         assert "attachment" in md.headers["content-disposition"]
         js = await client.get(f"/api/v1/discussions/{discussion_id}/report/export?format=json")
-        assert js.json()["scores"]["overall"] == 0.5
+        assert js.json()["scores"]["overall"] == 0.0
 
 
 @pytest.mark.asyncio

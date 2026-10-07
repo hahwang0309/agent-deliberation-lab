@@ -117,7 +117,7 @@ ol.subtopics li.current { font-weight: 600; color: var(--accent); }
 
 /* 종합보고서 */
 .report { margin-top: 24px; }
-.scores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 8px 0 16px; }
+.scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 8px 0 16px; }
 .score { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 .score .name { font-size: 12px; color: var(--muted); }
 .score .value { font-size: 22px; font-weight: 600; }

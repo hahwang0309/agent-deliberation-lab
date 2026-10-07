@@ -195,6 +195,7 @@ def save_report(discussion_id: str, content: Dict[str, Any], model: Optional[str
         report.consensus_score = scores["overall"]
         report.ai_score = scores["ai"]
         report.human_score = scores["human"]
+        report.ai_human_score = scores.get("ai_human")
         report.consensus_label = content.get("label")
         report.model = model
         report.error = None

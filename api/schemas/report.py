@@ -13,8 +13,9 @@ class ReportResponse(BaseModel):
     discussion_id: str
     status: str  # pending | ready | failed
     consensus_score: Optional[float] = None
-    ai_score: Optional[float] = None
-    human_score: Optional[float] = None
+    ai_score: Optional[float] = None        # AI간
+    human_score: Optional[float] = None     # 인간간 (사람 2명 이상)
+    ai_human_score: Optional[float] = None  # AI-인간간 (사람 참여 시)
     consensus_label: Optional[str] = None  # agreed | partial | disagreed
     model: Optional[str] = None
     error: Optional[str] = None

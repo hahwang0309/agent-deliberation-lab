@@ -165,7 +165,10 @@ function renderReport(r) {
   const groups = [["합의된 내용", "agreed"], ["부분 합의된 내용", "partial"], ["합의되지 않은 내용", "disagreed"]];
   if (c.issues.some(i => i.label === "insufficient")) groups.push(["판단 보류 (입장을 밝힌 참가자 1명 이하)", "insufficient"]);
   body.replaceChildren(
-    el("div", { class: "scores" }, scoreBox("종합", c.scores.overall), scoreBox("AI 참가자", c.scores.ai), scoreBox("사람 참가자", c.scores.human)),
+    // 인간간은 사람 2명 이상, AI-인간간은 사람이 참여했을 때만 계산되므로 값이 있을 때만 표시
+    el("div", { class: "scores" }, scoreBox("종합", c.scores.overall), scoreBox("AI간", c.scores.ai),
+      ...[["인간간", c.scores.human], ["AI-인간간", c.scores.ai_human]]
+        .filter(([, v]) => v != null).map(([name, v]) => scoreBox(name, v))),
     el("p", {}, labelBadge(c.label), " ", c.narrative.executive_summary),
     ...groups.flatMap(([title, key]) => {
       const issues = c.issues.filter(i => i.label === key);
@@ -173,7 +176,7 @@ function renderReport(r) {
     }),
     el("h3", {}, "열린 질문"), el("ul", {}, ...c.narrative.open_questions.map(q => el("li", {}, q))),
     el("h3", {}, "제언"), el("ul", {}, ...c.narrative.recommendations.map(q => el("li", {}, q))),
-    el("p", { class: "muted" }, `합의 정도 = 쟁점별 수렴도의 가중 평균. 수렴도 = max(지지, 반대), 지지 = (찬성 + ${c.partial_weight ?? 0.7}×부분찬성)/입장 수. 합의 ≥ ${pct(c.thresholds.agreed)}, 부분 합의 ≥ ${pct(c.thresholds.partial)}. 입장 2개 미만 쟁점은 판단 보류.`),
+    el("p", { class: "muted" }, `합의 정도 = 참가자 쌍의 평균 일치도 (찬성 1, 부분찬성 ${c.partial_weight ?? 0.7}, 반대 0, 일치도 = 1 − |차이|). 종합은 모든 쌍, AI간·인간간은 같은 집단 안, AI-인간간은 AI와 사람 사이 쌍. 합의 ≥ ${pct(c.thresholds.agreed)}, 부분 합의 ≥ ${pct(c.thresholds.partial)}. 입장 2개 미만 쟁점은 판단 보류.`),
   );
 }
 
