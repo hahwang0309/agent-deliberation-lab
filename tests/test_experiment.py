@@ -491,3 +491,71 @@ def test_coding_sample_is_reproducible_with_seed():
     a, _ = coding_sample([bundle], 4, seed=3)
     b, _ = coding_sample([bundle], 4, seed=3)
     assert a == b and len(a) == 4 and all(row["previous"] for row in a if row["text"] != "m1")
+
+
+# ---------- 배치 실행기 (E5) ----------
+
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+import yaml  # noqa: E402
+
+from api.services.experiment_runner import (  # noqa: E402
+    ExperimentPlan, build_request, existing_runs, plan_runs, run_batch)
+
+PLAN = {
+    "name": "batch-test", "repetitions": 2, "concurrency": 2,
+    "topics": [{"key": "remote", "topic": "Remote work mandates?", "max_statements": 4,
+                "personas": [dict(name="Alice", **PERSONA), "safety_researcher"], "survey": SURVEY}],
+    "conditions": [{"label": "full", "experiment": {}}, {"label": "base", "experiment": {"mode": "baseline"}}],
+}
+
+
+def test_plan_validation_order_and_request():
+    plan = ExperimentPlan(**PLAN)
+    assert [(r.replicate, r.condition.label) for r in plan_runs(plan)] == [(0, "full"), (0, "base"), (1, "full"), (1, "base")]
+    request = build_request(plan, plan_runs(plan)[1])
+    assert request.personas[1].template_id == "safety_researcher" and request.personas[1].name == "Dr. Safety"
+    exp = request.experiment
+    assert (exp.label, exp.batch, exp.topic_key, exp.replicate, exp.mode) == ("base", "batch-test", "remote", 0, "baseline")
+    with pytest.raises(ValidationError):  # 비용 상한에는 단가 필요
+        ExperimentPlan(**{**PLAN, "limits": {"max_cost_usd": 1}})
+    with pytest.raises(ValidationError):  # 조건 label 중복
+        ExperimentPlan(**{**PLAN, "conditions": [{"label": "x"}, {"label": "x"}]})
+    with pytest.raises(ValidationError):  # 알 수 없는 키
+        ExperimentPlan(**{**PLAN, "repetition": 3})
+
+
+@pytest.mark.asyncio
+async def test_run_batch_runs_skips_completed_and_respects_token_limit(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    plan = ExperimentPlan(**PLAN)
+    lines = []
+    result = await run_batch(plan, on_progress=lines.append)
+    assert len(result.completed) == 4 and not result.failed and result.skipped == 0 and len(lines) == 4
+    done = existing_runs("batch-test")
+    assert set(done) == {("remote", c, r) for c in ("full", "base") for r in (0, 1)}
+    assert all(v["status"] == "completed" for v in done.values())
+    assert set(persistence.experiment_discussion_ids(batch="batch-test", label="base")) == {
+        done[("remote", "base", 0)]["id"], done[("remote", "base", 1)]["id"]}
+
+    again = await run_batch(plan, on_progress=lines.append)  # 이어 돌리기: 완료분은 건너뜀
+    assert again.skipped == 4 and not again.completed and len(lines) == 4
+
+    tight = ExperimentPlan(**{**PLAN, "name": "batch-limit", "limits": {"max_total_tokens": 1000}})
+    limited = await run_batch(tight, on_progress=lines.append)  # 1회 예상치(발언 수 기반)가 이미 상한 초과
+    assert limited.stopped_by_limit and limited.not_started == 4 and not limited.completed
+    assert existing_runs("batch-limit") == {}
+
+
+def test_run_experiment_cli_dry_run_uses_separate_db(tmp_path):
+    plan_file = tmp_path / "plan.yaml"
+    plan_file.write_text(yaml.safe_dump(PLAN, allow_unicode=True), encoding="utf-8")
+    db = tmp_path / "exp" / "experiments.db"
+    out = subprocess.run([sys.executable, "scripts/run_experiment.py", str(plan_file), "--db", str(db), "--dry-run"],
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert "= 4 runs, already completed 0" in out.stdout and '"basis": "발언 수 기반 대략치"' in out.stdout
+    assert db.exists()  # 실험 DB가 따로 만들어지고 마이그레이션 적용됨
+    missing = subprocess.run([sys.executable, "scripts/run_experiment.py", str(plan_file)], capture_output=True, text=True)
+    assert missing.returncode != 0 and "--db" in missing.stderr  # 웹 DB에 섞이지 않도록 --db 필수

@@ -63,6 +63,9 @@ class Dynamics(_Strict):
 class ExperimentConfig(_Strict):
     """토론 1건의 실험 조건. 비운 항목은 기본 설정을 쓴다."""
     label: Optional[str] = Field(None, max_length=100, description="조건 이름 (분석 시 구분용)")
+    batch: Optional[str] = Field(None, max_length=100, description="배치 실행 이름 (scripts/run_experiment.py)")
+    topic_key: Optional[str] = Field(None, max_length=100, description="배치 안의 주제 키")
+    replicate: Optional[int] = Field(None, ge=0, description="반복 번호")
     mode: Literal["stateful", "baseline"] = Field(
         "stateful", description="baseline: 순서대로 앞 발언에 답하는 단순 토론 (비교 기준선)")
     record_prompts: bool = Field(True, description="발언마다 최종 지시 프롬프트를 meta.prompt에 저장")

@@ -32,7 +32,8 @@ def discussion_row(discussion: Dict[str, Any]) -> Dict[str, Any]:
     report = discussion["report"] or {}
     return {
         "discussion_id": discussion["id"], "topic": discussion["topic"], "language": discussion["language"],
-        "status": discussion["status"], "label": exp.get("label"),
+        "status": discussion["status"], "label": exp.get("label"), "batch": exp.get("batch"),
+        "topic_key": exp.get("topic_key"), "replicate": exp.get("replicate"),
         "mode": (run.get("settings") or {}).get("engine_mode") or exp.get("mode", "stateful"),
         "n_participants": len(discussion["participants"]),
         "max_statements": discussion["config"].get("max_statements"),

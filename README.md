@@ -59,6 +59,7 @@ curl -b cookies.txt -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json"
 | [development.md](docs/development.md) | 개발 환경, 규칙, DB 마이그레이션 |
 | [testing.md](docs/testing.md) | 테스트 구성과 실행 |
 | [troubleshooting.md](docs/troubleshooting.md) | 자주 겪는 문제 |
+| [experiments.md](docs/experiments.md) | 연구용 배치 실험 실행과 데이터 추출 |
 | [changelog.md](docs/changelog.md) | 변경 이력 |
 
 ## 라이선스와 기여

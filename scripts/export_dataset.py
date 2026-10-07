@@ -2,7 +2,8 @@
 실험 데이터셋 추출 CLI
 
 사용 예 (DATABASE_URL·SECRET_KEY는 서버와 같은 .env 또는 환경변수):
-  python scripts/export_dataset.py --label no-latitude --out data/no-latitude
+  python scripts/export_dataset.py --db data/experiments.db --label no-latitude --out data/no-latitude
+  python scripts/export_dataset.py --db data/experiments.db --batch example-death-penalty --out data/example
   python scripts/export_dataset.py --ids disc_a disc_b --out data/pair --format jsonl
   python scripts/export_dataset.py --label pilot --out data/pilot --coding-sample 100 --seed 7
 
@@ -12,18 +13,13 @@
 import argparse
 import csv
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from dotenv import load_dotenv  # noqa: E402
-
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-
-from api.runtime import persistence  # noqa: E402
-from src.services.experiment_export import coding_sample, merge_tables  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 
 def _cell(value: Any) -> Any:
@@ -46,16 +42,26 @@ def write_rows(path: Path, rows: List[Dict[str, Any]], fmt: str) -> None:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="실험 데이터셋 추출")
-    target = parser.add_mutually_exclusive_group(required=True)
-    target.add_argument("--label", help="실험 조건 label이 같은 토론 전부")
-    target.add_argument("--ids", nargs="+", help="토론 id 목록")
+    parser.add_argument("--label", help="실험 조건 label이 같은 토론")
+    parser.add_argument("--batch", help="배치 이름이 같은 토론 (scripts/run_experiment.py의 plan name)")
+    parser.add_argument("--ids", nargs="+", help="토론 id 목록 (--label·--batch 대신)")
     parser.add_argument("--out", required=True, help="출력 폴더")
     parser.add_argument("--format", choices=("csv", "jsonl"), default="csv")
     parser.add_argument("--coding-sample", type=int, default=0, help="사람 코딩용 표본 발언 수")
     parser.add_argument("--seed", type=int, default=0, help="표본 추출 시드")
+    parser.add_argument("--db", help="실험 DB 파일 경로 (scripts/run_experiment.py --db와 같은 파일)")
     args = parser.parse_args(argv)
+    if not (args.ids or args.label or args.batch):
+        parser.error("--label, --batch, --ids 중 하나는 필요합니다")
 
-    ids = persistence.discussion_ids_by_label(args.label) if args.label else args.ids
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+    if args.db:  # api 모듈을 불러오기 전에 DB를 정해야 한다
+        os.environ["DATABASE_URL"] = f"sqlite:///{Path(args.db).resolve()}"
+    from api.runtime import persistence
+    from src.services.experiment_export import coding_sample, merge_tables
+
+    ids = args.ids or persistence.experiment_discussion_ids(label=args.label, batch=args.batch)
     if not ids:
         print("추출할 토론이 없습니다.", file=sys.stderr)
         return 1

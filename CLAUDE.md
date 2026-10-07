@@ -19,6 +19,10 @@ python start_api.py             # DEBUG=True면 reload. 반드시 단일 워커 
 # 테스트 (가짜 LLM, 임시 SQLite — API 키·서버 불필요)
 pytest
 pytest tests/test_runtime.py::test_stop_cancels_running_discussion   # 단일 테스트
+
+# 연구용 배치 실험 (전용 DB 필수, docs/experiments.md)
+python scripts/run_experiment.py config/experiments/example.yaml --db data/experiments.db --dry-run
+python scripts/export_dataset.py --db data/experiments.db --batch <plan name> --out data/<폴더>
 ```
 
 DB 스키마는 Alembic으로 관리한다. 앱 시작 시 `init_db()`(`api/database.py`)가 `upgrade head`를 실행하며, Alembic 이력 없는 기존(create_all) DB는 기준 리비전으로 자동 stamp한다. 모델 변경 시:

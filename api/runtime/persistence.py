@@ -274,8 +274,15 @@ def export_bundle(discussion_id: str) -> Dict[str, Any]:
             "survey": list_survey(discussion_id)}
 
 
-def discussion_ids_by_label(label: str) -> List[str]:
-    """실험 조건 label이 같은 토론 id (생성 순)"""
+def experiment_discussion_ids(label: Optional[str] = None, batch: Optional[str] = None) -> List[str]:
+    """실험 조건 label·배치 이름으로 고른 토론 id (생성 순). 둘 다 주면 둘 다 맞는 것"""
     with session_scope() as db:
-        rows = db.query(Discussion.id, Discussion.config).order_by(Discussion.created_at, Discussion.id).all()
-        return [i for i, config in rows if ((config or {}).get("experiment") or {}).get("label") == label]
+        # created_at은 초 단위라 같은 초에 만든 토론의 순서가 정해지지 않으므로 시작 시각(마이크로초)으로 보강
+        rows = (db.query(Discussion.id, Discussion.config)
+                .order_by(Discussion.created_at, Discussion.started_at, Discussion.id).all())
+    result = []
+    for discussion_id, config in rows:
+        exp = (config or {}).get("experiment") or {}
+        if exp and (label is None or exp.get("label") == label) and (batch is None or exp.get("batch") == batch):
+            result.append(discussion_id)
+    return result

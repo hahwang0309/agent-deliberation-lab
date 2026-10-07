@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 배치 실험 실행기 (2026-10)
+- `scripts/run_experiment.py <계획.yaml> --db <실험 DB>`: 주제 × 조건 × 반복을 전용 DB에서 실행합니다. 동시 실행 수, 재시도, 완료분 건너뛰기, 토큰·비용 상한, `--dry-run` 추정을 지원합니다. 웹과 같은 경로(토론 생성 서비스, 런타임)로 실행해 저장 형식이 같습니다.
+- 실험 조건에 `batch`, `topic_key`, `replicate`가 기록되고, 추출은 `--batch`로 고를 수 있습니다.
+- 가이드: [experiments.md](experiments.md), 예시 계획: `config/experiments/example.yaml`.
+- 실측(Haiku 4.5, 사형제 2명·9발언·설문 3문항, stateful/baseline × 3회): 6건 완료, 재실행 시 6건 건너뜀. 입력 579,249 / 출력 82,757 토큰. 첫 대략치(입력 459k)가 26% 적어 발언당 계수를 실측값으로 보정했습니다.
+
 ## 데이터 추출 (2026-10)
 - 분석용 표 7개(토론, 발언, 입장, 이동, 양보, 반박, 설문): `GET /discussions/{id}/dataset`, 여러 토론은 `scripts/export_dataset.py --label <조건> --out <폴더>` (CSV 또는 JSONL).
 - `--coding-sample N --seed S`: 사람 코딩용 표본. `coding_blind.csv`(직전·대상 발언 문맥과 빈 코딩 칸: 양보, 응답 여부, 정당화 수준, 존중 수준)와 `coding_key.csv`(LLM 판정, 코더에게 주지 않음)를 따로 만듭니다.
