@@ -1,17 +1,31 @@
 """
-자연스러운 토론 시스템 - 동적 턴 관리
+토론 엔진 - 진행 계획, 상태 기반 발언자·발화 행위 선택, 발언 분석, 입장 동역학
 
-stream()은 토론 진행을 EngineEvent로 yield한다. 저장·전송은 호출 측(API 런타임)의 책임이다.
+설계 (이론적 배경은 docs/architecture.md 참고)
+- 진행 계획: 참가자 수 N, AI 발언 수 S로 명제 수 k와 명제별 발언 예산을 정한다.
+  종결 라운드 N발언을 따로 두고(본론이 N+1 이상 남을 때), k = clamp(본론 // (N+1), 1, max_subtopics).
+  명제마다 전원이 먼저 입장을 밝히고(입장 표명) 남은 예산으로 상호 논증을 한다.
+- 발언 선택(우선순위): 사람 발언 응답 → 종결 라운드 → 명제별 입장 표명 → 답하지 않은 반박·질문에 응답할 의무
+  → 교착 시 제3자 중재·제3안 → 성급한 합의 시 반대 검토 → 입장 거리에 따른 동조·확장/사례 또는 반박/근거 공격
+- 발언 분석: 발언마다 구조화 출력으로 주장·대상·관계·입장·청자별 설득력을 추출해 DebateState에 반영한다.
+
+stream()은 진행을 EngineEvent로 yield한다. 저장·전송은 호출 측(API 런타임)의 책임이다.
 """
 import logging
 import random
+from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, List, Optional, Protocol
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Protocol, Tuple
+
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field, field_validator
 
 from config.config_loader import config_loader
 from config.discussion_config import get_config
 from src.core.agent import DiscussionAgent
+from src.core.debate_state import Challenge, DebateState, DynamicsParams
 from src.core.moderator import DiscussionModerator
 from src.models.personas import Message
 from src.utils.language_detector import LanguageDetector
@@ -22,14 +36,22 @@ AI_ROLES = ("agent", "assistant")
 
 
 class ActionType(Enum):
-    """발화 액션 타입"""
-    PRESENT = "present"        # 새로운 관점 제시
-    RESPOND = "respond"        # 직접 응답
-    BUILD = "build"            # 동의하며 확장
-    CHALLENGE = "challenge"    # 도전/반박
-    EXAMPLE = "example"        # 구체적 예시
-    SYNTHESIZE = "synthesize"  # 종합
-    RESPOND_TO_HUMAN = "respond_to_human"  # 사람 참가자 발언에 응답
+    """발화 행위"""
+    POSITION = "position"                    # 입장 표명
+    AGREE_EXTEND = "agree_extend"            # 동조하며 확장
+    EXAMPLE = "example"                      # 사례 제시
+    REBUT = "rebut"                          # 반박 (결론 반대)
+    UNDERCUT = "undercut"                    # 근거 공격 (추론 비판)
+    RESPOND_CHALLENGE = "respond_challenge"  # 받은 반박·질문에 응답 (방어·부분 양보·해명)
+    MEDIATE = "mediate"                      # 제3자 중재
+    THIRD_OPTION = "third_option"            # 제3의 안
+    DEVILS_ADVOCATE = "devils_advocate"      # 성급한 합의에 대한 반대 검토
+    CLOSING = "closing"                      # 종결 발언
+    RESPOND_TO_HUMAN = "respond_to_human"    # 사람 참가자 발언에 응답
+
+
+TARGETED_ACTIONS = (ActionType.AGREE_EXTEND, ActionType.EXAMPLE, ActionType.REBUT, ActionType.UNDERCUT,
+                    ActionType.RESPOND_CHALLENGE, ActionType.DEVILS_ADVOCATE)
 
 
 @dataclass
@@ -37,14 +59,15 @@ class EngineEvent:
     """토론 엔진 이벤트
 
     kind:
-      - subtopics: content 없음, meta["subtopics"]에 소주제 목록
+      - subtopics: meta["subtopics"]에 명제 목록
       - utterance_start: 발화 시작 (speaker, speaker_type, action)
       - chunk: 발화 스트리밍 조각 (content=조각)
-      - utterance: 완성된 발화 (content=전체 텍스트)
+      - utterance: 완성된 발화 (content=전체 텍스트, meta["seq"]=엔진이 붙인 순번)
+      - analysis: 발언 분석과 토론 상태 (meta["seq"], meta["analysis"], meta["moves"], meta["stances"], meta["debate"])
     """
     kind: str
     speaker: Optional[str] = None
-    speaker_type: Optional[str] = None  # ai | moderator
+    speaker_type: Optional[str] = None  # ai | moderator | human
     content: str = ""
     action: Optional[str] = None
     meta: Dict[str, Any] = field(default_factory=dict)
@@ -65,35 +88,126 @@ class InterventionGate(Protocol):
     async def after_utterance(self) -> List[HumanInput]: ...
 
 
-class NaturalDiscussion:
-    """자연스러운 토론 시스템"""
+# ---------- 발언 분석 구조화 출력 ----------
 
+RELATION_SYNONYMS = {  # 분석 LLM이 쓰는 동의어 → 정해진 관계 (한 값 때문에 분석 전체가 버려지지 않도록)
+    "extend": "support", "agree": "support", "build": "support", "example": "support",
+    "rebut": "attack", "undercut": "attack", "challenge": "attack", "counter": "attack", "disagree": "attack",
+    "concession": "concede", "ask": "question",
+}
+
+
+class AnalysisTarget(BaseModel):
+    seq: int
+    speaker: str
+    relation: Literal["support", "attack", "concede", "question"]
+
+    @field_validator("relation", mode="before")
+    @classmethod
+    def normalize_relation(cls, value):
+        value = str(value).strip().lower()
+        return RELATION_SYNONYMS.get(value, value)
+
+
+class ListenerInfluence(BaseModel):
+    listener: str
+    persuasiveness: float = Field(ge=0.0, le=1.0)
+
+
+class UtteranceAnalysis(BaseModel):
+    claims: List[str] = Field(default_factory=list)
+    move: str = "position"
+    targets: List[AnalysisTarget] = Field(default_factory=list)
+    addressed: List[str] = Field(default_factory=list)
+    stance: float = Field(0.0, ge=-1.0, le=1.0)
+    influence: List[ListenerInfluence] = Field(default_factory=list)
+
+    @field_validator("targets", mode="before")
+    @classmethod
+    def drop_unknown_relations(cls, value):
+        """알 수 없는 관계의 대상은 버린다 (나머지 분석은 유지)"""
+        if not isinstance(value, list):
+            return value
+        valid = set(AnalysisTarget.model_fields["relation"].annotation.__args__)
+        return [t for t in value if not isinstance(t, dict)
+                or RELATION_SYNONYMS.get(str(t.get("relation", "")).strip().lower(),
+                                         str(t.get("relation", "")).strip().lower()) in valid]
+
+
+# ---------- 진행 계획 ----------
+
+@dataclass
+class DebatePlan:
+    budgets: List[int]  # 명제별 AI 발언 예산
+    closing: int        # 종결 라운드 발언 수
+
+
+def plan_debate(n_agents: int, max_statements: int, max_subtopics: int) -> DebatePlan:
+    """명제 수와 예산: 명제마다 '전원 입장 표명 + 상호 응답 1회 이상'(N+1발언)이 들어가도록"""
+    n = max(1, n_agents)
+    closing = n if max_statements - n >= n + 1 else 0
+    body = max_statements - closing
+    k = max(1, min(max_subtopics, body // (n + 1)))
+    return DebatePlan(budgets=split_budget(body, k), closing=closing)
+
+
+def split_budget(total: int, count: int) -> List[int]:
+    base, extra = divmod(total, max(1, count))
+    return [base + (1 if i < extra else 0) for i in range(max(1, count))]
+
+
+@dataclass
+class Turn:
+    speaker: DiscussionAgent
+    action: ActionType
+    target: Optional[Message] = None
+    parties: Optional[Tuple[str, str]] = None
+
+
+class NaturalDiscussion:
     def __init__(self, agents: List[DiscussionAgent], moderator: Optional[DiscussionModerator] = None,
-                 max_statements: int = 20):
+                 max_statements: int = 20, analyzer: Optional[BaseChatModel] = None):
         self.agents = agents
         self.moderator = moderator
         self.max_statements = max_statements
+        self.analyzer = analyzer  # 발언 분석용 LLM (없으면 상태 분석 없이 진행 규칙만 적용)
+        self.config = get_config()
         self.messages: List[Message] = []
 
-        # 토론 상태 추적
-        self.turn_count = 0
-        self.agent_turn_count = {agent.persona.name: 0 for agent in agents}
-        self.last_speakers: List[str] = []
+        self.debate = DebateState(DynamicsParams(
+            step=self.config.dynamics_step, anchor=self.config.dynamics_anchor,
+            confidence_bound=self.config.confidence_bound, confidence_penalty=self.config.confidence_penalty))
+        for agent in agents:
+            self.debate.ensure(agent.persona.name, "ai", agent.stubbornness)
 
-        # 사람 개입: 응답해야 할 사람 발언과 남은 후속 응답 수
+        # 진행 상태
+        self.plan = plan_debate(len(agents), max_statements, self.config.max_subtopics)
+        self.propositions: List[str] = []
+        self.subtopic_idx = 0
+        self.statements_on_subtopic = 0
+        self.spoken_in_subtopic: Counter = Counter()
+        self.closing_started = False
+        self.closing_done: List[str] = []
+        self.devils_advocate_used = False
+        self.mediations = 0
+        self.alternation = 0
+
+        self.turn_count = 0  # AI 발언 수
+        self.agent_turn_count = {a.persona.name: 0 for a in agents}
+        self.last_speakers: List[str] = []
+        self.recent_moves: Dict[str, List[Dict[str, Any]]] = {}  # 화자의 마지막 발언 이후 입장 이동
+
+        # 사람 개입
         self.pending_human: Optional[HumanInput] = None
         self.pending_followups = 0
-
-        self.config = get_config()
+        self.next_seq = 1
         self.restored = False
-        self.statements_on_subtopic = 0  # 현재 소주제에서 나온 AI 발언 수
+
+    # ---------- 복원 ----------
 
     def restore(self, prior_messages: List[Message], subtopics: Optional[List[str]] = None,
-                current_subtopic: Optional[str] = None) -> None:
-        """중단된 토론을 저장된 발언으로 복원 (페르소나 진화 상태는 복원하지 않음)
-
-        prior_messages: role assistant(AI) / moderator / user(사람, metadata speaker_type=human)
-        """
+                current_subtopic: Optional[str] = None, snapshot: Optional[Dict[str, Any]] = None) -> None:
+        """중단된 토론을 저장된 발언과 마지막 상태 스냅숏으로 복원"""
         self.messages = list(prior_messages)
         for msg in self.messages:
             if msg.role in AI_ROLES:
@@ -101,8 +215,9 @@ class NaturalDiscussion:
                 if msg.agent_name in self.agent_turn_count:
                     self.agent_turn_count[msg.agent_name] += 1
                 self.last_speakers = (self.last_speakers + [msg.agent_name])[-3:]
+        seqs = [m.metadata.get("seq") for m in self.messages if m.metadata.get("seq")]
+        self.next_seq = max(seqs) + 1 if seqs else 1
 
-        # 마지막 발언이 응답받지 못한 사람 발언이면 이어서 응답하도록 예약
         spoken = [m for m in self.messages if m.role != "moderator"]
         if spoken and spoken[-1].metadata.get("speaker_type") == "human":
             last = spoken[-1]
@@ -111,225 +226,385 @@ class NaturalDiscussion:
 
         if self.moderator and subtopics:
             self.moderator.subtopics = list(subtopics)
-            # DB의 current_subtopic은 200자로 잘려 저장되므로 앞부분으로 비교
             prefix = (current_subtopic or "")[:200]
             self.moderator.current_subtopic_idx = next(
                 (i for i, s in enumerate(subtopics) if s[:200] == prefix), 0)
+            self.subtopic_idx = self.moderator.current_subtopic_idx
+        if snapshot:
+            self.subtopic_idx = snapshot.get("subtopic_idx", self.subtopic_idx)
+            self.statements_on_subtopic = snapshot.get("statements_on_subtopic", 0)
+            self.spoken_in_subtopic = Counter(snapshot.get("spoken_in_subtopic", {}))
+            self.closing_started = snapshot.get("closing_started", False)
+            self.closing_done = list(snapshot.get("closing_done", []))
+            self.devils_advocate_used = snapshot.get("devils_advocate_used", False)
+            if snapshot.get("state"):
+                self.debate = DebateState.from_snapshot(snapshot["state"], self.debate.params)
+            if self.moderator:
+                self.moderator.current_subtopic_idx = self.subtopic_idx
+        else:
+            self._restore_progress_from_count(subtopics)
         self.restored = True
 
+    def _restore_progress_from_count(self, subtopics: Optional[List[str]]) -> None:
+        """스냅숏이 없는 토론(이전 버전)은 지금까지의 AI 발언 수를 진행 계획에 대입해 위치를 정한다"""
+        if subtopics and len(subtopics) != len(self.plan.budgets):
+            self.plan.budgets = split_budget(sum(self.plan.budgets), len(subtopics))
+        ai_speakers = [m.agent_name for m in self.messages if m.role in AI_ROLES]
+        remaining, idx = len(ai_speakers), 0
+        while idx < len(self.plan.budgets) - 1 and remaining >= self.plan.budgets[idx]:
+            remaining -= self.plan.budgets[idx]
+            idx += 1
+        body = ai_speakers
+        if remaining > self.plan.budgets[idx]:  # 본론을 다 쓰고 종결 라운드 진행 중
+            done = remaining - self.plan.budgets[idx]
+            self.closing_started = True
+            self.closing_done = list(dict.fromkeys(ai_speakers[-done:]))
+            body, remaining = ai_speakers[:-done], self.plan.budgets[idx]
+        self.subtopic_idx = idx
+        self.statements_on_subtopic = remaining
+        self.spoken_in_subtopic = Counter(body[len(body) - remaining:] if remaining else [])
+        if self.moderator:
+            self.moderator.current_subtopic_idx = idx
+
+    def snapshot(self) -> Dict[str, Any]:
+        return {
+            "subtopic_idx": self.subtopic_idx,
+            "statements_on_subtopic": self.statements_on_subtopic,
+            "spoken_in_subtopic": dict(self.spoken_in_subtopic),
+            "closing_started": self.closing_started,
+            "closing_done": self.closing_done,
+            "devils_advocate_used": self.devils_advocate_used,
+            "state": self.debate.snapshot(),
+        }
+
+    # ---------- 실행 ----------
+
     async def stream(self, topic: str, language: Optional[str] = None,
-                     gate: Optional[InterventionGate] = None) -> AsyncIterator[EngineEvent]:
-        """토론 실행 - 진행 상황을 EngineEvent로 yield. gate가 있으면 발화가 끝날 때마다 사람 개입을 받는다."""
-        if not language:
-            language = LanguageDetector.detect_language(topic)
+                     gate: Optional[InterventionGate] = None, start_seq: Optional[int] = None) -> AsyncIterator[EngineEvent]:
+        """토론 실행. gate가 있으면 발화가 끝날 때마다 사람 개입을 받는다. start_seq: 다음 메시지 순번."""
+        if start_seq is not None:
+            self.next_seq = start_seq
+        self.language = language = language or LanguageDetector.detect_language(topic)
         for agent in self.agents:
             agent.language = language
-
         if self.moderator:
             self.moderator.language = language
-            if not self.restored:  # 재개 시에는 기존 소주제 유지
-                subtopics = await self.moderator.generate_subtopics(topic)
-                if subtopics:
-                    yield EngineEvent(kind="subtopics", meta={"subtopics": subtopics})
 
-        # 발언 예산이 끝나도 사람 발언에 대한 후속 응답은 수행한다
-        while self.turn_count < self.max_statements or self.pending_followups > 0:
-            speaker, action = self._select_next_speaker()
-            if not speaker:
-                break
+        if not self.restored and self.moderator:
+            subtopics = await self.moderator.generate_subtopics(topic, len(self.plan.budgets))
+            if subtopics:
+                yield EngineEvent(kind="subtopics", meta={"subtopics": subtopics})
+                yield self._moderator_event(self.moderator.opening(), "opening")
+        self.propositions = (self.moderator.subtopics if self.moderator else []) or [topic]
+        if len(self.propositions) != len(self.plan.budgets):
+            self.plan.budgets = split_budget(sum(self.plan.budgets), len(self.propositions))
 
-            prompt = self._generate_prompt(topic, speaker, action)
-
-            yield EngineEvent(kind="utterance_start", speaker=speaker.persona.name,
-                              speaker_type="ai", action=action.value)
-            response = ""
-            async for chunk in speaker.respond_stream(prompt, self.messages):
-                response += chunk
-                yield EngineEvent(kind="chunk", speaker=speaker.persona.name,
-                                  speaker_type="ai", content=chunk, action=action.value)
-
-            rag = speaker.last_rag_result
-            meta = {
-                "turn": self.turn_count,
-                "in_reply_to_seq": self.pending_human.seq if action == ActionType.RESPOND_TO_HUMAN and self.pending_human else None,
-                "rag_used": rag is not None,
-                "rag_query": rag.query if rag else None,
-                "sources": rag.sources if rag else None,
-            }
-            self.messages.append(Message(role="assistant", content=response,
-                                         agent_name=speaker.persona.name,
-                                         metadata={"action": action.value, **meta}))
-            yield EngineEvent(kind="utterance", speaker=speaker.persona.name, speaker_type="ai",
-                              content=response, action=action.value, meta=meta)
-
-            self._update_state(speaker)
-            self.statements_on_subtopic += 1
-            self._process_evolution(speaker, response, topic)
-            if action == ActionType.RESPOND_TO_HUMAN:
-                self.pending_followups -= 1
-            await self._human_checkpoint(gate)
-
-            if self.moderator and self.pending_followups == 0 and self._should_moderator_intervene():
-                event = await self._moderator_intervention(topic)
+        while True:
+            if self.pending_followups == 0:
+                event, finished = self._advance_phase()
                 if event:
                     yield event
-                    await self._human_checkpoint(gate)
+                if finished:
+                    break
 
-            self.turn_count += 1
+            turn = self._select_turn()
+            if turn is None:
+                break
+            async for event in self._speak(topic, turn):
+                yield event
+            async for event in self._human_checkpoint(gate):
+                yield event
 
-        logger.info("Discussion completed: turns=%d messages=%d", self.turn_count, len(self.messages))
+            # 참가자가 2명이면 교착을 중재할 제3자가 없으므로 모더레이터가 지목 질문
+            if (self.moderator and len(self.agents) == 2 and not self.closing_started
+                    and self.statements_on_subtopic < self._current_budget()  # 답할 발언이 남아 있을 때만
+                    and self.debate.stalemate_pair(self.config.stalemate_exchanges)):
+                event = await self._moderator_mediation(topic)
+                if event:
+                    yield event
 
-    async def _human_checkpoint(self, gate: Optional[InterventionGate]) -> None:
-        """사람 개입 지점: 받은 발언을 대화에 넣고 다음 AI 발언이 응답하도록 예약"""
+        logger.info("Discussion completed: statements=%d messages=%d", self.turn_count, len(self.messages))
+
+    def _current_budget(self) -> int:
+        return self.plan.budgets[min(self.subtopic_idx, len(self.plan.budgets) - 1)]
+
+    def _advance_phase(self) -> Tuple[Optional[EngineEvent], bool]:
+        """명제 예산을 다 쓰면 다음 명제·종결 라운드로. (모더레이터 안내 이벤트, 토론 종료 여부)"""
+        if self.closing_started:
+            return None, len(self.closing_done) >= len(self.agents)
+        if self.statements_on_subtopic < self._current_budget():
+            return None, False
+        if self.subtopic_idx + 1 < len(self.propositions):
+            self.subtopic_idx += 1
+            self.statements_on_subtopic = 0
+            self.spoken_in_subtopic.clear()
+            self.devils_advocate_used = False
+            self.debate.reset_subtopic()
+            if self.moderator:
+                return self._moderator_event(self.moderator.advance(), "transition"), False
+            return None, False
+        if self.plan.closing:
+            self.closing_started = True
+            if self.moderator:
+                return self._moderator_event(self.moderator.closing_announcement(), "closing_announce"), False
+            return None, False
+        return None, True
+
+    # ---------- 발언자·발화 행위 선택 ----------
+
+    def _agent(self, name: str) -> Optional[DiscussionAgent]:
+        return next((a for a in self.agents if a.persona.name == name), None)
+
+    def _least_spoken(self, candidates: List[DiscussionAgent]) -> DiscussionAgent:
+        fewest = min(self.spoken_in_subtopic[a.persona.name] for a in candidates)
+        pool = [a for a in candidates if self.spoken_in_subtopic[a.persona.name] == fewest]
+        fewest_total = min(self.agent_turn_count[a.persona.name] for a in pool)
+        return random.choice([a for a in pool if self.agent_turn_count[a.persona.name] == fewest_total])
+
+    def _latest_from_others(self, name: str) -> Optional[Message]:
+        """현재 명제에서 다른 참가자(AI·사람)가 한 가장 최근 발언"""
+        for msg in reversed(self.messages):
+            if msg.metadata.get("subtopic_idx", self.subtopic_idx) != self.subtopic_idx:
+                break
+            if msg.role != "moderator" and msg.agent_name != name:
+                return msg
+        return None
+
+    def _message_by_seq(self, seq: Optional[int]) -> Optional[Message]:
+        return next((m for m in reversed(self.messages) if seq and m.metadata.get("seq") == seq), None)
+
+    def _select_turn(self) -> Optional[Turn]:
+        last = self.last_speakers[-1] if self.last_speakers else None
+        others = [a for a in self.agents if a.persona.name != last] or self.agents
+
+        # 1. 사람 발언에 대한 후속 응답
+        if self.pending_followups > 0:
+            return Turn(self._least_spoken(others), ActionType.RESPOND_TO_HUMAN)
+
+        # 2. 종결 라운드: 아직 마무리하지 않은 참가자 순서대로
+        if self.closing_started:
+            remaining = [a for a in self.agents if a.persona.name not in self.closing_done]
+            return Turn(remaining[0], ActionType.CLOSING) if remaining else None
+
+        # 3. 입장 표명: 이 명제에서 아직 말하지 않은 참가자 (명제마다 시작 순서를 바꿈)
+        offset = self.subtopic_idx % len(self.agents)
+        rotated = self.agents[offset:] + self.agents[:offset]
+        unspoken = [a for a in rotated if self.spoken_in_subtopic[a.persona.name] == 0]
+        if unspoken:
+            speaker = unspoken[0]
+            return Turn(speaker, ActionType.POSITION, self._latest_from_others(speaker.persona.name))
+
+        names = [a.persona.name for a in others]
+
+        # 4. 교착: 서로 반박만 주고받으면 응답 의무보다 먼저 제3자가 중재하거나 제3안 제시
+        pair = self.debate.stalemate_pair(self.config.stalemate_exchanges)
+        if pair and len(self.agents) >= 3:
+            thirds = [a for a in others if a.persona.name not in pair] or [a for a in self.agents if a.persona.name not in pair]
+            if thirds:
+                self.debate.clear_pair(pair)
+                action = ActionType.MEDIATE if self.mediations % 2 == 0 else ActionType.THIRD_OPTION
+                self.mediations += 1
+                return Turn(self._least_spoken(thirds), action, parties=pair)
+
+        # 5. 응답 의무: 답하지 않은 반박·질문을 받은 참가자
+        challenge = self.debate.open_challenge_for(names)
+        if challenge:
+            speaker = self._agent(challenge.target)
+            target = self._message_by_seq(challenge.seq) or self._latest_from_others(speaker.persona.name)
+            return Turn(speaker, ActionType.RESPOND_CHALLENGE, target)
+
+        # 6. 성급한 합의: 반박 없이 입장이 모여 있으면 가장 먼 참가자가 반대 검토
+        all_names = [a.persona.name for a in self.agents]
+        spread = self.debate.spread(all_names)
+        if (not self.devils_advocate_used and self.debate.attacks_in_subtopic == 0
+                and spread is not None and spread < self.config.consensus_spread):
+            values = {n: self.debate.stance(n) for n in names}
+            mean = sum(v for v in self.debate.stances().values() if v is not None) / len(all_names)
+            speaker = self._agent(max(values, key=lambda n: abs(values[n] - mean)))
+            self.devils_advocate_used = True
+            return Turn(speaker, ActionType.DEVILS_ADVOCATE, self._latest_from_others(speaker.persona.name))
+
+        # 7. 기본: 이 명제에서 덜 말한 참가자가 최근 다른 사람 발언에 입장 거리에 맞게 반응
+        speaker = self._least_spoken(others)
+        target = self._latest_from_others(speaker.persona.name)
+        own, theirs = self.debate.stance(speaker.persona.name), self.debate.stance(target.agent_name) if target else None
+        self.alternation += 1
+        if own is not None and theirs is not None and abs(own - theirs) < 0.4:
+            action = ActionType.AGREE_EXTEND if self.alternation % 2 else ActionType.EXAMPLE
+        else:
+            action = ActionType.REBUT if self.alternation % 2 else ActionType.UNDERCUT
+        return Turn(speaker, action, target)
+
+    # ---------- 발언 ----------
+
+    def _stance_note(self, name: str) -> str:
+        prompts = config_loader.prompts
+        x = self.debate.stance(name)
+        if x is None:
+            return prompts.render("turn_actions.stance_unknown")
+        labels = prompts.get("turn_actions.stance_labels")
+        label = (labels["strong_agree"] if x >= 0.6 else labels["agree"] if x >= 0.2 else
+                 labels["undecided"] if x > -0.2 else labels["disagree"] if x > -0.6 else labels["strong_disagree"])
+        note = prompts.render("turn_actions.stance_current", label=label, value=x)
+        moves = self.recent_moves.get(name, [])
+        total = sum(m["delta"] for m in moves)
+        if abs(total) >= 0.05:
+            by = ", ".join(dict.fromkeys(m["by"] for m in moves))
+            note += prompts.render("turn_actions.stance_moved", delta=total, by=by)
+        return note
+
+    def _build_prompt(self, topic: str, turn: Turn) -> str:
+        prompts = config_loader.prompts
+        name = turn.speaker.persona.name
+        commitments = self.debate.participants[name].commitments
+        parts = [prompts.render(
+            "turn_actions.frame", topic=topic,
+            proposition=self.propositions[self.subtopic_idx] if self.propositions else topic,
+            stance_note=self._stance_note(name),
+            commitments=" / ".join(commitments[-3:]) or "(none yet)",
+        )]
+        if turn.target is not None and turn.action in TARGETED_ACTIONS + (ActionType.POSITION,):
+            parts.append(prompts.render(
+                "turn_actions.target_block", target_name=turn.target.agent_name,
+                target_seq=turn.target.metadata.get("seq", "?"),
+                target_text=turn.target.content[:self.config.context_chars]))
+        if turn.action == ActionType.RESPOND_TO_HUMAN and self.pending_human:
+            parts.append(prompts.render("turn_actions.respond_to_human", human_name=self.pending_human.name,
+                                        remark=self.pending_human.content))
+        else:
+            party_a, party_b = turn.parties or ("", "")
+            parts.append(prompts.render(
+                f"turn_actions.{turn.action.value}",
+                target_name=turn.target.agent_name if turn.target else "",
+                party_a=party_a, party_b=party_b))
+        if turn.action in TARGETED_ACTIONS and turn.target is not None:
+            parts.append(prompts.render("turn_actions.reply_rules"))
+        return "\n".join(parts)
+
+    async def _speak(self, topic: str, turn: Turn) -> AsyncIterator[EngineEvent]:
+        speaker, action, name = turn.speaker, turn.action, turn.speaker.persona.name
+        prompt = self._build_prompt(topic, turn)
+
+        yield EngineEvent(kind="utterance_start", speaker=name, speaker_type="ai", action=action.value)
+        response = ""
+        async for chunk in speaker.respond_stream(prompt, self.messages):
+            response += chunk
+            yield EngineEvent(kind="chunk", speaker=name, speaker_type="ai", content=chunk, action=action.value)
+
+        seq = self.next_seq
+        self.next_seq += 1
+        rag = speaker.last_rag_result
+        meta = {
+            "seq": seq,
+            "turn": self.turn_count,
+            "subtopic_idx": self.subtopic_idx,
+            "target_seq": turn.target.metadata.get("seq") if turn.target is not None else None,
+            "in_reply_to_seq": self.pending_human.seq if action == ActionType.RESPOND_TO_HUMAN and self.pending_human else None,
+            "rag_used": rag is not None,
+            "rag_query": rag.query if rag else None,
+            "sources": rag.sources if rag else None,
+        }
+        self.messages.append(Message(role="assistant", content=response, agent_name=name,
+                                     metadata={"action": action.value, "speaker_type": "ai", **meta}))
+        yield EngineEvent(kind="utterance", speaker=name, speaker_type="ai", content=response,
+                          action=action.value, meta=meta)
+
+        # 진행 상태 갱신
+        self.turn_count += 1
+        self.agent_turn_count[name] += 1
+        self.last_speakers = (self.last_speakers + [name])[-3:]
+        self.recent_moves[name] = []
+        if action == ActionType.RESPOND_TO_HUMAN:
+            self.pending_followups -= 1
+        if action == ActionType.CLOSING:
+            self.closing_done.append(name)
+        elif not self.closing_started:  # 사람 응답도 명제 예산을 쓴다 (예산이 끝났으면 추가 발언)
+            self.statements_on_subtopic += 1
+            self.spoken_in_subtopic[name] += 1
+
+        event = await self._analyze(seq, name, "ai", response)
+        if event:
+            yield event
+
+    async def _human_checkpoint(self, gate: Optional[InterventionGate]) -> AsyncIterator[EngineEvent]:
+        """사람 개입 지점: 받은 발언을 대화에 넣고 분석한 뒤 다음 AI 발언이 응답하도록 예약"""
         if gate is None:
             return
         for human in await gate.after_utterance():
+            if human.seq:
+                self.next_seq = max(self.next_seq, human.seq + 1)
             self.messages.append(Message(role="user", content=human.content, agent_name=human.name,
-                                         metadata={"speaker_type": "human", "seq": human.seq}))
+                                         metadata={"speaker_type": "human", "seq": human.seq,
+                                                   "subtopic_idx": self.subtopic_idx}))
             self.pending_human = human
             self.pending_followups = self.config.human_followup_responses
+            self.debate.ensure(human.name, "human")
+            event = await self._analyze(human.seq, human.name, "human", human.content)
+            if event:
+                yield event
 
-    def _select_next_speaker(self) -> tuple[Optional[DiscussionAgent], Optional[ActionType]]:
-        """다음 발언자와 액션 선택 - 진행도에 따른 자연스러운 흐름"""
-        eligible = [a for a in self.agents
-                    if self.agent_turn_count[a.persona.name] < self.config.max_turns_per_agent]
-        if self.pending_followups > 0:
-            candidates = [a for a in (eligible or self.agents) if a.persona.name not in self.last_speakers[-1:]]
-            pool = candidates or eligible or self.agents
-            return min(pool, key=lambda a: self.agent_turn_count[a.persona.name]), ActionType.RESPOND_TO_HUMAN
-        if not eligible:
-            return None, None
+    def _moderator_event(self, content: str, msg_type: str) -> EngineEvent:
+        seq = self.next_seq
+        self.next_seq += 1
+        meta = {"seq": seq, "turn": self.turn_count, "subtopic_idx": self.subtopic_idx,
+                "subtopic": self.propositions[self.subtopic_idx] if self.propositions else
+                (self.moderator.current_subtopic if self.moderator else None)}
+        self.messages.append(Message(role="moderator", content=content, agent_name="Moderator",
+                                     metadata={"type": msg_type, "speaker_type": "moderator", **meta}))
+        return EngineEvent(kind="utterance", speaker="Moderator", speaker_type="moderator",
+                           content=content, action=msg_type, meta=meta)
 
-        # 직전 발언자 제외 (연속 발언 방지)
-        if self.last_speakers:
-            eligible = [a for a in eligible if a.persona.name not in self.last_speakers[-1:]] or self.agents
-
-        progress = self.turn_count / self.max_statements if self.max_statements > 0 else 0
-        fewest = min(self.agent_turn_count[a.persona.name] for a in eligible)
-        least_spoken = random.choice([a for a in eligible if self.agent_turn_count[a.persona.name] == fewest])
-
-        if self.turn_count == 0:
-            return random.choice(eligible), ActionType.PRESENT
-        if progress < 0.3:
-            action = random.choices([ActionType.PRESENT, ActionType.EXAMPLE], weights=[0.7, 0.3])[0]
-            return least_spoken, action
-        if progress < 0.7:
-            build_weight = self.config.prefer_building_over_challenging
-            action = random.choices(
-                [ActionType.RESPOND, ActionType.BUILD, ActionType.CHALLENGE, ActionType.EXAMPLE],
-                weights=[0.3, build_weight * 0.4, (1.0 - build_weight) * 0.2, 0.2]
-            )[0]
-            return least_spoken, action
-        action = random.choices([ActionType.SYNTHESIZE, ActionType.BUILD], weights=[0.6, 0.4])[0]
-        return least_spoken, action
-
-    def _generate_prompt(self, topic: str, speaker: DiscussionAgent, action: ActionType) -> str:
-        """액션에 맞는 프롬프트 생성 (config/prompts.yaml의 turn_actions)"""
-        prompts = config_loader.prompts
-
-        subtopic = self.moderator.current_subtopic if self.moderator else None
-        focus_line = prompts.render("turn_actions.focus_line", subtopic=subtopic) if subtopic else ""
-
-        recent_context = ""
-        if self.messages:
-            lines = [prompts.render("turn_actions.recent_context_header")]
-            lines += [prompts.render("turn_actions.recent_context_line", name=m.agent_name, excerpt=m.content[:100])
-                      for m in self.messages[-2:]]
-            recent_context = "\n".join(lines)
-
-        target = self._find_challengeable_point() if action == ActionType.CHALLENGE else (
-            self.messages[-1] if self.messages else None)
-        excerpt_len = 150 if action == ActionType.RESPOND else 100
-
-        if action == ActionType.RESPOND_TO_HUMAN and self.pending_human:
-            return prompts.render("turn_actions.respond_to_human", topic=topic,
-                                  human_name=self.pending_human.name, remark=self.pending_human.content)
-
-        return prompts.render(
-            f"turn_actions.{action.value}",
-            topic=topic,
-            focus_line=focus_line,
-            recent_context=recent_context,
-            target_name=target.agent_name if target else "Someone",
-            target_excerpt=target.content[:excerpt_len] if target else topic,
-        )
-
-    def _update_state(self, speaker: DiscussionAgent):
-        """토론 상태 업데이트"""
-        self.agent_turn_count[speaker.persona.name] += 1
-        self.last_speakers.append(speaker.persona.name)
-        if len(self.last_speakers) > 3:
-            self.last_speakers.pop(0)
-
-    def _process_evolution(self, speaker: DiscussionAgent, response: str, topic: str):
-        """다른 참가자의 페르소나 진화 처리"""
-        for agent in self.agents:
-            if agent is not speaker:
-                change = agent.process_other_argument(response[:500], speaker.persona.name, topic)
-                if change and change.get('position_changed'):
-                    logger.debug("%s shifted position", agent.persona.name)
-
-    def _statements_per_subtopic(self) -> Optional[int]:
-        count = len(self.moderator.subtopics) if self.moderator else 0
-        return max(2, self.max_statements // count) if count else None
-
-    def _transition_due(self) -> bool:
-        return self.moderator.should_transition_subtopic(
-            self.messages, self.statements_on_subtopic, self._statements_per_subtopic())
-
-    def _should_moderator_intervene(self) -> bool:
-        """모더레이터 개입 판단: 소주제 전환 시점, 추상적 발언 연속, 또는 AI 발언 N개마다.
-        마지막 AI 발언 뒤에는 개입하지 않는다 (답 없는 질문으로 끝나지 않도록)."""
-        done = self.turn_count + 1  # 지금까지 나온 AI 발언 수
-        if done >= self.max_statements:
-            return False
-        if self._transition_due():
-            return True
-        if self._should_probe_for_specifics():
-            return True
-        every = self.config.moderator_every_statements
-        return done >= 2 and done % every == 0
-
-    async def _moderator_intervention(self, topic: str) -> Optional[EngineEvent]:
-        """모더레이터 개입 - 주제 전환, 구체화 질문, 심화 질문"""
-        if self._transition_due():
-            content = await self.moderator.transition_to_next_subtopic(topic)
-            msg_type = "transition"
-            self.statements_on_subtopic = 0
-        elif self._should_probe_for_specifics():
-            content = await self.moderator.generate_probing_question(topic, self.messages, is_abstract=True)
-            msg_type = "probing"
-        else:
-            msg_type = "question"
-            content = await self.moderator.generate_probing_question(topic, self.messages)
-
+    async def _moderator_mediation(self, topic: str) -> Optional[EngineEvent]:
+        pair = self.debate.stalemate_pair(self.config.stalemate_exchanges)
+        if not pair:
+            return None
+        self.debate.clear_pair(pair)
+        a, b = pair
+        content = await self.moderator.mediation_question(
+            topic, a, b, self.debate.participants[a].commitments, self.debate.participants[b].commitments)
         if not content:
             return None
+        # 지목받은 참가자에게 응답 의무 (질문 메시지의 seq = 곧 붙을 번호)
+        self.debate.challenges.append(Challenge("Moderator", b, self.next_seq, "question", content[:200]))
+        return self._moderator_event(content, "mediation")
 
-        self.messages.append(Message(role="moderator", content=content, agent_name="Moderator",
-                                     metadata={"type": msg_type}))
-        return EngineEvent(kind="utterance", speaker="Moderator", speaker_type="moderator",
-                           content=content, action=msg_type,
-                           meta={"turn": self.turn_count, "subtopic": self.moderator.current_subtopic})
+    # ---------- 발언 분석 ----------
 
-    def _should_probe_for_specifics(self) -> bool:
-        """최근 2개 AI 발언이 모두 추상적이면 구체화 필요"""
-        if len(self.messages) < 2:
-            return False
-        abstract_keywords = [
-            "in general", "overall", "basically", "essentially",
-            "theoretically", "conceptually", "abstractly",
-            "일반적으로", "전반적으로", "기본적으로", "이론적으로"
-        ]
-        abstract_count = sum(
-            1 for msg in self.messages[-2:]
-            if msg.role in AI_ROLES and any(kw in msg.content.lower() for kw in abstract_keywords)
-        )
-        return abstract_count >= 2
+    async def _analyze(self, seq: Optional[int], speaker: str, kind: str, text: str) -> Optional[EngineEvent]:
+        """발언을 구조화 분석해 토론 상태(공약·도전·입장 동역학)에 반영"""
+        if self.analyzer is None:
+            return None
+        prompts = config_loader.prompts
+        participants = "\n".join(
+            f"- {name} ({p.kind}): {round(p.x, 2) if p.x is not None else 'null'}"
+            for name, p in self.debate.participants.items())
+        context = "\n".join(
+            f"[#{m.metadata.get('seq')}] {m.agent_name}: {m.content[:600]}"
+            for m in self.messages[-7:-1] if m.metadata.get("seq"))
+        proposition = self.propositions[self.subtopic_idx] if self.propositions else ""
+        try:
+            result = await self.analyzer.with_structured_output(UtteranceAnalysis).ainvoke([
+                SystemMessage(content=prompts.render("debate_analysis.system")),
+                HumanMessage(content=prompts.render(
+                    "debate_analysis.user", proposition=proposition, participants=participants,
+                    context=context or "(none)", seq=seq, speaker=speaker, utterance=text)),
+            ])
+        except Exception:
+            logger.warning("Utterance analysis failed for #%s %s", seq, speaker, exc_info=True)
+            return None
 
-    def _find_challengeable_point(self) -> Optional[Message]:
-        """도전할 만한 강한 주장 찾기"""
-        for msg in reversed(self.messages[-5:]):
-            if any(word in msg.content.lower() for word in ["must", "always", "never", "clearly"]):
-                return msg
-        return self.messages[-1] if self.messages else None
+        known_seqs = {m.metadata.get("seq") for m in self.messages}
+        analysis = result.model_dump()
+        analysis["targets"] = [t for t in analysis["targets"]
+                               if t["seq"] in known_seqs and t["seq"] != seq and t["speaker"] in self.debate.participants]
+        analysis["influence"] = [i for i in analysis["influence"]
+                                 if i["listener"] in self.debate.participants
+                                 and self.debate.participants[i["listener"]].kind == "ai"]  # 사람 입장은 추정하지 않음
+        moves = self.debate.apply(seq, speaker, kind, analysis)
+        for move in moves:
+            self.recent_moves.setdefault(move["listener"], []).append(move)
+        return EngineEvent(kind="analysis", speaker=speaker, meta={
+            "seq": seq, "subtopic_idx": self.subtopic_idx, "analysis": analysis, "moves": moves,
+            "stances": self.debate.stances(), "debate": self.snapshot(),
+        })
+

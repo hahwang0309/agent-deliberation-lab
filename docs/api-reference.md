@@ -77,7 +77,8 @@
 | `utterance_start` | `{speaker, speaker_type, action}` | 발화 시작 |
 | `chunk` | `{speaker, delta}` | 스트리밍 조각 |
 | `utterance_aborted` | `{speaker}` | 중지로 발화 폐기 |
-| `subtopics` | `{subtopics}` | 소주제 생성 |
+| `subtopics` | `{subtopics}` | 소주제(명제) 생성 |
+| `analysis` | `{seq, speaker, subtopic_idx, move, stances, moves, open_challenges}` | 발언 분석 결과: 참가자별 현재 입장(−1~+1), 이번 발언으로 움직인 청자, 답변 대기 중인 반박. 같은 내용이 해당 메시지 `meta`(analysis·moves·stances·debate)에도 저장됨 |
 | `status` | `{status, error?}` | 상태 변경 (종료 상태면 스트림 종료) |
 | `hand_queue` | `{queue, floor}` | 발언 대기열·발언권 변경 |
 | `floor_granted` | `{user_id, name, floor_id}` | 발언권 부여 |

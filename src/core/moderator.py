@@ -1,38 +1,30 @@
 """
-모더레이터 모듈 - 토론 진행자 및 소주제 관리
+모더레이터 모듈 - 명제(소주제) 설정, 진행 안내, 교착 시 중재 질문
+
+진행 시점(언제 전환·중재할지)은 토론 엔진이 상태를 보고 정한다. 모더레이터는 내용만 만든다.
 """
 from typing import List, Optional
+
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
-from langchain_core.language_models import BaseChatModel
-from src.models.personas import Message, LLMProvider
-from src.utils.llm_provider import LLMFactory
-from src.utils.language_detector import LanguageDetector
-from config.config_loader import config_loader
-from config.discussion_config import get_config
 
-AI_ROLES = ("agent", "assistant")
-QUESTION_TYPES = ("probing", "question", "forced")
+from config.config_loader import config_loader
+from src.utils.language_detector import LanguageDetector
+from src.utils.llm_provider import LLMFactory
 
 
 class Subtopics(BaseModel):
-    """소주제 구조화 출력 (텍스트 목록 파싱은 응답 형식에 따라 0개가 될 수 있어 사용하지 않음)"""
-    subtopics: List[str] = Field(description="4-5 short subtopics as plain text")
+    """명제 목록 구조화 출력 (텍스트 목록 파싱은 응답 형식에 따라 0개가 될 수 있어 사용하지 않음)"""
+    subtopics: List[str] = Field(description="Debatable propositions as short plain text")
 
 
 class DiscussionModerator:
-    """토론 진행자 - 소주제 관리 및 심화 유도"""
-
     def __init__(self, llm: Optional[BaseChatModel] = None, language: str = "auto"):
         self.llm = llm or LLMFactory.create_llm(None, temperature=0.5)
         self.language = language
-
-        # 소주제 관리
         self.subtopics: List[str] = []
         self.current_subtopic_idx = 0
-
-        # 질문 관리
-        self.question_count = 0
 
     @property
     def current_subtopic(self) -> Optional[str]:
@@ -48,70 +40,35 @@ class DiscussionModerator:
         prompts = config_loader.prompts
         return prompts.get(f"{path}.{self.language}") or prompts.get(f"{path}.en")
 
-    async def generate_subtopics(self, topic: str) -> List[str]:
-        """주제에 대한 핵심 관점/소주제 생성"""
+    async def generate_subtopics(self, topic: str, count: int) -> List[str]:
+        """참가자 수·발언 수로 정한 개수(count)만큼 찬반이 갈리는 명제를 만든다"""
         prompt = config_loader.prompts.render(
-            "moderator.subtopics", topic=topic, language_instruction=self._lang_instruction()
-        )
+            "moderator.subtopics", topic=topic, count=count, language_instruction=self._lang_instruction())
         result = await self.llm.with_structured_output(Subtopics).ainvoke([HumanMessage(content=prompt)])
-        cleaned = [s.replace('**', '').strip().lstrip('#-•* ').strip() for s in result.subtopics]
-        self.subtopics = [s for s in cleaned if s][:get_config().max_subtopics]
+        cleaned = [s.replace('**', '').strip().lstrip('#-•*0123456789.) ').strip() for s in result.subtopics]
+        self.subtopics = [s for s in cleaned if s][:count]
         self.current_subtopic_idx = 0
         return self.subtopics
 
-    async def generate_probing_question(self, topic: str, messages: List[Message],
-                                        is_abstract: bool = False) -> str:
-        """심화 질문 생성 (이전에 한 질문은 반복하지 않음)"""
-        previous = [m.content[:200] for m in messages
-                    if m.role == "moderator" and m.metadata.get("type") in QUESTION_TYPES]
-        previous_questions = " / ".join(previous[-5:]) or "(none)"
-        if is_abstract and messages:
-            prompt = config_loader.prompts.render(
-                "moderator.probing_abstract",
-                statement=messages[-1].content[:200],
-                previous_questions=previous_questions,
-                language_instruction=self._lang_instruction(),
-            )
-        else:
-            prompt = config_loader.prompts.render(
-                "moderator.probing_general",
-                topic=topic,
-                subtopic=self.current_subtopic,
-                recent_points=' | '.join(m.content[:100] for m in messages[-3:]),
-                previous_questions=previous_questions,
-                language_instruction=self._lang_instruction(),
-            )
+    def opening(self) -> str:
+        return self._localized("moderator.opening").format(subtopic=self.current_subtopic)
 
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        self.question_count += 1
-        return response.content.strip()
-
-    def should_transition_subtopic(self, messages: List[Message], statements_on_current: int = 0,
-                                   statements_per_subtopic: Optional[int] = None) -> bool:
-        """주제 전환 필요 여부 판단 (발언 예산을 소주제 수로 나눈 몫을 다 쓰면 전환해 모든 관점을 다룸)"""
-        config = get_config()
-        current_topic = self.current_subtopic
-        if current_topic is None or self.current_subtopic_idx >= len(self.subtopics) - 1:
-            return False  # 마지막 소주제거나 모든 주제 완료
-        if statements_per_subtopic and statements_on_current >= statements_per_subtopic:
-            return True
-
-        keywords = current_topic.lower().split()[:2]  # 주제의 첫 2단어
-
-        def mentions(msg: Message) -> bool:
-            return msg.role in AI_ROLES and any(k in msg.content.lower() for k in keywords)
-
-        window = config.depth_analysis_window
-        depth = sum(1 for m in messages[-window:] if mentions(m))
-        if depth >= config.min_depth_per_subtopic:
-            return True
-
-        mentioned_recently = any(mentions(m) for m in messages[-config.recent_mention_window:])
-        return not mentioned_recently and len(messages) > config.min_messages_before_transition
-
-    async def transition_to_next_subtopic(self, topic: str) -> str:
-        """다음 소주제로 전환"""
+    def advance(self) -> str:
+        """다음 명제로 전환하고 안내 문구를 돌려준다"""
         self.current_subtopic_idx += 1
-        if self.current_subtopic is not None:
-            return self._localized("moderator.transition").format(subtopic=self.current_subtopic, topic=topic)
-        return self._localized("moderator.all_covered")
+        return self._localized("moderator.transition").format(subtopic=self.current_subtopic)
+
+    def closing_announcement(self) -> str:
+        return self._localized("moderator.closing_announce")
+
+    async def mediation_question(self, topic: str, party_a: str, party_b: str,
+                                 claims_a: List[str], claims_b: List[str]) -> str:
+        """교착된 두 참가자 사이의 쟁점을 짚는 질문 (참가자가 2명이라 제3자가 없을 때 사용)"""
+        prompt = config_loader.prompts.render(
+            "moderator.mediate", topic=topic, proposition=self.current_subtopic or topic,
+            party_a=party_a, party_b=party_b,
+            claims_a=" / ".join(claims_a[-2:]) or "-", claims_b=" / ".join(claims_b[-2:]) or "-",
+            language_instruction=self._lang_instruction(),
+        )
+        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        return response.content.strip()

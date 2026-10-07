@@ -15,7 +15,6 @@ class DiscussionConfig:
     moderator_question_probability: float = 0.8  # 모더레이터가 질문할 확률 (80%)
     
     # 토론 깊이 설정
-    min_depth_per_subtopic: int = 3  # 소주제당 최소 깊이
     max_depth_per_subtopic: int = 6  # 소주제당 최대 깊이
     
     # 진화 설정
@@ -31,7 +30,6 @@ class DiscussionConfig:
     cot_depth: int = 3  # CoT 추론 깊이 (질문 수)
     
     # 자연스러운 토론 설정
-    prefer_building_over_challenging: float = 0.5  # 건설적 확장 선호도 (높을수록 맞장구가 늘어남)
     require_evidence_probability: float = 0.3  # 증거 요구 확률
     
     # 모더레이터 설정
@@ -48,36 +46,31 @@ class DiscussionConfig:
     # 🆕 토론 흐름 및 진화 관련 설정
     # ========================================
     
-    # 토론 흐름 제어
-    max_turns_per_agent: int = 10  # 에이전트당 최대 발언 횟수
-    
-    # 모더레이터 분석 윈도우
-    depth_analysis_window: int = 10  # 깊이 분석 시 최근 N개 메시지
-    recent_mention_window: int = 5   # 최근 언급 체크 시 N개 메시지
-    min_messages_before_transition: int = 8  # 주제 전환 전 최소 메시지
-    
     # 소주제 설정
     max_subtopics: int = 5  # 최대 소주제 개수
 
-    # 모더레이터 개입 주기 (AI 발언 N개마다, 마지막 발언 뒤에는 개입하지 않음)
-    moderator_every_statements: int = 3
+    # 진행 설계: 명제 수 k = clamp(본론 발언 수 // (참가자 수 + 1), 1, max_subtopics)
+    #            본론 발언 수 = 전체 - 종결 라운드(참가자 수, 본론이 참가자 수+1 이상 남을 때만)
+
+    # 상대 발언 전달 범위 (최근 N개, 발언당 최대 글자 수)
+    context_messages: int = 8
+    context_chars: int = 1200
+
+    # 토론 상태 기반 진행
+    stalemate_exchanges: int = 1      # 두 참가자가 서로 이만큼 반박을 주고받으면 교착 → 제3자 중재·제3안 (명제당 예산이 작아 1)
+    consensus_spread: float = 0.3     # 첫 입장들의 차이가 이보다 작으면 성급한 합의 → 반대 검토
+
+    # 입장 동역학 (Friedkin-Johnsen + 제한 신뢰, src/core/debate_state.py)
+    dynamics_step: float = 0.5
+    dynamics_anchor: float = 0.1
+    confidence_bound: float = 1.0
+    confidence_penalty: float = 0.3
+    stubbornness_default: float = 0.5
+    stubbornness_open: float = 0.3    # 성격에 개방적·유연 등이 있으면
+    stubbornness_firm: float = 0.75   # 성격에 완고·원칙적 등이 있으면
 
     # 사람 개입
-    human_followup_responses: int = 1  # 사람 발언 직후 그 발언에 응답하는 AI 발언 수 (발언 예산을 넘어도 수행)
-    
-    # 페르소나 진화 가중치
-    evidence_score_max: float = 0.6      # 증거 점수 최대값
-    evidence_score_weight: float = 0.2   # 증거 키워드당 가중치
-    logic_score_max: float = 0.3         # 논리 점수 최대값
-    logic_score_weight: float = 0.15     # 논리 키워드당 가중치
-    specificity_bonus: float = 0.25      # 구체적 숫자 보너스
-    persuasion_threshold: float = 0.25   # 설득력 최소 임계값
-    
-    # 신념 강도 설정
-    core_belief_strength: float = 0.85       # 핵심 신념 초기 강도
-    core_belief_flexibility: float = 0.2     # 핵심 신념 유연성
-    normal_belief_strength: float = 0.65     # 일반 신념 초기 강도
-    normal_belief_flexibility: float = 0.5   # 일반 신념 유연성
+    human_followup_responses: int = 1  # 사람 발언 직후 그 발언에 응답하는 AI 발언 수 (명제 예산을 쓰고, 예산이 끝났으면 추가 발언)
 
 
 # 기본 설정 인스턴스

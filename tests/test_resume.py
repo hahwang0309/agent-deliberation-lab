@@ -99,3 +99,21 @@ async def test_restore_responds_to_unanswered_human_and_keeps_counts():
     assert utterances[0].meta["in_reply_to_seq"] == 3
     assert utterances[0].speaker == "Alice"  # 직전 AI 발언자(Bob) 제외
     assert len(utterances) == 1  # 남은 예산 1 = 응답 1개
+
+
+@pytest.mark.parametrize("spoken,idx,on_subtopic,closing_done", [
+    (4, 0, 4, []),            # 계획(3, 12) = 명제 [5, 4] + 종결 3
+    (5, 1, 0, []),
+    (9, 1, 4, []),
+    (11, 1, 4, ["C2", "C3"]),  # 종결 라운드 2명 완료
+])
+def test_restore_without_snapshot_places_progress_by_plan(spoken, idx, on_subtopic, closing_done):
+    bundle = FakeBundle()
+    base = {k: v for k, v in PERSONA.items() if k != "model"}
+    agents = [DiscussionAgent(Persona(name=n, **base), llm=bundle.agent) for n in ("A", "B", "C")]
+    engine = NaturalDiscussion(agents, moderator=None, max_statements=12)
+    names = ["A", "B", "C"] * 3 + ["C2", "C3"]
+    engine.restore([Message(role="assistant", content="x", agent_name=names[i], metadata={"seq": i + 1})
+                    for i in range(spoken)])
+    assert (engine.subtopic_idx, engine.statements_on_subtopic) == (idx, on_subtopic)
+    assert engine.closing_started == bool(closing_done) and engine.closing_done == closing_done

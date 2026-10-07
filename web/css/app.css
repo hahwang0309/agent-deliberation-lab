@@ -123,6 +123,11 @@ ol.subtopics li.current { font-weight: 600; color: var(--accent); }
 .score .value { font-size: 22px; font-weight: 600; }
 .bar { height: 6px; background: #eef0f3; border-radius: 999px; overflow: hidden; margin-top: 6px; }
 .bar > span { display: block; height: 100%; background: var(--accent); }
+.stance { margin-bottom: 10px; }
+.stance-bar { position: relative; height: 6px; margin-top: 6px; border-radius: 999px;
+  background: linear-gradient(90deg, #f3d4d4, #eef0f3 50%, #d4e8d8); }
+.stance-bar > span { position: absolute; top: -3px; width: 12px; height: 12px; margin-left: -6px;
+  border-radius: 50%; background: var(--accent); }
 .report h3 { font-size: 15px; margin: 18px 0 6px; }
 .report details { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 6px 0; background: #fbfcfd; }
 .report summary { cursor: pointer; font-weight: 500; }

@@ -36,7 +36,7 @@ class Message(Base):
 
     # 내용
     content = Column(Text, nullable=False)
-    action = Column(String(30), nullable=True)  # present, respond, ..., transition, probing
+    action = Column(String(30), nullable=True)  # position, rebut, ..., transition, closing_announce
     meta = Column(JSON, nullable=True)
 
     # RAG 정보

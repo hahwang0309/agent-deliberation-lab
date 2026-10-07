@@ -117,6 +117,14 @@ def save_message(discussion_id: str, seq: int, speaker_type: str, speaker: str, 
         return serialize_message(msg)
 
 
+def update_message_meta(discussion_id: str, seq: int, extra: Dict[str, Any]) -> None:
+    """메시지 meta에 키를 추가·갱신 (발언 분석 결과 등)"""
+    with session_scope() as db:
+        msg = (db.query(Message).filter(Message.discussion_id == discussion_id, Message.seq == seq).first())
+        if msg is not None:
+            msg.meta = {**(msg.meta or {}), **extra}
+
+
 def list_messages_after(discussion_id: str, after_seq: int = 0, limit: int = 1000) -> List[Dict[str, Any]]:
     with session_scope() as db:
         rows = (db.query(Message)
@@ -174,6 +182,10 @@ def load_transcript(discussion_id: str) -> Dict[str, Any]:
             "participants": participants,
             "transcript": [{"seq": m.seq, "speaker": m.speaker, "speaker_type": m.speaker_type,
                             "content": m.content} for m in messages],
+            # 입장 동역학 요약 입력 (발언별 토론 상태)
+            "subtopics": list(d.subtopics or []),
+            "records": [{"seq": m.seq, "speaker": m.speaker, "speaker_type": m.speaker_type,
+                         "action": m.action, "meta": m.meta or {}} for m in messages],
         }
 
 

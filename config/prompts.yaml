@@ -139,11 +139,6 @@ agent:
 
     Remember: Sophisticated discourse shows beliefs through argument structure, not declarations.
 
-  evolution_note: |
-
-
-    Note: Your views have evolved through this discussion. Reflect your current understanding.
-
   reasoning_block: |
 
 
@@ -168,45 +163,58 @@ agent:
     - Focus on adding NEW VALUE to the discussion
     - Avoid summarizing what was already said
 
-# 발언 액션별 프롬프트 (src/core/natural_discussion.py)
+# 발언 행위별 프롬프트 (src/core/natural_discussion.py)
 turn_actions:
-  present: |
+  # 모든 발언 프롬프트의 공통 머리말. 아래 발화 행위 프롬프트가 이어 붙는다.
+  frame: |
     Topic: {topic}
-    {focus_line}
+    Proposition under discussion: {proposition}
+    {stance_note}
+    Your earlier claims in this discussion: {commitments}
+  target_block: |
+    {target_name} said (#{target_seq}):
+    <<<
+    {target_text}
+    >>>
+  # 공통 응답 형식 (Toulmin): 대상 주장 짚기 → 행위 → 이유 → 입장 변화
+  reply_rules: |
+    Reply rules: refer to the specific claim above in one short phrase, then make your move, give the reason
+    (the warrant connecting evidence to conclusion), and say whether your own position moved and why.
+    If the argument is genuinely convincing, concede the point openly; do not pretend to agree if you do not.
 
-    State clearly where you stand on the topic question itself, then share YOUR perspective from your expertise.
-    What insight do you bring that others might not see?
-    Be concrete, but do not invent figures or personal experiences.
-  respond: |
-    {target_name} said: "{target_excerpt}..."
-
-    Directly address this point from YOUR perspective.
-    How does your background lead you to agree or disagree?
-  build: |
-    {target_name}'s point about "{target_excerpt}..." is valuable.
-
-    Agree with this and extend it further based on your expertise.
-    What additional dimension or implication do you see?
-  challenge: |
-    Consider {target_name}'s claim: "{target_excerpt}..."
-
-    What specific concerns, risks, or limitations do you identify based on your expertise?
-    Respectfully challenge this with evidence-based reasoning.
+  position: |
+    State your position on the proposition clearly (agree / partly agree / disagree, and under what conditions),
+    then give your single strongest reason from your expertise. Do not just restate the proposition.
+  agree_extend: |
+    You largely agree with the claim above. Do not repeat it: add a NEW dimension, implication, or condition
+    that strengthens or sharpens it, and note any limit you see.
   example: |
-    Topic: {topic}
-    {recent_context}
-
-    Give a concrete example: a well-known, verifiable real-world case from your field, or a hypothetical
-    scenario that you explicitly label as hypothetical. Never present an invented case or number as real.
-  synthesize: |
-    Topic: {topic}
-
-    Synthesize the discussion so far from YOUR perspective.
-    What patterns do you see? What remains unresolved?
-    What evidence and reasoning lead to your conclusion?
+    Support or test the claim above with a concrete example: a well-known, verifiable real-world case, or a
+    hypothetical scenario explicitly labeled as hypothetical. Explain what the example shows for the proposition.
+  rebut: |
+    You disagree with the claim above. Argue for the opposite conclusion with your own reasons
+    (a rebuttal), engaging with its strongest version rather than a weak one.
+  undercut: |
+    Without necessarily rejecting the conclusion, attack the reasoning of the claim above: show that its
+    evidence does not support it, that it rests on a hidden assumption, or that it ignores an important case.
+  respond_challenge: |
+    {target_name} challenged you. You must answer this challenge directly: defend your position with a new
+    reason, concede the part that is right (partial concession), or clarify a misunderstanding.
+  mediate: |
+    {party_a} and {party_b} keep disagreeing. As a third participant, state precisely where their disagreement
+    lies (facts, values, or definitions), what each side gets right, and what would have to be true for one
+    of them to change their mind. Then say where you stand.
+  third_option: |
+    {party_a} and {party_b} are stuck between two positions. Propose a third option or a reframing that
+    addresses the core concerns of both, and explain its trade-offs honestly.
+  devils_advocate: |
+    The group is converging quickly. Test this consensus: raise the strongest objection or overlooked risk to
+    the shared view, even if you partly agree with it. Make it a serious argument, not a token one.
+  closing: |
+    Closing statement. In a few sentences: your final position on the proposition(s) discussed, which specific
+    argument from another participant (name them) moved your view or failed to move it and why, and what
+    remains unresolved.
   respond_to_human: |
-    Topic: {topic}
-
     A human participant, {human_name}, joined the discussion and said:
     <<<participant_remark
     {remark}
@@ -215,72 +223,96 @@ turn_actions:
 
     Respond directly to this remark from YOUR perspective: engage with their specific point,
     agree or disagree with reasons from your expertise, and connect it to the discussion.
-  focus_line: "Current focus: {subtopic}"
-  recent_context_header: "Recent points:"
-  recent_context_line: "- {name}: {excerpt}..."
+
+  # 입장 설명 (stance_note)
+  stance_unknown: "You have not stated a position on this proposition yet."
+  stance_current: "Your current position on the proposition: {label} ({value:+.2f} on a -1..+1 scale)."
+  stance_moved: " Since your last turn you moved {delta:+.2f} after hearing {by}; let this show in what you say."
+  stance_labels:
+    strong_agree: "strongly agree"
+    agree: "leaning agree"
+    undecided: "undecided"
+    disagree: "leaning disagree"
+    strong_disagree: "strongly disagree"
+
+# 발언 분석 (src/core/natural_discussion.py) - 토론 상태와 입장 동역학의 입력
+debate_analysis:
+  system: |
+    You analyze one utterance in a structured debate. Be precise and conservative.
+    - claims: 1-3 short claims the speaker made (plain text, in the discussion language).
+    - move: the main speech act: position, agree_extend, example, rebut, undercut, concede, question,
+      mediate, third_option, closing, human.
+    - targets: earlier utterances this one responds to, by [#seq] and speaker, with relation:
+      support (agrees/extends), attack (rebuts or undercuts), concede (accepts part of it), question (asks it).
+      Only list seq numbers that appear in the context.
+    - addressed: participant names the speaker directly asked to respond (exact names), else empty.
+    - stance: the speaker's position on the PROPOSITION after this utterance, from -1 (strongly disagree)
+      to +1 (strongly agree); 0 if undecided.
+    - influence: for each OTHER listed participant, how persuasive this utterance is FOR THAT LISTENER
+      (0 = not at all, 1 = very), considering their current stance and claims. Persuasiveness comes from
+      new reasons, good evidence, or answering their concerns, not from agreement alone.
+  user: |
+    Proposition: {proposition}
+    Participants and current stances (-1..+1, null = unknown):
+    {participants}
+
+    Recent context:
+    {context}
+
+    Utterance to analyze (#{seq}) by {speaker}:
+    <<<
+    {utterance}
+    >>>
 
 # 모더레이터 프롬프트 (src/core/moderator.py)
 moderator:
   subtopics: |
     Main topic: {topic}
 
-    Identify 4-5 key perspectives that MUST be explored for a comprehensive discussion.
-    The set must cover BOTH sides of the topic question (e.g. potential benefits AND potential harms),
-    so that the discussion cannot stay on one side only.
-    Consider:
-    - Practical/Implementation aspects
-    - Ethical/Value dimensions
-    - Economic/Resource implications
-    - Social/Human impact
-    - Technical/Feasibility concerns
-    - Long-term consequences
+    Define exactly {count} debatable propositions to structure the discussion. Each proposition must be a single
+    clear statement that participants can agree or disagree with (not a theme or a question).
+    Together they must cover BOTH sides of the topic question (e.g. potential benefits AND potential harms),
+    and they should be the points on which reasonable experts actually disagree.
     {language_instruction}
+    Write each proposition as short plain text, without numbering or markdown.
+  opening:
+    en: |
+      Let's begin. Our first proposition is:
 
-    Make each subtopic a short, clear, focused question or aspect (plain text, no markdown).
-  probing_abstract: |
-    You are the moderator. The following statement is too abstract:
-    "{statement}"
+      「{subtopic}」
 
-    Ask ONE question that makes it more concrete through mechanisms, conditions, trade-offs, or a
-    well-known real case. Do NOT demand statistics, numbers, or data sources (participants cannot verify them).
-    Do not repeat any of these previous moderator questions: {previous_questions}
+      Each of you, please state where you stand and why.
+    ko: |
+      토론을 시작하겠습니다. 첫 번째 명제는 다음과 같습니다.
 
-    Output ONLY the question itself, in one or two sentences. No headings, no explanation of why you ask,
-    no markdown.
-    {language_instruction}
-  probing_general: |
-    Topic: {topic}
-    Current aspect: {subtopic}
-    Recent discussion: {recent_points}
+      「{subtopic}」
 
-    You are the moderator. Ask ONE question that deepens the discussion of the current aspect, for example by
-    surfacing a disagreement between participants, an unexamined assumption, a trade-off, or the strongest
-    counterargument to the emerging view. Do NOT demand statistics, numbers, or data sources.
-    Do not repeat any of these previous moderator questions: {previous_questions}
-
-    Output ONLY the question itself, in one or two sentences. No headings, no explanation of why you ask,
-    no markdown.
-    {language_instruction}
+      각자 이 명제에 대한 입장과 그 이유를 밝혀 주십시오.
   transition:
     en: |
-      Building on our discussion so far, let's now examine another crucial perspective:
+      Let's move to the next proposition:
 
       「{subtopic}」
 
-      This aspect is essential for a comprehensive understanding of {topic}.
-
-      Who would like to address this?
+      Please state where you stand and respond to each other's reasons.
     ko: |
-      지금까지의 논의를 바탕으로, 또 하나의 중요한 관점을 살펴보겠습니다.
+      다음 명제로 넘어가겠습니다.
 
       「{subtopic}」
 
-      이 관점은 '{topic}'을(를) 종합적으로 이해하는 데 꼭 필요합니다.
-
-      누가 먼저 말씀해 주시겠습니까?
-  all_covered:
-    en: "We've explored all the key perspectives. Let's begin synthesizing our discussion."
-    ko: "핵심 관점을 모두 살펴보았습니다. 이제 지금까지의 논의를 종합해 보겠습니다."
+      각자 입장을 밝히고 서로의 논거에 응답해 주십시오.
+  closing_announce:
+    en: "We are at the end. Each of you, please give a closing statement: your final position, what moved (or did not move) your view, and what remains unresolved."
+    ko: "마무리할 시간입니다. 각자 최종 입장과, 토론 중 어떤 논거 때문에 생각이 바뀌었거나 바뀌지 않았는지, 그리고 남은 쟁점을 말씀해 주십시오."
+  mediate: |
+    You are the moderator of a debate on: {topic}
+    Proposition: {proposition}
+    {party_a} and {party_b} keep disagreeing. Their latest claims:
+    - {party_a}: {claims_a}
+    - {party_b}: {claims_b}
+    Ask ONE short question that pins down exactly where they disagree (facts, values, or definitions) and asks
+    {party_b} to answer {party_a}'s strongest point. Output ONLY the question, one or two sentences, no markdown.
+    {language_instruction}
 
 # 신념 기반 추론 (src/services/belief_reasoning.py)
 belief_reasoning:

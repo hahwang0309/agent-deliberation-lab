@@ -82,7 +82,8 @@ class DiscussionRuntime:
             else:
                 await self.set_status(DiscussionStatus.RUNNING, started_at=persistence.utcnow(), error=None)
             topic = data["topic"] if not data["description"] else f"{data['topic']}\n\n{data['description']}"
-            async for event in engine.stream(topic, language=data["language"], gate=self.desk):
+            async for event in engine.stream(topic, language=data["language"], gate=self.desk,
+                                             start_seq=self.last_seq + 1):
                 await self._handle(event)
 
             if self._report_eligible():
@@ -109,6 +110,7 @@ class DiscussionRuntime:
                      metadata={**r["meta"], "speaker_type": r["speaker_type"], "seq": r["seq"]})
              for r in rows if r["speaker_type"] in role],
             subtopics=data["subtopics"], current_subtopic=data["current_subtopic"],
+            snapshot=next((r["meta"]["debate"] for r in reversed(rows) if r["meta"].get("debate")), None),
         )
         self.ai_messages = sum(r["speaker_type"] == SpeakerType.AI for r in rows)
         for r in rows:
@@ -165,8 +167,25 @@ class DiscussionRuntime:
                 self.current_utterance["text"] += event.content
             self.broker.publish(self.discussion_id, "chunk", {"speaker": event.speaker, "delta": event.content})
 
+        elif event.kind == "analysis":
+            # 발언 분석·토론 상태를 해당 메시지에 기록 (보고서의 입장 궤적, 재개 시 상태 복원에 사용)
+            seq = event.meta["seq"]
+            await asyncio.to_thread(persistence.update_message_meta, self.discussion_id, seq, {
+                "analysis": event.meta["analysis"], "moves": event.meta["moves"],
+                "stances": event.meta["stances"], "debate": event.meta["debate"],
+            })
+            state = event.meta["debate"]["state"]
+            self.broker.publish(self.discussion_id, "analysis", {
+                "seq": seq, "speaker": event.speaker, "subtopic_idx": event.meta["subtopic_idx"],
+                "move": event.meta["analysis"].get("move"), "stances": event.meta["stances"],
+                "moves": event.meta["moves"],
+                "open_challenges": [{"challenger": c["challenger"], "target": c["target"]} for c in state["challenges"]],
+            })
+
         elif event.kind == "utterance":
             speaker_type = SpeakerType.MODERATOR if event.speaker_type == "moderator" else SpeakerType.AI
+            if event.meta.get("seq") not in (None, self.last_seq + 1):
+                logger.warning("Engine seq %s != runtime seq %s", event.meta.get("seq"), self.last_seq + 1)
             await self.save_and_publish(
                 speaker_type, event.speaker, event.content, event.action, event.meta,
                 participant_id=self._participant_ids.get(event.speaker) if speaker_type == SpeakerType.AI else None,

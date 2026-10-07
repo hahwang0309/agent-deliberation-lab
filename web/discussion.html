@@ -60,6 +60,11 @@
       </div>
       <div id="speak-error" class="error"></div>
     </div>
+    <div id="stance-card" class="card" hidden>
+      <h2>현재 입장 <span class="muted">(−1 반대 ~ +1 찬성)</span></h2>
+      <div id="stances"></div>
+      <p id="open-challenges" class="muted"></p>
+    </div>
     <div class="card">
       <h2>소주제</h2>
       <ol id="subtopics" class="subtopics"></ol>
@@ -175,6 +180,7 @@ function renderReport(r) {
       const issues = c.issues.filter(i => i.label === key);
       return [el("h3", {}, `${title} (${issues.length})`), ...(issues.length ? issues.map(issueNode) : [el("p", { class: "muted" }, "없음")])];
     }),
+    ...dynamicsNodes(c.dynamics),
     el("h3", {}, "열린 질문"), el("ul", {}, ...c.narrative.open_questions.map(q => el("li", {}, q))),
     el("h3", {}, "제언"), el("ul", {}, ...c.narrative.recommendations.map(q => el("li", {}, q))),
     el("p", { class: "muted" }, `합의 정도 = 참가자 쌍의 평균 일치도 (찬성 1, 부분찬성 ${c.partial_weight ?? 0.7}, 반대 0, 일치도 = 1 − |차이|). 종합은 모든 쌍, AI간·인간간은 같은 집단 안, AI-인간간은 AI와 사람 사이 쌍. 합의 ≥ ${pct(c.thresholds.agreed)}, 부분 합의 ≥ ${pct(c.thresholds.partial)}. 입장 2개 미만 쟁점은 판단 보류.`),
@@ -193,10 +199,50 @@ async function loadReport() {
 }
 
 const ACTION_LABELS = {
-  present: "관점 제시", respond: "응답", build: "확장", challenge: "반론", example: "사례", synthesize: "종합",
-  respond_to_human: "사람 발언에 응답", human: "사람 참가자", transition: "주제 전환",
+  position: "입장 표명", agree_extend: "동조·확장", example: "사례 추가", rebut: "반박", undercut: "근거 반박",
+  respond_challenge: "반박에 답변", mediate: "중재", third_option: "제3안", devils_advocate: "반대 검토",
+  closing: "최종 입장", respond_to_human: "사람 발언에 응답", human: "사람 참가자",
+  opening: "개회", transition: "명제 전환", closing_announce: "마무리 안내", mediation: "중재 질문",
+  // 이전 버전 토론 기록
+  present: "관점 제시", respond: "응답", build: "확장", challenge: "반론", synthesize: "종합",
   probing: "구체화 질문", question: "질문", forced: "질문",
 };
+
+// 입장 값(−1 반대 ~ +1 찬성) 표시
+function stanceLabel(x) {
+  return x >= 0.6 ? "강한 찬성" : x >= 0.2 ? "찬성" : x > -0.2 ? "유보" : x > -0.6 ? "반대" : "강한 반대";
+}
+const signed = x => (x >= 0 ? "+" : "") + x.toFixed(2);
+
+function renderStances(d) {
+  const card = document.getElementById("stance-card");
+  const names = Object.keys(d.stances || {}).filter(n => d.stances[n] != null);
+  card.hidden = !names.length;
+  if (!names.length) return;
+  const moved = Object.fromEntries((d.moves || []).map(m => [m.listener, m]));
+  document.getElementById("stances").replaceChildren(...names.map(n => {
+    const x = d.stances[n];
+    return el("div", { class: "stance" },
+      el("div", {}, el("strong", {}, n), " ", el("span", { class: "muted" }, `${stanceLabel(x)} ${signed(x)}`),
+        moved[n] ? el("span", { class: "muted" }, ` (${moved[n].by}의 발언으로 ${signed(moved[n].delta)})`) : null),
+      el("div", { class: "stance-bar" }, el("span", { style: `left:${Math.round((x + 1) * 50)}%` })));
+  }));
+  document.getElementById("open-challenges").textContent = (d.open_challenges || []).length
+    ? "답변 대기: " + d.open_challenges.map(c => `${c.challenger} → ${c.target}`).join(", ") : "";
+}
+
+function dynamicsNodes(dyn) {
+  if (!dyn || !(dyn.propositions || []).length) return [];
+  return [el("h3", {}, "토론 과정의 입장 변화"), ...dyn.propositions.map(p => el("details", {},
+    el("summary", {}, `명제 ${p.index + 1}: ${p.title || "-"} `,
+      p.spread_start != null ? el("span", { class: "muted" }, `입장 간격 ${p.spread_start.toFixed(2)} → ${p.spread_end.toFixed(2)}`) : null),
+    el("ul", { class: "positions" }, ...p.trajectories.map(t => el("li", {},
+      el("strong", {}, t.name), t.kind === "human" ? " (사람, 관찰값)" : "",
+      ` · ${stanceLabel(t.start)} ${signed(t.start)} → ${stanceLabel(t.end)} ${signed(t.end)}`,
+      Math.abs(t.shift) >= 0.05 ? ` (${signed(t.shift)})` : " (변화 없음)"))),
+    p.influences.length ? el("p", { class: "muted" }, "영향: " + p.influences.map(i => `${i.by} → ${i.listener} ${signed(i.shift)}`).join(", ")) : null,
+    p.unresolved.length ? el("p", { class: "muted" }, "답하지 않은 반박·질문: " + p.unresolved.map(u => `${u.challenger} → ${u.target}`).join(", ")) : null))];
+}
 
 // 최소 마크다운 표시: **굵게**, # 제목, --- 구분선 (innerHTML 없이 DOM 노드로 만들어 XSS 안전)
 function renderRich(text) {
@@ -234,6 +280,9 @@ function appendMessage(m) {
   clearStreaming();
   transcript.append(messageNode(m));
   document.getElementById("empty").hidden = true;
+  // 다시 불러온 발언에는 분석 결과(입장)가 저장돼 있다 — 실시간 발언은 analysis 이벤트로 갱신
+  if (m.meta && m.meta.stances) renderStances({ stances: m.meta.stances, moves: m.meta.moves,
+    open_challenges: ((m.meta.debate || {}).state || {}).challenges || [] });
   if (m.speaker_type === "moderator" && m.action === "transition" && m.meta && m.meta.subtopic) {
     currentSubtopic = m.meta.subtopic;
     highlightSubtopic();
@@ -319,6 +368,7 @@ function connect() {
     currentSubtopic = list[0];
     renderSubtopics(list);
   });
+  source.addEventListener("analysis", e => renderStances(JSON.parse(e.data)));
   source.addEventListener("report_status", e => renderReport({ status: JSON.parse(e.data).status, error: JSON.parse(e.data).error }));
   source.addEventListener("report_ready", loadReport);
   source.addEventListener("status", e => {

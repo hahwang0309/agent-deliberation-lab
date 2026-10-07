@@ -25,7 +25,7 @@ def create_discussion(participants: List[ParticipantSpec],
                       enable_web_search: bool = False,
                       enable_belief_reasoning: bool = False,
                       max_statements: int = 20) -> NaturalDiscussion:
-    """참가자별 provider/model로 에이전트를 만들고, 모더레이터는 첫 참가자의 provider를 사용한다."""
+    """참가자별 provider/model로 에이전트를 만들고, 모더레이터·발언 분석은 첫 참가자의 provider를 사용한다."""
     bundle = bundle or LLMBundle()
     participants = [
         ParticipantSpec(spec.persona, spec.provider or LLMFactory.default_provider(), spec.model)
@@ -38,16 +38,15 @@ def create_discussion(participants: List[ParticipantSpec],
             llm=bundle.get(spec.provider, spec.model, 0.7),
             aux_llm=bundle.get(spec.provider, spec.model, 0.3),
             provider=spec.provider,
-            track_evolution=True,
             enable_web_search=enable_web_search,
             enable_belief_reasoning=enable_belief_reasoning,
         )
         for spec in participants
     ]
 
-    moderator = None
-    if use_moderator and participants:
-        lead = participants[0]
-        moderator = DiscussionModerator(llm=bundle.get(lead.provider, lead.model, 0.5))
+    lead = participants[0] if participants else ParticipantSpec(None, LLMFactory.default_provider())
+    moderator = DiscussionModerator(llm=bundle.get(lead.provider, lead.model, 0.5)) if use_moderator and participants else None
+    # 발언 분석(토론 상태·입장 동역학)은 판정이 흔들리지 않도록 temperature 0
+    analyzer = bundle.get(lead.provider, lead.model, 0.0) if participants else None
 
-    return NaturalDiscussion(agents, moderator, max_statements)
+    return NaturalDiscussion(agents, moderator, max_statements, analyzer=analyzer)

@@ -12,6 +12,7 @@ from api.runtime.broker import EventBroker
 from api.runtime.usage import UsageCounter
 from config.config_loader import config_loader
 from src.services.consensus_report import ConsensusReportGenerator, TranscriptMessage
+from src.services.debate_dynamics import summarize_dynamics
 from src.utils.llm_provider import LLMFactory
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ async def run_report_job(discussion_id: str, broker: EventBroker) -> bool:
             data["participants"],
             language=data["language"],
         )
+        content["dynamics"] = summarize_dynamics(data["records"], data["subtopics"])
         model = getattr(llm, "model", None) or getattr(llm, "model_name", None)
         await asyncio.to_thread(persistence.save_report, discussion_id, content, model)
         broker.publish(discussion_id, "report_ready",

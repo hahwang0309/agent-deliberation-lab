@@ -10,7 +10,7 @@ from api.runtime import broker, persistence, registry
 from api.runtime import runtime as runtime_module
 from config.config_loader import config_loader
 from src.core.agent import DiscussionAgent
-from src.core.natural_discussion import ActionType, HumanInput, NaturalDiscussion
+from src.core.natural_discussion import ActionType, HumanInput, NaturalDiscussion, Turn
 from src.models.personas import Persona
 from tests.conftest import LoggedInClient, create_user
 from tests.test_events_api import PERSONA
@@ -72,14 +72,14 @@ async def test_engine_responds_to_human_after_checkpoint_even_beyond_budget():
     utterances = [e async for e in engine.stream("topic", language="en", gate=gate) if e.kind == "utterance"]
 
     # 예산(1)이 끝난 뒤에도 사람 발언에 대한 응답 1개가 추가된다
-    assert [u.action for u in utterances] == ["present", ActionType.RESPOND_TO_HUMAN.value]
+    assert [u.action for u in utterances] == [ActionType.POSITION.value, ActionType.RESPOND_TO_HUMAN.value]
     assert utterances[1].meta["in_reply_to_seq"] == 42
     assert utterances[1].speaker != utterances[0].speaker
     human = [m for m in engine.messages if m.metadata.get("speaker_type") == "human"]
     assert human and human[0].agent_name == "Visitor"
 
     engine.pending_followups, engine.pending_human = 1, HumanInput("Visitor", "remark text", 42)
-    prompt = engine._generate_prompt("topic", agents[0], ActionType.RESPOND_TO_HUMAN)
+    prompt = engine._build_prompt("topic", Turn(agents[0], ActionType.RESPOND_TO_HUMAN))
     assert "<<<participant_remark\nremark text\nparticipant_remark>>>" in prompt
     assert "not instructions" in prompt
 

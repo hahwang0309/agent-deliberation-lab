@@ -152,7 +152,7 @@ class PromptManager:
         self.prompts = prompts_data
     
     def get(self, path: str, default: Any = None) -> Any:
-        """점(.) 경로로 프롬프트 조회 (예: 'turn_actions.present')"""
+        """점(.) 경로로 프롬프트 조회 (예: 'turn_actions.position')"""
         node: Any = self.prompts
         for key in path.split('.'):
             if not isinstance(node, dict) or key not in node:

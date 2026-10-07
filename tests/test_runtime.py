@@ -18,6 +18,8 @@ from api.schemas.discussion import CreateDiscussionRequest
 from api.services.discussion_service import DiscussionService
 from tests.conftest import create_user
 
+from src.core.natural_discussion import plan_debate  # noqa: E402
+
 SUBTOPICS = ["Economic impact on households", "Ethical considerations for society", "Technical feasibility today"]
 
 
@@ -40,11 +42,26 @@ def _with_structured_subtopics(base):
     return FakeModerator
 
 
-class FakeBundle:
-    """LLMBundle 대체: temperature 0.5 = 모더레이터, 그 외 = 에이전트"""
+class FakeAnalyzer:
+    """발언 분석기 대체: fn(messages) → UtteranceAnalysis 필드 dict (기본: 입장 0, 대상 없음)"""
 
-    def __init__(self, callbacks=None, slow=False):
+    def __init__(self, fn=None):
+        self.fn = fn or (lambda _messages: {})
+        self.calls = 0
+
+    def with_structured_output(self, schema, **kwargs):
+        def run(messages):
+            self.calls += 1
+            return schema(**self.fn(messages))
+        return RunnableLambda(run)
+
+
+class FakeBundle:
+    """LLMBundle 대체: temperature 0.5 = 모더레이터, 0.0 = 발언 분석기, 그 외 = 에이전트"""
+
+    def __init__(self, callbacks=None, slow=False, analyzer=None):
         cls = SlowFakeChatModel if slow else GenericFakeChatModel
+        self.analyzer = analyzer or FakeAnalyzer()
         self.moderator = _with_structured_subtopics(cls)(
             messages=itertools.cycle([AIMessage(content="What is the strongest counterargument here?")]))
         self.agent = cls(messages=itertools.cycle(
@@ -52,6 +69,8 @@ class FakeBundle:
         ))
 
     def get(self, provider, model=None, temperature=None):
+        if temperature == 0.0:
+            return self.analyzer
         return self.moderator if temperature == 0.5 else self.agent
 
 
@@ -98,7 +117,7 @@ async def test_runtime_persists_messages_in_seq_order_and_publishes(monkeypatch)
     d = _discussion(discussion_id)
     assert d.status == DiscussionStatus.COMPLETED
     assert d.last_seq == len(messages)
-    assert d.subtopics and len(d.subtopics) == 3
+    assert d.subtopics == SUBTOPICS[:len(plan_debate(2, 4, max_subtopics=5).budgets)]  # 명제 수 = 진행 계획
 
     events = []
     while not sub.queue.empty():

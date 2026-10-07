@@ -1,18 +1,26 @@
 """
 에이전트 핵심 모듈 - 개별 토론 참가자
+
+입장 변화는 이 클래스가 아니라 src/core/debate_state.py(입장 동역학)가 관리하고,
+현재 입장·자기 주장 기록은 토론 엔진이 발언 프롬프트에 넣어 준다.
 """
 import logging
-from typing import Optional, Dict, List, AsyncIterator
-from langchain_core.messages import SystemMessage, HumanMessage
+from typing import AsyncIterator, List, Optional
+
 from langchain_core.language_models import BaseChatModel
-from src.models.personas import Persona, Message, LLMProvider
-from src.utils.llm_provider import LLMFactory
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from config.config_loader import config_loader
-from src.models.persona_evolution import EvolvingPersona
+from config.discussion_config import get_config
+from src.models.personas import LLMProvider, Message, Persona
 from src.services.belief_reasoning import BeliefReasoningService
 from src.services.rag_service import RAGService
+from src.utils.llm_provider import LLMFactory
 
 logger = logging.getLogger(__name__)
+
+OPEN_TRAITS = ("open-minded", "flexible", "curious", "개방", "유연", "수용", "호기심")
+FIRM_TRAITS = ("stubborn", "principled", "uncompromising", "dogmatic", "완고", "고집", "원칙", "단호", "강경")
 
 
 class DiscussionAgent:
@@ -24,14 +32,13 @@ class DiscussionAgent:
     """
 
     def __init__(self, persona: Persona, llm: Optional[BaseChatModel] = None,
-                 provider: Optional[LLMProvider] = None, track_evolution: bool = True,
+                 provider: Optional[LLMProvider] = None,
                  enable_web_search: bool = False, enable_belief_reasoning: bool = False,
                  aux_llm: Optional[BaseChatModel] = None):
         self.persona = persona
         self.provider = provider or LLMFactory.default_provider()
         self.language = "auto"
         self.statement_count = 0
-        self.total_position_shifts = 0
 
         self.llm = llm or LLMFactory.create_llm(self.provider, temperature=0.7)
         aux_llm = aux_llm or self.llm
@@ -43,58 +50,40 @@ class DiscussionAgent:
         self.rag_service = RAGService(aux_llm) if enable_web_search else None
         self.last_rag_result = None  # 마지막 RAG 결과 저장
 
-        # 진화하는 페르소나 설정
-        if track_evolution:
-            openness = 0.7
-            if 'open-minded' in persona.personality:
-                openness = 0.8
-            elif 'flexible' in persona.personality:
-                openness = 0.75
-            elif 'stubborn' in persona.personality:
-                openness = 0.3
-
-            self.evolving_persona = EvolvingPersona(
-                base_persona=persona,
-                openness_to_change=openness
-            )
-        else:
-            self.evolving_persona = None
+    @property
+    def stubbornness(self) -> float:
+        """입장 동역학의 고집도 s: 성격 특성으로 정함 (개방적이면 낮게, 원칙적·완고하면 높게)"""
+        config = get_config()
+        traits = " ".join(self.persona.personality).lower()
+        if any(t in traits for t in FIRM_TRAITS):
+            return config.stubbornness_firm
+        if any(t in traits for t in OPEN_TRAITS):
+            return config.stubbornness_open
+        return config.stubbornness_default
 
     def _build_system_prompt(self) -> str:
-        """시스템 프롬프트 생성 - 신념과 가치관 강조"""
+        """시스템 프롬프트 - 페르소나, 암묵적 신념 표현, 길이·언어 지시"""
         prompts = config_loader.prompts
-
-        # 진화된 페르소나 사용
-        current_persona = self.evolving_persona.get_evolved_persona() if self.evolving_persona else self.persona
-
-        persona_dict = {
-            'name': current_persona.name,
-            'role': current_persona.role,
-            'background': current_persona.background,
-            'personality': ', '.join(current_persona.personality),
-            'expertise': ', '.join(current_persona.expertise),
-            'communication_style': current_persona.communication_style,
-            'beliefs': ', '.join(current_persona.beliefs)
-        }
-        base_prompt = prompts.get_agent_base_prompt(persona_dict)
-
-        # 신념 기반 추론 강화 (암묵적)
-        beliefs_text = '\n'.join([f"- {belief}" for belief in current_persona.beliefs[:3]])
+        persona = self.persona
+        base_prompt = prompts.get_agent_base_prompt({
+            'name': persona.name,
+            'role': persona.role,
+            'background': persona.background,
+            'personality': ', '.join(persona.personality),
+            'expertise': ', '.join(persona.expertise),
+            'communication_style': persona.communication_style,
+            'beliefs': ', '.join(persona.beliefs),
+        })
+        beliefs_text = '\n'.join([f"- {belief}" for belief in persona.beliefs[:3]])
         belief_emphasis = prompts.render("agent.belief_emphasis", beliefs=beliefs_text)
-
-        # 진화 상태 반영
-        evolution_note = ""
-        if self.evolving_persona and len(self.evolving_persona.position_shifts) > 0:
-            evolution_note = prompts.render("agent.evolution_note")
-
         length_instruction = prompts.get_agent_length_instruction(min_sentences=3, max_sentences=8)
         language_instruction = prompts.get(f"language.instruction.{self.language}", "")
-
-        return base_prompt + belief_emphasis + evolution_note + length_instruction + language_instruction
+        return base_prompt + belief_emphasis + length_instruction + language_instruction
 
     async def _prepare_response(self, prompt: str, context: List[Message] = None):
         """응답 준비 - CoT, RAG, 프롬프트 생성 공통 로직"""
         prompts = config_loader.prompts
+        config = get_config()
 
         reasoning = None
         if self.belief_reasoning:
@@ -119,10 +108,12 @@ class DiscussionAgent:
 
         messages = [SystemMessage(content=system_prompt)]
 
-        # 컨텍스트 제공 (최근 발언 위주)
+        # 최근 발언을 충분히 길게 전달 (짧게 자르면 상대 논지의 근거·결론을 볼 수 없음)
         if context:
-            for msg in context[-5:]:
-                messages.append(HumanMessage(content=f"{msg.agent_name}: {msg.content[:200]}"))
+            for msg in context[-config.context_messages:]:
+                seq = msg.metadata.get("seq")
+                label = f"{msg.agent_name} (#{seq})" if seq else msg.agent_name
+                messages.append(HumanMessage(content=f"{label}: {msg.content[:config.context_chars]}"))
 
         messages.append(HumanMessage(content=prompt))
         return messages
@@ -142,12 +133,3 @@ class DiscussionAgent:
             if chunk_text:
                 yield chunk_text
         self.statement_count += 1
-
-    def process_other_argument(self, argument: str, agent_name: str, topic: str) -> Optional[Dict]:
-        """다른 에이전트의 논증 처리"""
-        if not self.evolving_persona:
-            return None
-
-        change_info = self.evolving_persona.update_position(topic, argument, agent_name)
-        self.total_position_shifts = len(self.evolving_persona.position_shifts)
-        return change_info

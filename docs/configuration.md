@@ -62,7 +62,18 @@
 
 ### 기타
 
-`discussion`, `system` 등 나머지 섹션은 엔진의 세부 동작 값입니다. 토론 흐름 세부값은 `config/discussion_config.py`에 있습니다. 예: 소주제 수, 모더레이터 개입 주기 `moderator_every_statements`(기본 3), 확장 선호도 `prefer_building_over_challenging`(기본 0.5), 사람 발언 후 AI 응답 수 `human_followup_responses`.
+`discussion`, `system` 등 나머지 섹션은 엔진의 세부 동작 값입니다. 토론 흐름 세부값은 `config/discussion_config.py`에 있습니다. 토론 메커니즘 관련 값은 다음과 같습니다(동작은 [architecture.md](architecture.md#토론-메커니즘) 참고).
+
+| 키 | 기본 | 의미 |
+|---|---|---|
+| `max_subtopics` | 5 | 명제 수 상한 (실제 수는 참가자·발언 수로 계산) |
+| `context_messages` / `context_chars` | 8 / 1200 | 발언 프롬프트에 넣는 최근 발언 수·발언당 글자 수 |
+| `stalemate_exchanges` | 1 | 서로 이만큼 반박을 주고받으면 교착으로 보고 중재 |
+| `consensus_spread` | 0.3 | 반박 없이 입장 간격이 이보다 좁으면 반대 검토 |
+| `dynamics_step` / `dynamics_anchor` | 0.5 / 0.1 | 설득 1회 최대 이동 비율 / 초기 입장 복원력 |
+| `confidence_bound` / `confidence_penalty` | 1.0 / 0.3 | 이보다 먼 의견의 설득력에 곱하는 값 |
+| `stubbornness_default` / `_open` / `_firm` | 0.5 / 0.3 / 0.75 | 성격 키워드별 고집도 |
+| `human_followup_responses` | 1 | 사람 발언 뒤 AI 응답 수 |
 
 ## 프롬프트·템플릿
 

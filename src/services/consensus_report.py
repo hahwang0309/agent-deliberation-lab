@@ -14,6 +14,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, ValidationError
 
 from config.config_loader import config_loader
+from src.services.debate_dynamics import dynamics_markdown
 from src.utils.language_detector import LanguageDetector
 
 logger = logging.getLogger(__name__)
@@ -338,6 +339,7 @@ def to_markdown(report: Dict[str, Any]) -> str:
                 flag = " ⚠ 출처 없는 수치·사례" if p.get("unsourced_specifics") else ""
                 lines.append(f"- **{p['participant']}** ({STANCE_TEXT[p['stance']]}): {p['claim']}{flag}")
             lines.append("")
+    lines += dynamics_markdown(report.get("dynamics") or {})
     for title, key in (("열린 질문", "open_questions"), ("제언", "recommendations")):
         items = narrative.get(key) or []
         lines += [f"## {title}", ""] + [f"- {item}" for item in items] + ([""] if items else ["- 없음", ""])
