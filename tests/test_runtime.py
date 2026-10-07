@@ -42,6 +42,21 @@ def _with_structured_subtopics(base):
     return FakeModerator
 
 
+def _with_structured_survey(base):
+    """에이전트용: 사전·사후 설문(구조화 출력)에는 프롬프트의 [문항 id]마다 점수 4로 답한다"""
+
+    class FakeAgent(base):
+        def with_structured_output(self, schema, **kwargs):
+            import re
+
+            def answer(messages):
+                ids = re.findall(r"^\[(\w+)\]", messages[-1].content, re.M)
+                return schema(answers=[{"item_id": i, "score": 4, "reason": "fake"} for i in ids])
+            return RunnableLambda(answer)
+
+    return FakeAgent
+
+
 class FakeAnalyzer:
     """발언 분석기 대체: fn(messages) → UtteranceAnalysis 필드 dict (기본: 입장 0, 대상 없음)"""
 
@@ -64,7 +79,7 @@ class FakeBundle:
         self.analyzer = analyzer or FakeAnalyzer()
         self.moderator = _with_structured_subtopics(cls)(
             messages=itertools.cycle([AIMessage(content="What is the strongest counterargument here?")]))
-        self.agent = cls(messages=itertools.cycle(
+        self.agent = _with_structured_survey(cls)(messages=itertools.cycle(
             [AIMessage(content=f"Point number {i} with concrete evidence and data.") for i in range(1, 50)]
         ))
 

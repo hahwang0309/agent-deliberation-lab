@@ -18,6 +18,7 @@ from api.runtime.usage import UsageCounter
 from config.config_loader import config_loader
 from src.core.experiment import ExperimentConfig
 from src.core.natural_discussion import EngineEvent
+from src.services.survey import SurveyConfig
 from src.discussion import ParticipantSpec, create_discussion
 from src.models.personas import LLMProvider, Message, Persona
 from src.utils.llm_provider import LLMBundle
@@ -78,6 +79,7 @@ class DiscussionRuntime:
                 experiment=ExperimentConfig(**config["experiment"]) if config.get("experiment") else None,
                 propositions=config.get("propositions"),
                 materials=config.get("materials"),
+                survey=SurveyConfig(**config["survey"]) if config.get("survey") else None,
             )
 
             if self.resume:
@@ -185,6 +187,11 @@ class DiscussionRuntime:
                 "moves": event.meta["moves"],
                 "open_challenges": [{"challenger": c["challenger"], "target": c["target"]} for c in state["challenges"]],
             })
+
+        elif event.kind == "survey":
+            await asyncio.to_thread(persistence.save_survey, self.discussion_id, event.meta["phase"],
+                                    event.speaker, event.speaker_type or "ai", event.meta["answers"])
+            self.broker.publish(self.discussion_id, "survey", {"phase": event.meta["phase"], "participant": event.speaker})
 
         elif event.kind == "utterance":
             speaker_type = SpeakerType.MODERATOR if event.speaker_type == "moderator" else SpeakerType.AI

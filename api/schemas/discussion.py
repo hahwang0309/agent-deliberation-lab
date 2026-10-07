@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from config.config_loader import config_loader
 from src.core.experiment import ExperimentConfig
+from src.services.survey import SurveyConfig
 
 _limits = config_loader.config.limits
 
@@ -42,6 +43,8 @@ class CreateDiscussionRequest(BaseModel):
     propositions: Optional[List[str]] = Field(
         None, max_length=5, description="고정 명제 (지정하면 모더레이터가 명제를 만들지 않음)")
     materials: Optional[str] = Field(None, max_length=20000, description="모든 참가자에게 주는 배경 자료집")
+    survey: Optional[SurveyConfig] = Field(
+        None, description="사전·사후 설문 문항 (AI 참가자에게 토론 전후로 독립 호출로 묻는다)")
     experiment: Optional[ExperimentConfig] = Field(
         None, description="실험 조건 (진행 장치 on/off, 동역학 파라미터, 참가자별 고집도·temperature, 분석 모델)")
 

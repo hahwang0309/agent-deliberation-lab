@@ -61,6 +61,7 @@
 - 페르소나는 2~5명입니다. `llm_provider`와 `model`을 비우면 `config.yaml` 기본값이 쓰입니다.
 - `propositions`(선택, 최대 5개, 각 300자 이하): 고정 명제입니다. 지정하면 모더레이터가 명제를 만들지 않고 이 명제들을 차례로 다룹니다. 참가자 N명, 발언 S개일 때 명제마다 전원 발언 + 상호 응답 1회(N+1발언)가 들어가야 하므로, 다룰 수 있는 개수를 넘으면 400 `TOO_MANY_PROPOSITIONS`입니다. 모더레이터를 끈 토론에도 쓸 수 있습니다.
 - `materials`(선택, 20,000자 이하): 모든 참가자의 시스템 프롬프트에 같은 배경 자료집으로 들어갑니다. 매 발언 호출에 포함되므로 입력 토큰이 그만큼 늘어납니다.
+- `survey`(선택): 사전·사후 설문 `{"items": [{"id": "abolish", "text": "사형제도는 폐지해야 한다"}], "scale": 7}`. 문항은 최대 20개, id는 영문·숫자·밑줄이며 중복 불가(422). AI 참가자는 토론 시작 전과 종료 후(종결 라운드 다음)에 발언과 별개의 호출로 점수(1~scale)와 이유 한 문장을 답합니다. 사후 설문에는 토론 기록(끝에서 15,000자)이 들어갑니다. 형식 오류는 한 번 다시 묻고, 끝까지 답하지 않은 문항은 `score: null`로 남습니다. 중지된 토론은 사후 설문을 하지 않고, 재개한 토론은 사전 설문을 다시 하지 않습니다.
 - `experiment`(선택): 이 토론에만 적용되는 실험 조건입니다. 일반 사용자는 지정할 수 없습니다(403 `FEATURE_RESTRICTED`). 조건의 참가자 이름이 페르소나에 없으면 400 `UNKNOWN_PARTICIPANT`, 알 수 없는 키나 범위 밖 값은 422입니다. 저장된 조건은 상세 응답의 `config.experiment`에서 볼 수 있습니다. 항목은 [configuration.md](configuration.md#실험-조건-토론별)를 참고하세요.
 
 ```json
@@ -80,6 +81,7 @@
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/discussions/{id}/messages?after_seq=&limit=` | 완성된 발언 목록 |
+| GET | `/discussions/{id}/survey` | 설문 문항과 응답 `{survey, responses: [{phase, participant, participant_type, item_id, score, scale, reason}]}` |
 | GET | `/discussions/{id}/events?since=` | SSE. 재접속 시 브라우저가 보내는 `Last-Event-ID` 이후 메시지부터 다시 보냄 |
 
 **SSE 이벤트**
@@ -93,6 +95,7 @@
 | `utterance_aborted` | `{speaker}` | 중지로 발화 폐기 |
 | `subtopics` | `{subtopics}` | 소주제(명제) 생성 |
 | `analysis` | `{seq, speaker, subtopic_idx, move, stances, moves, open_challenges}` | 발언 분석 결과: 참가자별 현재 입장(−1~+1), 이번 발언으로 움직인 청자, 답변 대기 중인 반박. 같은 내용이 해당 메시지 `meta`(analysis·moves·stances·debate)에도 저장됨 |
+| `survey` | `{phase, participant}` | 참가자 1명의 사전(pre)·사후(post) 설문 응답 저장됨 |
 | `status` | `{status, error?}` | 상태 변경 (종료 상태면 스트림 종료) |
 | `hand_queue` | `{queue, floor}` | 발언 대기열·발언권 변경 |
 | `floor_granted` | `{user_id, name, floor_id}` | 발언권 부여 |

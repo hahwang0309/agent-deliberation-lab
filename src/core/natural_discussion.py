@@ -11,6 +11,7 @@
 
 stream()은 진행을 EngineEvent로 yield한다. 저장·전송은 호출 측(API 런타임)의 책임이다.
 """
+import asyncio
 import logging
 import random
 from collections import Counter
@@ -25,6 +26,7 @@ from pydantic import BaseModel, Field, field_validator
 from config.config_loader import config_loader
 from config.discussion_config import DiscussionConfig, get_config
 from src.core.agent import DiscussionAgent
+from src.services.survey import POST, PRE, SurveyConfig, run_survey, transcript_text
 from src.core.debate_state import Challenge, DebateState, DynamicsParams
 from src.core.moderator import DiscussionModerator
 from src.models.personas import Message
@@ -64,6 +66,7 @@ class EngineEvent:
       - chunk: 발화 스트리밍 조각 (content=조각)
       - utterance: 완성된 발화 (content=전체 텍스트, meta["seq"]=엔진이 붙인 순번)
       - analysis: 발언 분석과 토론 상태 (meta["seq"], meta["analysis"], meta["moves"], meta["stances"], meta["debate"])
+      - survey: 사전·사후 설문 응답 (meta["phase"] = pre | post, meta["answers"])
     """
     kind: str
     speaker: Optional[str] = None
@@ -184,7 +187,8 @@ class Turn:
 class NaturalDiscussion:
     def __init__(self, agents: List[DiscussionAgent], moderator: Optional[DiscussionModerator] = None,
                  max_statements: int = 20, analyzer: Optional[BaseChatModel] = None,
-                 config: Optional[DiscussionConfig] = None, propositions: Optional[List[str]] = None):
+                 config: Optional[DiscussionConfig] = None, propositions: Optional[List[str]] = None,
+                 survey: Optional[SurveyConfig] = None):
         self.agents = agents
         self.moderator = moderator
         self.max_statements = max_statements
@@ -192,6 +196,7 @@ class NaturalDiscussion:
         self.config = config or get_config()  # 토론별 설정 (실험 조건 반영, src/core/experiment.py)
         # 고정 명제: 지정하면 모더레이터가 명제를 만들지 않는다 (인간 토의와 같은 질문으로 비교할 때)
         self.fixed_propositions = [p for p in (propositions or []) if p.strip()] or None
+        self.survey = survey  # 사전·사후 설문 (src/services/survey.py)
         self.messages: List[Message] = []
 
         self.debate = DebateState(DynamicsParams(
@@ -311,6 +316,10 @@ class NaturalDiscussion:
         if self.moderator:
             self.moderator.language = language
 
+        if self.survey and not self.restored:  # 재개한 토론은 사전 설문을 이미 받았음
+            async for event in self._run_surveys(PRE):
+                yield event
+
         if not self.restored:
             if self.fixed_propositions:
                 if self.moderator:
@@ -354,7 +363,18 @@ class NaturalDiscussion:
                 if event:
                     yield event
 
+        if self.survey:
+            async for event in self._run_surveys(POST, transcript_text(self.messages)):
+                yield event
+
         logger.info("Discussion completed: statements=%d messages=%d", self.turn_count, len(self.messages))
+
+    async def _run_surveys(self, phase: str, transcript: str = "") -> AsyncIterator[EngineEvent]:
+        """참가자(AI) 전원에게 같은 설문을 독립 호출로 동시에 묻는다"""
+        results = await asyncio.gather(*(run_survey(a, self.survey, phase, transcript) for a in self.agents))
+        for agent, answers in zip(self.agents, results):
+            yield EngineEvent(kind="survey", speaker=agent.persona.name, speaker_type="ai",
+                              meta={"phase": phase, "answers": answers})
 
     def _current_budget(self) -> int:
         return self.plan.budgets[min(self.subtopic_idx, len(self.plan.budgets) - 1)]

@@ -256,3 +256,97 @@ async def test_api_fixed_propositions_and_materials(monkeypatch):
         await asyncio.wait_for(registry.get(discussion_id).task, timeout=10)
         detail = (await client.get(f"/api/v1/discussions/{discussion_id}")).json()
     assert detail["subtopics"] == FIXED
+
+
+# ---------- 사전·사후 설문 (E4) ----------
+
+from langchain_core.runnables import RunnableLambda  # noqa: E402
+
+from src.services.survey import SurveyConfig, run_survey  # noqa: E402
+
+SURVEY = {"items": [{"id": "q1", "text": "Remote work raises productivity"},
+                    {"id": "q2", "text": "Employers should pay home-office costs"}], "scale": 7}
+
+
+class ScriptedSurveyAgent:
+    """설문 응답을 차례로 돌려주는 최소 에이전트 (run_survey 단위 테스트용)"""
+
+    def __init__(self, replies):
+        self.replies, self.prompts = list(replies), []
+        self.persona = Persona(name="A", **BASE)
+        outer = self
+
+        class LLM:
+            def with_structured_output(self, schema, **kwargs):
+                def run(messages):
+                    outer.prompts.append(messages[-1].content)
+                    return schema(answers=outer.replies.pop(0))
+                return RunnableLambda(run)
+        self.llm = LLM()
+
+    def _build_system_prompt(self):
+        return "persona"
+
+
+@pytest.mark.asyncio
+async def test_run_survey_retries_invalid_answers_and_never_fills_missing():
+    survey = SurveyConfig(**SURVEY)
+    agent = ScriptedSurveyAgent([
+        [{"item_id": "q1", "score": 9, "reason": "too high"}, {"item_id": "qX", "score": 3}],  # 범위 밖·없는 id
+        [{"item_id": "q1", "score": 6, "reason": "  data shows gains "}, {"item_id": "q2", "score": 2}],
+    ])
+    answers = await run_survey(agent, survey, "pre")
+    assert answers == [{"item_id": "q1", "score": 6, "reason": "data shows gains", "scale": 7},
+                       {"item_id": "q2", "score": 2, "reason": "", "scale": 7}]
+    assert "outside 1..7" in agent.prompts[-1] and "unknown item id qX" in agent.prompts[-1]
+
+    stubborn = ScriptedSurveyAgent([[{"item_id": "q1", "score": 5}], [{"item_id": "q1", "score": 5}]])
+    answers = await run_survey(stubborn, survey, "post", transcript="A: hello")
+    assert answers[1] == {"item_id": "q2", "score": None, "reason": "", "scale": 7}  # 끝까지 답 안 함 → None
+    assert "A: hello" in stubborn.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_engine_runs_pre_survey_first_and_post_survey_last():
+    bundle = FakeBundle()
+    agents = [DiscussionAgent(Persona(name=n, **BASE), llm=bundle.agent) for n in ("A", "B")]
+    engine = NaturalDiscussion(agents, moderator=DiscussionModerator(llm=bundle.moderator), max_statements=4,
+                               analyzer=bundle.analyzer, survey=SurveyConfig(**SURVEY))
+    events = await run(engine)
+    kinds = [e.kind for e in events]
+    surveys = [e for e in events if e.kind == "survey"]
+    assert [(e.meta["phase"], e.speaker) for e in surveys] == [("pre", "A"), ("pre", "B"), ("post", "A"), ("post", "B")]
+    assert kinds[:2] == ["survey", "survey"] and kinds[-2:] == ["survey", "survey"]
+    assert all(a["score"] == 4 for e in surveys for a in e.meta["answers"])
+
+    engine.restored = True  # 재개한 토론은 사전 설문을 다시 받지 않음
+    engine.messages, engine.closing_started, engine.closing_done = [], True, ["A", "B"]
+    again = [e for e in await run(engine) if e.kind == "survey"]
+    assert {e.meta["phase"] for e in again} == {"post"}
+
+
+@pytest.mark.asyncio
+async def test_api_survey_is_stored_listed_and_deleted_with_discussion(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    owner = create_user()
+    async with LoggedInClient(owner) as client:
+        r = await client.post("/api/v1/discussions", json={**BODY, "max_statements": 4, "survey": SURVEY})
+        assert r.status_code == 201, r.text
+        discussion_id = r.json()["id"]
+        assert (await client.post(f"/api/v1/discussions/{discussion_id}/start")).status_code == 202
+        await asyncio.wait_for(registry.get(discussion_id).task, timeout=10)
+
+        data = (await client.get(f"/api/v1/discussions/{discussion_id}/survey")).json()
+        assert data["survey"]["items"][0]["id"] == "q1"
+        rows = data["responses"]
+        assert len(rows) == 2 * 2 * 2  # 시점 × 참가자 × 문항
+        assert {(r["phase"], r["participant"], r["item_id"]) for r in rows} == {
+            (p, n, i) for p in ("pre", "post") for n in ("Alice", "Bob") for i in ("q1", "q2")}
+        assert all(r["score"] == 4 and r["participant_type"] == "ai" for r in rows)
+
+        r = await client.post("/api/v1/discussions", json={**BODY, "survey": {"items": [{"id": "q1", "text": "a"},
+                                                                                       {"id": "q1", "text": "b"}]}})
+        assert r.status_code == 422  # 중복 문항 id
+
+        assert (await client.delete(f"/api/v1/discussions/{discussion_id}")).status_code == 204
+    assert persistence.list_survey(discussion_id) == []

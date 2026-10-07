@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from api.models.discussion import Discussion, DiscussionStatus, Participant
 from api.models.message import Message
 from api.models.report import DiscussionReport
+from api.models.survey import SurveyResponse
 from api.models.user import User
 from api.dependencies import ensure_owner_or_admin
 from config.config_loader import config_loader
@@ -77,6 +78,7 @@ class DiscussionService:
                 **({"experiment": request.experiment.model_dump(exclude_none=True)} if request.experiment else {}),
                 **({"propositions": [p.strip() for p in request.propositions]} if request.propositions else {}),
                 **({"materials": request.materials} if request.materials else {}),
+                **({"survey": request.survey.model_dump()} if request.survey else {}),
             },
             created_by=user.id,
         )
@@ -200,5 +202,6 @@ class DiscussionService:
             raise _error(status.HTTP_409_CONFLICT, "DISCUSSION_RUNNING", "실행 중인 토론은 삭제할 수 없습니다.")
         db.query(Message).filter(Message.discussion_id == discussion_id).delete(synchronize_session=False)
         db.query(DiscussionReport).filter(DiscussionReport.discussion_id == discussion_id).delete(synchronize_session=False)
+        db.query(SurveyResponse).filter(SurveyResponse.discussion_id == discussion_id).delete(synchronize_session=False)
         db.delete(discussion)
         db.commit()

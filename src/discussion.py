@@ -8,6 +8,7 @@ from src.core.agent import DiscussionAgent
 from src.core.experiment import ExperimentConfig, ParticipantCondition, engine_settings
 from src.core.moderator import DiscussionModerator
 from src.core.natural_discussion import NaturalDiscussion
+from src.services.survey import SurveyConfig
 from src.models.personas import LLMProvider, Persona
 from src.utils.llm_provider import LLMBundle, LLMFactory
 
@@ -28,7 +29,8 @@ def create_discussion(participants: List[ParticipantSpec],
                       max_statements: int = 20,
                       experiment: Optional[ExperimentConfig] = None,
                       propositions: Optional[List[str]] = None,
-                      materials: Optional[str] = None) -> NaturalDiscussion:
+                      materials: Optional[str] = None,
+                      survey: Optional[SurveyConfig] = None) -> NaturalDiscussion:
     """참가자별 provider/model로 에이전트를 만들고, 모더레이터·발언 분석은 첫 참가자의 provider를 사용한다.
     experiment가 있으면 그 조건으로 만든 토론별 설정을 엔진·에이전트에 넘긴다(전역 설정은 그대로)."""
     bundle = bundle or LLMBundle()
@@ -68,4 +70,4 @@ def create_discussion(participants: List[ParticipantSpec],
         analyzer = bundle.get(provider, model, 0.0)
 
     return NaturalDiscussion(agents, moderator, max_statements, analyzer=analyzer, config=settings,
-                             propositions=propositions)
+                             propositions=propositions, survey=survey)

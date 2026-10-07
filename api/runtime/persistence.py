@@ -14,6 +14,7 @@ from api.database import SessionLocal
 from api.models.discussion import Discussion, DiscussionStatus, Participant
 from api.models.message import Message, SpeakerType
 from api.models.report import DiscussionReport, ReportStatus
+from api.models.survey import SurveyResponse
 
 
 def utcnow() -> datetime:
@@ -221,3 +222,21 @@ def fail_report(discussion_id: str, error: str) -> None:
         if report is not None:
             report.status = ReportStatus.FAILED
             report.error = error
+
+
+def save_survey(discussion_id: str, phase: str, participant: str, participant_type: str,
+                answers: List[Dict[str, Any]], user_id: Optional[str] = None) -> None:
+    """참가자 1명의 설문 응답 저장 (문항마다 1행)"""
+    with session_scope() as db:
+        for a in answers:
+            db.add(SurveyResponse(discussion_id=discussion_id, phase=phase, participant=participant,
+                                  participant_type=participant_type, user_id=user_id, item_id=a["item_id"],
+                                  score=a.get("score"), scale=a["scale"], reason=a.get("reason") or None))
+
+
+def list_survey(discussion_id: str) -> List[Dict[str, Any]]:
+    with session_scope() as db:
+        rows = (db.query(SurveyResponse).filter(SurveyResponse.discussion_id == discussion_id)
+                .order_by(SurveyResponse.created_at, SurveyResponse.participant, SurveyResponse.item_id).all())
+        return [{"phase": r.phase, "participant": r.participant, "participant_type": r.participant_type,
+                 "item_id": r.item_id, "score": r.score, "scale": r.scale, "reason": r.reason} for r in rows]

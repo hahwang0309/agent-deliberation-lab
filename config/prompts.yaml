@@ -294,6 +294,31 @@ debate_analysis:
     {utterance}
     >>>
 
+# 사전·사후 설문 (src/services/survey.py) — 발언과 별개의 독립 호출
+survey:
+  pre: |
+    Before the discussion begins, answer this questionnaire as yourself, based on your own background and beliefs.
+    For each statement give a score from 1 (strongly disagree) to {scale} (strongly agree) and one short sentence of reason.
+    Answer every statement, using its id exactly as shown.
+
+    Statements:
+    {items}
+  post: |
+    The discussion has ended. Here is the record of what was said:
+    <<<transcript
+    {transcript}
+    transcript>>>
+
+    Now answer the same questionnaire again as yourself, reflecting where you stand AFTER this discussion.
+    Change a score only if the discussion actually changed your view; keep it if it did not.
+    For each statement give a score from 1 (strongly disagree) to {scale} (strongly agree) and one short sentence of reason.
+    Answer every statement, using its id exactly as shown.
+
+    Statements:
+    {items}
+  retry: |
+    Your answer had problems: {errors}. Answer again, covering every statement id exactly once with an integer score in range.
+
 # 모더레이터 프롬프트 (src/core/moderator.py)
 moderator:
   subtopics: |

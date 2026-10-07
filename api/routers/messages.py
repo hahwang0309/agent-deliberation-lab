@@ -39,6 +39,12 @@ def list_messages(discussion_id: str, after_seq: int = Query(0, ge=0), limit: in
     return MessageListResponse(items=items, last_seq=discussion.last_seq or 0)
 
 
+@router.get("/{discussion_id}/survey", summary="사전·사후 설문 응답")
+def list_survey(discussion_id: str, db: Session = Depends(get_db)):
+    discussion = DiscussionService.get(db, discussion_id)
+    return {"survey": (discussion.config or {}).get("survey"), "responses": persistence.list_survey(discussion_id)}
+
+
 @router.get("/{discussion_id}/events", summary="실시간 토론 이벤트 (SSE)")
 async def stream_events(discussion_id: str, request: Request,
                         since: int = Query(0, ge=0, description="이 seq 이후 메시지부터 재생"),
