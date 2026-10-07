@@ -76,6 +76,8 @@ class DiscussionRuntime:
                 enable_belief_reasoning=config.get("enable_belief_reasoning", False),
                 max_statements=config["max_statements"],
                 experiment=ExperimentConfig(**config["experiment"]) if config.get("experiment") else None,
+                propositions=config.get("propositions"),
+                materials=config.get("materials"),
             )
 
             if self.resume:

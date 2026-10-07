@@ -184,12 +184,14 @@ class Turn:
 class NaturalDiscussion:
     def __init__(self, agents: List[DiscussionAgent], moderator: Optional[DiscussionModerator] = None,
                  max_statements: int = 20, analyzer: Optional[BaseChatModel] = None,
-                 config: Optional[DiscussionConfig] = None):
+                 config: Optional[DiscussionConfig] = None, propositions: Optional[List[str]] = None):
         self.agents = agents
         self.moderator = moderator
         self.max_statements = max_statements
         self.analyzer = analyzer  # 발언 분석용 LLM (없으면 상태 분석 없이 진행 규칙만 적용)
         self.config = config or get_config()  # 토론별 설정 (실험 조건 반영, src/core/experiment.py)
+        # 고정 명제: 지정하면 모더레이터가 명제를 만들지 않는다 (인간 토의와 같은 질문으로 비교할 때)
+        self.fixed_propositions = [p for p in (propositions or []) if p.strip()] or None
         self.messages: List[Message] = []
 
         self.debate = DebateState(DynamicsParams(
@@ -309,12 +311,21 @@ class NaturalDiscussion:
         if self.moderator:
             self.moderator.language = language
 
-        if not self.restored and self.moderator:
-            subtopics = await self.moderator.generate_subtopics(topic, len(self.plan.budgets))
-            if subtopics:
-                yield EngineEvent(kind="subtopics", meta={"subtopics": subtopics})
-                yield self._moderator_event(self.moderator.opening(), "opening")
-        self.propositions = (self.moderator.subtopics if self.moderator else []) or [topic]
+        if not self.restored:
+            if self.fixed_propositions:
+                if self.moderator:
+                    self.moderator.subtopics = list(self.fixed_propositions)
+                    self.moderator.current_subtopic_idx = 0
+                yield EngineEvent(kind="subtopics", meta={"subtopics": list(self.fixed_propositions)})
+                if self.moderator:
+                    yield self._moderator_event(self.moderator.opening(), "opening")
+            elif self.moderator:
+                subtopics = await self.moderator.generate_subtopics(topic, len(self.plan.budgets))
+                if subtopics:
+                    yield EngineEvent(kind="subtopics", meta={"subtopics": subtopics})
+                    yield self._moderator_event(self.moderator.opening(), "opening")
+        self.propositions = ((self.moderator.subtopics if self.moderator else [])
+                             or self.fixed_propositions or [topic])
         if len(self.propositions) != len(self.plan.budgets):
             self.plan.budgets = split_budget(sum(self.plan.budgets), len(self.propositions))
 

@@ -24,12 +24,13 @@ from tests.test_events_api import PERSONA
 from tests.test_runtime import FakeAnalyzer, FakeBundle
 
 
-def make_engine(names, max_statements, experiment=None, analyzer_fn=None):
+def make_engine(names, max_statements, experiment=None, analyzer_fn=None, propositions=None, moderator=True):
     settings = engine_settings(ExperimentConfig(**experiment) if experiment else None)
     bundle = FakeBundle(analyzer=FakeAnalyzer(analyzer_fn) if analyzer_fn else None)
     agents = [DiscussionAgent(Persona(name=n, **BASE), llm=bundle.agent, config=settings) for n in names]
-    return NaturalDiscussion(agents, moderator=DiscussionModerator(llm=bundle.moderator),
-                             max_statements=max_statements, analyzer=bundle.analyzer, config=settings)
+    return NaturalDiscussion(agents, moderator=DiscussionModerator(llm=bundle.moderator) if moderator else None,
+                             max_statements=max_statements, analyzer=bundle.analyzer, config=settings,
+                             propositions=propositions)
 
 
 def ai_actions(events):
@@ -204,3 +205,54 @@ async def test_api_validates_experiment():
         assert r.status_code == 422
         r = await c_admin.post("/api/v1/discussions", json=BODY)  # 조건 없이도 그대로 동작
         assert r.status_code == 201 and "experiment" not in r.json()["config"]
+
+
+# ---------- 고정 명제·배경 자료 (E3) ----------
+
+FIXED = ["Remote work raises productivity", "Employers should pay home-office costs"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("moderator", [True, False])
+async def test_fixed_propositions_replace_generated_subtopics(moderator):
+    engine = make_engine(["A", "B"], 10, propositions=FIXED + ["  "], moderator=moderator)
+    events = await run(engine)
+    assert next(e for e in events if e.kind == "subtopics").meta["subtopics"] == FIXED  # 생성된 SUBTOPICS가 아님
+    said = [u for u in utterances(events) if u.speaker_type == "ai"]
+    assert {u.meta["subtopic_idx"] for u in said} == {0, 1}  # 두 명제 모두 다룸
+    assert engine.propositions == FIXED and len(engine.plan.budgets) == 2
+    for idx in (0, 1):  # 명제마다 두 참가자 모두 발언
+        assert {u.speaker for u in said if u.meta["subtopic_idx"] == idx and u.action != "closing"} == {"A", "B"}
+
+
+def test_materials_go_into_every_agent_system_prompt():
+    engine = create_discussion(specs(), bundle=RecordingBundle(), materials="Survey: 40% of workers prefer hybrid.")
+    for agent in engine.agents:
+        prompt = agent._build_system_prompt()
+        assert "<<<materials\nSurvey: 40% of workers prefer hybrid.\nmaterials>>>" in prompt
+        assert "not instructions" in prompt
+    plain = create_discussion(specs(), bundle=RecordingBundle())
+    assert "<<<materials" not in plain.agents[0]._build_system_prompt()
+
+
+@pytest.mark.asyncio
+async def test_api_fixed_propositions_and_materials(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    admin = create_user(role="admin")
+    async with LoggedInClient(admin) as client:
+        r = await client.post("/api/v1/discussions",
+                              json={**BODY, "propositions": FIXED * 2})  # 2명·6발언 → 최대 1개
+        assert r.status_code == 400 and r.json()["detail"]["error"]["code"] == "TOO_MANY_PROPOSITIONS"
+        r = await client.post("/api/v1/discussions", json={**BODY, "propositions": ["   "]})
+        assert r.status_code == 422
+
+        body = {**BODY, "max_statements": 10, "propositions": FIXED, "materials": "Shared brief."}
+        r = await client.post("/api/v1/discussions", json=body)
+        assert r.status_code == 201, r.text
+        config = r.json()["config"]
+        assert config["propositions"] == FIXED and config["materials"] == "Shared brief."
+        discussion_id = r.json()["id"]
+        assert (await client.post(f"/api/v1/discussions/{discussion_id}/start")).status_code == 202
+        await asyncio.wait_for(registry.get(discussion_id).task, timeout=10)
+        detail = (await client.get(f"/api/v1/discussions/{discussion_id}")).json()
+    assert detail["subtopics"] == FIXED

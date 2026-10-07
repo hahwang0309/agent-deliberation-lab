@@ -26,7 +26,9 @@ def create_discussion(participants: List[ParticipantSpec],
                       enable_web_search: bool = False,
                       enable_belief_reasoning: bool = False,
                       max_statements: int = 20,
-                      experiment: Optional[ExperimentConfig] = None) -> NaturalDiscussion:
+                      experiment: Optional[ExperimentConfig] = None,
+                      propositions: Optional[List[str]] = None,
+                      materials: Optional[str] = None) -> NaturalDiscussion:
     """참가자별 provider/model로 에이전트를 만들고, 모더레이터·발언 분석은 첫 참가자의 provider를 사용한다.
     experiment가 있으면 그 조건으로 만든 토론별 설정을 엔진·에이전트에 넘긴다(전역 설정은 그대로)."""
     bundle = bundle or LLMBundle()
@@ -50,6 +52,7 @@ def create_discussion(participants: List[ParticipantSpec],
             enable_belief_reasoning=enable_belief_reasoning,
             config=settings,
             stubbornness=condition.stubbornness,
+            materials=materials,
         ))
 
     lead = participants[0] if participants else ParticipantSpec(None, LLMFactory.default_provider())
@@ -64,4 +67,5 @@ def create_discussion(participants: List[ParticipantSpec],
         model = ref.model if ref and ref.model else (lead.model if provider == lead.provider else None)
         analyzer = bundle.get(provider, model, 0.0)
 
-    return NaturalDiscussion(agents, moderator, max_statements, analyzer=analyzer, config=settings)
+    return NaturalDiscussion(agents, moderator, max_statements, analyzer=analyzer, config=settings,
+                             propositions=propositions)

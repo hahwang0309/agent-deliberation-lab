@@ -17,6 +17,7 @@ from config.config_loader import config_loader
 from api.runtime import registry
 from api.runtime.registry import AlreadyRunningError, CapacityError
 from api.schemas.discussion import CreateDiscussionRequest
+from src.core.natural_discussion import plan_debate
 from src.utils.llm_provider import LLMFactory
 from src.models.personas import LLMProvider
 
@@ -43,6 +44,17 @@ class DiscussionService:
         names = [p.name for p in request.personas]
         if len(set(names)) != len(names):
             raise _error(status.HTTP_400_BAD_REQUEST, "DUPLICATE_PERSONA_NAME", "페르소나 이름이 중복됩니다.")
+        if request.propositions:
+            if any(not p.strip() or len(p) > 300 for p in request.propositions):
+                raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "INVALID_PROPOSITION",
+                             "명제는 비어 있지 않은 300자 이하 문장이어야 합니다.")
+            n = len(request.personas)
+            closing = request.experiment.mechanisms.closing_round if request.experiment else True
+            body = sum(plan_debate(n, request.max_statements, 5, closing_round=closing).budgets)
+            allowed = max(1, body // (n + 1))  # 명제마다 전원 입장 표명 + 상호 응답 1회 이상
+            if len(request.propositions) > allowed:
+                raise _error(status.HTTP_400_BAD_REQUEST, "TOO_MANY_PROPOSITIONS",
+                             f"참가자 {n}명, 발언 {request.max_statements}개로는 명제를 최대 {allowed}개까지 다룰 수 있습니다.")
         if request.experiment is not None:
             if not user.is_admin and not limits.user_expensive_features:
                 # 분석 모델 지정 등으로 비용이 크게 달라질 수 있어 웹 검색과 같은 정책을 따른다
@@ -63,6 +75,8 @@ class DiscussionService:
                 "enable_web_search": request.enable_web_search,
                 "enable_belief_reasoning": request.enable_belief_reasoning,
                 **({"experiment": request.experiment.model_dump(exclude_none=True)} if request.experiment else {}),
+                **({"propositions": [p.strip() for p in request.propositions]} if request.propositions else {}),
+                **({"materials": request.materials} if request.materials else {}),
             },
             created_by=user.id,
         )
