@@ -85,6 +85,8 @@ python scripts/coding_agreement.py --coded coder1.csv --second coder2.csv
 
 ## 주의
 
+- **temperature를 바꿀 수 없는 모델:** `claude-sonnet-5-5`, `claude-fable-5*`는 기본값 외의 temperature를 받지 않고 적응형 사고가 기본입니다. 이 모델에는 temperature를 넣지 않고 호출하며, 실행 기록에는 `temperature: null`(모델 기본값)로 남습니다. 따라서 이 모델로는 temperature 조건을 실험할 수 없고, 분석 모델로 쓰면 temperature 0이 적용되지 않습니다. 구조화 출력은 json_schema 방식을 씁니다.
+
 - 발언 분석(입장, 양보, 반박)은 LLM 판정입니다. 결론에 쓰기 전에 사람 코딩과의 일치도를 확인하세요.
 - 같은 조건에서도 실행마다 결과가 달라집니다. 조건당 반복 수를 충분히 두세요.
 - 사람 참여 실험(역할, 예약 차례, 사람용 설문, 동의, 가명 처리)은 아직 지원하지 않습니다.

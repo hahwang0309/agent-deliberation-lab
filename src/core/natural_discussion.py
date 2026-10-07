@@ -31,6 +31,7 @@ from src.core.debate_state import Challenge, DebateState, DynamicsParams
 from src.core.moderator import DiscussionModerator
 from src.models.personas import Message
 from src.utils.language_detector import LanguageDetector
+from src.utils.llm_provider import structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -706,7 +707,7 @@ class NaturalDiscussion:
             for m in self.messages[-7:-1] if m.metadata.get("seq"))
         proposition = self.propositions[self.subtopic_idx] if self.propositions else ""
         try:
-            result = await self.analyzer.with_structured_output(UtteranceAnalysis).ainvoke([
+            result = await structured_output(self.analyzer, UtteranceAnalysis).ainvoke([
                 SystemMessage(content=prompts.render("debate_analysis.system")),
                 HumanMessage(content=prompts.render(
                     "debate_analysis.user", proposition=proposition, participants=participants,

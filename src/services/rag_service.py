@@ -130,7 +130,7 @@ class QueryGenerator:
         ]
         
         response = await self.llm.ainvoke(messages)
-        content = response.content
+        content = response.text
         
         # Parse response
         query = ""
@@ -176,7 +176,7 @@ class QueryRouter:
         ]
         
         response = await self.llm.ainvoke(messages)
-        result = response.content.strip().upper()
+        result = response.text.strip().upper()
         
         # 분류 결과 파싱
         if "FACTUAL" in result:
@@ -344,7 +344,7 @@ class RAGService:
         ]
         
         response = await self.llm.ainvoke(messages)
-        return response.content
+        return response.text
 
 
 class RAGCache:

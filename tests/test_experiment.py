@@ -628,3 +628,50 @@ def test_repetition_is_coded_and_compared_with_lexical_proxy():
     coded = [dict(second, code_repeats_own_argument="예")]
     assert human_vs_llm(coded, key)["repeats_own_argument"] == {"n": 1, "agreement": 1.0, "kappa": None,
                                                                "confusion": {"True/True": 1}}
+
+
+# ---------- 최신 모델 호환 (E9) ----------
+
+from langchain_core.messages import AIMessage  # noqa: E402
+
+from src.utils.llm_provider import LLMFactory, structured_output  # noqa: E402
+
+
+def test_fixed_sampling_models_get_no_temperature_and_json_schema(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    assert not LLMFactory.supports_temperature(LLMProvider.CLAUDE, "claude-sonnet-5-5")
+    assert not LLMFactory.supports_temperature(LLMProvider.CLAUDE, "claude-fable-5-1")
+    assert LLMFactory.supports_temperature(LLMProvider.CLAUDE, "claude-haiku-4-5-20251001")
+    assert LLMFactory.effective_temperature(LLMProvider.CLAUDE, "claude-sonnet-5-5", 0.0) is None
+    assert LLMFactory.create_llm(LLMProvider.CLAUDE, model="claude-sonnet-5-5", temperature=0.3).temperature is None
+    assert LLMFactory.create_llm(LLMProvider.CLAUDE, model="claude-haiku-4-5-20251001", temperature=0.3).temperature == 0.3
+
+    class Recorder:
+        def __init__(self, model):
+            self.model, self.kwargs = model, None
+
+        def with_structured_output(self, schema, **kwargs):
+            self.kwargs = kwargs
+            return self
+    sonnet, haiku = Recorder("claude-sonnet-5-5"), Recorder("claude-haiku-4-5-20251001")
+    structured_output(sonnet, dict), structured_output(haiku, dict)
+    assert sonnet.kwargs == {"method": "json_schema"} and haiku.kwargs == {}
+
+
+def test_run_record_shows_model_default_temperature():
+    specs_ = [ParticipantSpec(Persona(name="A", **BASE), LLMProvider.CLAUDE, "claude-sonnet-5-5"),
+              ParticipantSpec(Persona(name="B", **BASE), LLMProvider.CLAUDE, "claude-haiku-4-5-20251001")]
+    engine = create_discussion(specs_, bundle=RecordingBundle())
+    assert engine.llm_spec["participants"]["A"]["temperature"] is None  # 모델 기본값
+    assert engine.llm_spec["participants"]["B"]["temperature"] == 0.7
+    assert engine.llm_spec["analyzer"]["temperature"] is None  # 분석 모델 = 첫 참가자(Sonnet 5.5)
+
+
+@pytest.mark.asyncio
+async def test_agent_reads_only_text_blocks_from_thinking_responses():
+    class Thinking:
+        async def ainvoke(self, messages):
+            return AIMessage(content=[{"type": "thinking", "thinking": "secret plan", "signature": "s"},
+                                      {"type": "text", "text": "Visible answer."}])
+    agent = DiscussionAgent(Persona(name="A", **BASE), llm=Thinking())
+    assert await agent.respond("hi") == "Visible answer."

@@ -19,3 +19,7 @@
 | 토론 생성이 422 `WEB_SEARCH_UNAVAILABLE` | 웹 검색을 켰는데 `TAVILY_API_KEY`가 없음 | 키를 설정하거나 웹 검색을 끔 (키 없이 켜면 근거 없이 비용만 들기 때문에 거부함) |
 | 보고서에 "출처 없음" 표시 | 해당 입장이 출처를 확인할 수 없는 수치·사례에 기댐 | 사실이 아니라 참가자의 주장으로 읽기. 근거가 필요하면 웹 검색(Tavily 키)을 켜고 토론 |
 | 이메일 형식 오류로 가입·발급 실패 | 가입·발급 시 이메일 형식을 검사함 (`.local` 같은 예약 도메인은 거부) | 실제 도메인 이메일 사용. 로그인은 형식 검사를 하지 않음 |
+
+## 최신 Claude 모델에서 "`temperature` is not supported" 또는 발언이 깨짐
+
+`claude-sonnet-5-5`, `claude-fable-5*`는 기본값 외의 temperature를 받지 않고, 응답 내용이 사고(thinking)·텍스트 블록 목록으로 옵니다. 앱은 이 모델에 temperature를 넣지 않고(실행 기록에 `null`), 응답에서 텍스트 블록만 읽으며, 구조화 출력은 json_schema 방식을 씁니다(`src/utils/llm_provider.py`의 `FIXED_SAMPLING_PREFIXES`). 같은 제약을 가진 새 모델이 나오면 이 목록에 접두어를 추가하세요.

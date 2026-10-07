@@ -27,4 +27,4 @@ class BeliefReasoningService:
             beliefs=', '.join(self.persona.beliefs[:3]),
         )
         response = await self.llm.ainvoke([HumanMessage(content=reasoning_prompt)])
-        return response.content
+        return response.text

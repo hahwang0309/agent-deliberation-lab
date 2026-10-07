@@ -131,13 +131,13 @@ class DiscussionAgent:
         messages = await self._prepare_response(prompt, context)
         response = await self.llm.ainvoke(messages)
         self.statement_count += 1
-        return response.content
+        return response.text  # 텍스트만 (적응형 사고 모델은 content가 블록 목록)
 
     async def respond_stream(self, prompt: str, context: List[Message] = None) -> AsyncIterator[str]:
         """스트리밍 응답 생성"""
         messages = await self._prepare_response(prompt, context)
         async for chunk in self.llm.astream(messages):
-            chunk_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
+            chunk_text = chunk.text  # 텍스트 조각만 (thinking 블록 제외)
             if chunk_text:
                 yield chunk_text
         self.statement_count += 1

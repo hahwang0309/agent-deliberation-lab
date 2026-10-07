@@ -75,10 +75,13 @@ def create_discussion(participants: List[ParticipantSpec],
     # 실행 기록용: 실제로 요청한 모델·temperature (model None은 프로바이더 기본 모델)
     engine.llm_spec = {
         "participants": {spec.persona.name: {"provider": spec.provider.value, "model": spec.model,
-                                             "temperature": t}
+                                             "temperature": LLMFactory.effective_temperature(spec.provider, spec.model, t)}
                          for spec, t in zip(participants, temperatures)},
         "moderator": ({"provider": lead.provider.value, "model": lead.model,
-                       "temperature": settings.moderator_temperature} if moderator else None),
-        "analyzer": ({"provider": provider.value, "model": model, "temperature": 0.0} if analyzer else None),
+                       "temperature": LLMFactory.effective_temperature(lead.provider, lead.model,
+                                                                       settings.moderator_temperature)}
+                      if moderator else None),
+        "analyzer": ({"provider": provider.value, "model": model,
+                      "temperature": LLMFactory.effective_temperature(provider, model, 0.0)} if analyzer else None),
     }
     return engine

@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from config.config_loader import config_loader
+from src.utils.llm_provider import structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ async def run_survey(agent, survey: SurveyConfig, phase: str, transcript: str = 
     valid: Dict[str, SurveyAnswer] = {}
     for attempt in range(max_attempts):
         try:
-            result: SurveyAnswers = await agent.llm.with_structured_output(SurveyAnswers).ainvoke(messages)
+            result: SurveyAnswers = await structured_output(agent.llm, SurveyAnswers).ainvoke(messages)
         except Exception as e:
             logger.warning("Survey %s failed for %s (attempt %d): %s", phase, agent.persona.name, attempt + 1, e)
             continue

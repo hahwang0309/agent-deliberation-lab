@@ -32,6 +32,23 @@ class LLMFactory:
             LLMProvider.MISTRAL: "mistral-large-latest"
         }.get(provider))
     
+    # temperature를 기본값 외로 지정할 수 없고 적응형 사고(thinking)가 기본인 모델 (langchain-anthropic이 거부함).
+    # 이런 모델은 temperature를 빼고 호출하며(실행 기록에는 None = 모델 기본값),
+    # 구조화 출력은 강제 도구 호출 대신 json_schema 방식을 쓴다(structured_output).
+    FIXED_SAMPLING_PREFIXES = ("claude-fable-5", "claude-sonnet-5-5")
+
+    @classmethod
+    def supports_temperature(cls, provider: Optional[LLMProvider], model: Optional[str]) -> bool:
+        provider = provider or cls.default_provider()
+        model = model or cls._get_default_model(provider) or ""
+        return not (provider == LLMProvider.CLAUDE and model.startswith(cls.FIXED_SAMPLING_PREFIXES))
+
+    @classmethod
+    def effective_temperature(cls, provider: Optional[LLMProvider], model: Optional[str],
+                              temperature: Optional[float]) -> Optional[float]:
+        """실제로 요청에 들어가는 temperature (지원하지 않는 모델이면 None = 모델 기본값)"""
+        return temperature if cls.supports_temperature(provider, model) else None
+
     @classmethod
     def create_llm(
         cls,
@@ -87,7 +104,7 @@ class LLMFactory:
                 raise ValueError("Anthropic API key is required")
             return ChatAnthropic(
                 model=model,
-                temperature=temperature,
+                temperature=temperature if cls.supports_temperature(provider, model) else None,
                 anthropic_api_key=api_key,
                 max_tokens=max_tokens,
                 default_request_timeout=timeout,
@@ -142,3 +159,12 @@ class LLMBundle:
                 provider, model=model, temperature=temperature, callbacks=self.callbacks
             )
         return self._cache[key]
+
+
+def structured_output(llm: BaseChatModel, schema):
+    """구조화 출력 Runnable. 사고가 기본인 모델은 강제 도구 호출이 안 되므로 json_schema 방식을 쓴다
+    (실측: Sonnet 5.5·Haiku 4.5 모두 json_schema 동작, 기존 검증된 모델은 기존 방식 유지)"""
+    model = getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
+    if isinstance(model, str) and model.startswith(LLMFactory.FIXED_SAMPLING_PREFIXES):
+        return llm.with_structured_output(schema, method="json_schema")
+    return llm.with_structured_output(schema)

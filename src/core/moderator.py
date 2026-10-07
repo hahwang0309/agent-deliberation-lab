@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from config.config_loader import config_loader
 from src.utils.language_detector import LanguageDetector
-from src.utils.llm_provider import LLMFactory
+from src.utils.llm_provider import LLMFactory, structured_output
 
 
 class Subtopics(BaseModel):
@@ -44,7 +44,7 @@ class DiscussionModerator:
         """참가자 수·발언 수로 정한 개수(count)만큼 찬반이 갈리는 명제를 만든다"""
         prompt = config_loader.prompts.render(
             "moderator.subtopics", topic=topic, count=count, language_instruction=self._lang_instruction())
-        result = await self.llm.with_structured_output(Subtopics).ainvoke([HumanMessage(content=prompt)])
+        result = await structured_output(self.llm, Subtopics).ainvoke([HumanMessage(content=prompt)])
         cleaned = [s.replace('**', '').strip().lstrip('#-•*0123456789.) ').strip() for s in result.subtopics]
         self.subtopics = [s for s in cleaned if s][:count]
         self.current_subtopic_idx = 0
@@ -71,4 +71,4 @@ class DiscussionModerator:
             language_instruction=self._lang_instruction(),
         )
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        return response.content.strip()
+        return response.text.strip()

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from config.config_loader import config_loader
 from src.services.debate_dynamics import dynamics_markdown
 from src.utils.language_detector import LanguageDetector
+from src.utils.llm_provider import structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +221,7 @@ class ConsensusReportGenerator:
 
     async def _structured(self, schema, messages: List[Any], validate=None):
         """구조화 출력 + 검증. 실패하면 오류를 피드백해 재시도한다."""
-        structured = self.llm.with_structured_output(schema)
+        structured = structured_output(self.llm, schema)
         errors: List[str] = []
         for attempt in range(1, self.max_attempts + 1):
             try:

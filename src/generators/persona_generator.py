@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from config.config_loader import config_loader
 from src.models.personas import LLMProvider, Persona
 from src.utils.language_detector import LanguageDetector
-from src.utils.llm_provider import LLMFactory
+from src.utils.llm_provider import LLMFactory, structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class PersonaGenerator:
         self.llm = llm or LLMFactory.create_llm(
             provider, temperature=0.8, max_tokens=config_loader.get_llm_config().structured_max_tokens
         )
-        self.structured_llm = self.llm.with_structured_output(Persona)
+        self.structured_llm = structured_output(self.llm, Persona)
 
     async def generate_persona(self, topic: str, perspective: Optional[str] = None,
                                agent_id: Optional[str] = None, language: Optional[str] = None) -> Persona:
