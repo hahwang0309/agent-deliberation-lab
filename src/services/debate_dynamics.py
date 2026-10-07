@@ -32,9 +32,17 @@ def summarize_dynamics(records: List[Dict[str, Any]], subtopics: Optional[List[s
             trajectories.append({"name": name, "kind": p.get("kind", "ai"), "start": round(start, 2),
                                  "end": round(p["x"], 2), "shift": round(p["x"] - start, 2)})
         influence: Counter = Counter()
+        boomerangs, common_ground = [], []
         for r in rows:
             for m in r["meta"].get("moves") or []:
+                if m.get("kind") == "concession":
+                    continue  # 양보 이동은 공통 기반에 따로 표시
                 influence[(m["by"], m["listener"])] += m["delta"]
+                if m.get("boomerang"):
+                    boomerangs.append({"by": m["by"], "listener": m["listener"], "shift": round(m["delta"], 2),
+                                       "seq": r["seq"]})
+            for c in (r["meta"].get("analysis") or {}).get("concessions") or []:
+                common_ground.append({"by": r["speaker"], "to": c["to"], "claim": c["claim"], "seq": r["seq"]})
         ends = [t["end"] for t in trajectories]
         starts = [t["start"] for t in trajectories]
         propositions.append({
@@ -45,6 +53,8 @@ def summarize_dynamics(records: List[Dict[str, Any]], subtopics: Optional[List[s
             "spread_end": round(max(ends) - min(ends), 2) if len(ends) > 1 else None,
             "influences": [{"by": by, "listener": listener, "shift": round(total, 2)}
                            for (by, listener), total in influence.most_common() if abs(total) >= MIN_SHIFT],
+            "common_ground": common_ground,
+            "boomerangs": boomerangs,
             "unresolved": [{"challenger": c["challenger"], "target": c["target"], "kind": c.get("kind"),
                             "claim": c.get("claim", "")} for c in state.get("challenges", [])],
         })
@@ -71,13 +81,21 @@ def dynamics_markdown(dynamics: Dict[str, Any]) -> List[str]:
             human = " (사람, 관찰값)" if t["kind"] == "human" else ""
             lines.append(f"- **{t['name']}**{human}: {stance_text(t['start'])} {t['start']:+.2f} → "
                          f"{stance_text(t['end'])} {t['end']:+.2f}{moved}")
+        if p.get("common_ground"):
+            lines.append("- 대립 속 공통 기반 (상대 주장을 인정한 부분):")
+            lines += [f"  - {c['by']} → {c['to']}: {c['claim']} (#{c['seq']})" for c in p["common_ground"]]
+        if p.get("boomerangs"):
+            lines.append("- 반발 이동 (거부 범위의 공격적 발언 뒤 오히려 멀어짐): " + ", ".join(
+                f"{b['by']} → {b['listener']} {b['shift']:+.2f}" for b in p["boomerangs"]))
         if p["influences"]:
             lines.append("- 영향: " + ", ".join(f"{i['by']} → {i['listener']} {i['shift']:+.2f}" for i in p["influences"]))
         if p["unresolved"]:
             lines.append("- 답하지 않은 반박·질문: " + "; ".join(
                 f"{u['challenger']} → {u['target']}" + (f" ({u['claim']})" if u["claim"] else "") for u in p["unresolved"]))
         lines.append("")
-    lines.append("> 입장 값은 발언마다 LLM이 판정한 입장과, 설득력 판정을 Friedkin–Johnsen 식으로 반영한 AI 청자의 이동입니다. "
+    lines.append("> 입장 값은 발언마다 LLM이 판정한 입장과, AI 청자의 이동입니다. 이동은 설득 요인(논증의 질·새로움·가치 일치·"
+                 "출처 신뢰도·상대 논거 인정)을 결합한 설득력을 Friedkin–Johnsen 식에 넣고, 청자의 수용·거부 범위"
+                 "(고집도가 높을수록 좁음)에 따라 줄이거나 반발시킨 값입니다. 양보한 AI 참가자는 상대 쪽으로 조금 이동합니다. "
                  "사람 참가자의 입장은 발언에서 관찰한 값만 쓰며 시뮬레이션하지 않습니다.")
     lines.append("")
     return lines

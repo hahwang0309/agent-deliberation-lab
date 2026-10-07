@@ -43,7 +43,10 @@ alembic/        DB 마이그레이션
 | 화용-변증법 단계(van Eemeren & Grootendorst) | 명제마다 전원 입장 표명 → 상호 논증, 토론 끝에 종결 라운드 |
 | Pollock 반박·근거 공격, Dung 논증 공격 관계 | 반박(rebut)·근거 반박(undercut) 발화 행위, 공격·질문을 받은 참가자의 응답 의무 |
 | 공약 저장소(Hamblin, Walton & Krabbe) | 참가자별 최근 주장 6개를 발언 프롬프트에 넣어 일관성·입장 변화를 표현 |
-| Friedkin–Johnsen + 제한 신뢰(Hegselmann–Krause) | 명제별 입장 x ∈ [−1, 1] 갱신 |
+| Friedkin–Johnsen | 명제별 입장 x ∈ [−1, 1] 갱신 |
+| 정교화 가능성 모델(Petty & Cacioppo), 반복 효과(Cacioppo & Petty), 출처 신뢰도(Hovland & Weiss), 도덕 재구성(Feinberg & Willer), 대화 수용성(Minson et al.) | 설득력을 질·새로움·가치 일치·신뢰도·인정 요인으로 분해 |
+| 사회 판단 이론(Sherif & Hovland), 역효과 재현 실패(Wood & Porter) | 고집도에 따른 수용·비관여·거부 범위, 위협이 있을 때만 반발 |
+| 신념 중심성(Rokeach), 상호 양보(Cialdini), ChangeMyView(Tan et al.) | 중심 입장과 별도로 주장 단위 양보를 기록, 양보에 따른 소폭 이동, 상대 양보를 다음 발언에 알림 |
 | LLM 다중 에이전트 토론(Du et al. 2023, Liang et al. 2023, Chan et al. 2023) | 상대 발언 전문 전달, 성급한 합의 시 반대 검토(devil's advocate) |
 
 **진행 계획** (`plan_debate`): N명, 발언 S개일 때 S − N ≥ N + 1이면 마지막 N개를 종결 라운드로 둡니다. 본론 = S − 종결, 명제 수 k = clamp(본론 // (N + 1), 1, `max_subtopics`), 본론을 k개로 고르게 나눕니다. 명제마다 전원 1회 + 상호 응답 1회 이상이 들어갑니다. 예: (3, 9) → 명제 1개(6발언) + 종결 3, (3, 12) → [5, 4] + 3. 모더레이터는 정확히 k개의 명제를 만듭니다.
@@ -57,10 +60,13 @@ alembic/        DB 마이그레이션
 6. 성급한 합의: 반박 없이 입장 간격이 `consensus_spread` 미만이면 평균에서 가장 먼 참가자가 반대 검토(명제당 1회)
 7. 기본: 덜 말한 참가자가 최근 발언에 입장 거리로 반응합니다. 0.4 미만이면 동조·확장 또는 사례, 아니면 반박 또는 근거 반박입니다.
 
-**발언 분석** (발언당 LLM 1회, temperature 0, `UtteranceAnalysis` 구조화 출력): 주장, 대상 발언(seq)과 관계(support / attack / concede / question), 지목한 참가자, 화자 입장, 청자별 설득력을 뽑습니다. 이 결과로 `DebateState`가 응답 의무, 교착 카운터, 공약 저장소, 입장을 갱신합니다. 분석이 실패하면 그 발언은 상태에 반영하지 않고 진행합니다.
+**발언 분석** (발언당 LLM 1회, temperature 0, `UtteranceAnalysis` 구조화 출력): 주장, 대상 발언(seq)과 관계(support / attack / concede / question), 지목한 참가자, 상대 주장을 인정한 양보, 화자 입장, 청자별 설득 요인을 뽑습니다. 이 결과로 `DebateState`가 응답 의무, 교착 카운터, 공약 저장소, 입장을 갱신합니다. 분석이 실패하면 그 발언은 상태에 반영하지 않고 진행합니다.
 
 **입장 동역학:** 화자의 입장은 분석에서 관찰한 값입니다. AI 청자는 x_i ← x_i + step·(1 − s_i)·q·(x_j − x_i) + s_i·anchor·(x_i0 − x_i)로 움직입니다.
-- q는 설득력입니다. |x_i − x_j| > `confidence_bound`이면 q에 `confidence_penalty`를 곱합니다.
+- 설득력 q = quality × novelty × (0.5 + 0.5·value_match) × (0.5 + 0.5·credibility) × (0.7 + 0.3·receptive) × (1 − 0.5·threat). 요인은 분석 LLM이 청자별로 판정합니다(`debate_state.persuasion`). 반복된 논거는 novelty가 낮아 효과가 없습니다.
+- 수용 범위 폭 = `accept_wide` − (`accept_wide` − `accept_narrow`)·s_i. 범위 밖 `noncommit_width`까지는 q × `noncommit_factor`, 그 너머(거부 범위)는 q × `reject_factor`입니다. 거부 범위에서 threat ≥ `boomerang_threshold`이면 화자 반대쪽으로 `boomerang_step`·threat·(1 − s_i)만큼 멀어집니다.
+- 양보: 상대 주장을 인정한 AI 화자는 상대 쪽으로 `concession_step`·(1 − s_i)만큼, 명제당 `concession_cap`까지 이동합니다. 양보 목록은 명제마다 초기화되며, 양보받은 참가자의 다음 발언 프롬프트에 들어갑니다(상호성).
+- 발언 프롬프트에는 다른 참가자의 이름·역할, 자신이 이미 한 논거 전체와 반복 금지 지시가 들어갑니다.
 - s_i는 고집도로, 성격 키워드로 정합니다: 개방적 0.3, 원칙적·완고 0.75, 기본 0.5.
 - 현재 입장과 최근 이동("A의 발언 뒤 +0.30")을 다음 발언 프롬프트에 넣습니다.
 - 사람의 입장은 관찰만 하고 시뮬레이션하지 않습니다.
@@ -108,7 +114,7 @@ alembic/        DB 마이그레이션
    - 토론 전체 점수는 쟁점별 점수를 각 쌍의 개수로 가중 평균한 값입니다.
    - 라벨은 종합 점수 기준입니다(합의 ≥ 0.8, 부분 합의 ≥ 0.6). 입장을 밝힌 참가자가 2명 미만인 쟁점은 `insufficient`(판단 보류)입니다.
 3. **서술:** 분류 결과를 바탕으로 요약, 열린 질문, 제언을 만듭니다.
-4. **입장 변화(코드, LLM 호출 없음):** `src/services/debate_dynamics.py`가 메시지 `meta.debate`·`meta.moves`로 명제별 입장 궤적(시작 → 최종), 입장 간격, 누가 누구를 움직였는지, 답하지 않은 반박을 정리해 보고서 `dynamics`에 넣습니다.
+4. **입장 변화(코드, LLM 호출 없음):** `src/services/debate_dynamics.py`가 메시지 `meta.debate`·`meta.moves`·`meta.analysis`로 명제별 입장 궤적(시작 → 최종), 입장 간격, 누가 누구를 움직였는지, 대립 속 공통 기반(양보 목록), 반발 이동, 답하지 않은 반박을 정리해 보고서 `dynamics`에 넣습니다.
 
 완료된 토론은 런타임 안에서 보고서를 만듭니다. 사용자가 중지한 토론과 재생성 요청은 `registry.start_report()`가 별도 작업으로 실행합니다.
 

@@ -71,7 +71,12 @@
 | `stalemate_exchanges` | 1 | 서로 이만큼 반박을 주고받으면 교착으로 보고 중재 |
 | `consensus_spread` | 0.3 | 반박 없이 입장 간격이 이보다 좁으면 반대 검토 |
 | `dynamics_step` / `dynamics_anchor` | 0.5 / 0.1 | 설득 1회 최대 이동 비율 / 초기 입장 복원력 |
-| `confidence_bound` / `confidence_penalty` | 1.0 / 0.3 | 이보다 먼 의견의 설득력에 곱하는 값 |
+| `accept_wide` / `accept_narrow` | 1.2 / 0.4 | 고집도 0 / 1일 때 수용 범위 폭 (입장 거리) |
+| `noncommit_width` / `noncommit_factor` | 0.4 / 0.5 | 비관여 범위 폭 / 설득력 배수 |
+| `reject_factor` | 0.15 | 거부 범위 설득력 배수 |
+| `threat_dampen` | 0.5 | 정체성 위협이 설득력을 줄이는 정도 |
+| `boomerang_threshold` / `boomerang_step` | 0.5 / 0.1 | 거부 범위에서 반발 이동이 일어나는 위협 수준 / 최대 반발량 |
+| `concession_step` / `concession_cap` | 0.05 / 0.2 | 양보 1건당 이동 / 명제당 상한 |
 | `stubbornness_default` / `_open` / `_firm` | 0.5 / 0.3 / 0.75 | 성격 키워드별 고집도 |
 | `human_followup_responses` | 1 | 사람 발언 뒤 AI 응답 수 |
 

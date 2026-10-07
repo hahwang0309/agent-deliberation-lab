@@ -169,8 +169,17 @@ turn_actions:
   frame: |
     Topic: {topic}
     Proposition under discussion: {proposition}
+    Other participants (address them by name and the role shown, never invent a title): {roster}
     {stance_note}
-    Your earlier claims in this discussion: {commitments}
+    Arguments you have already made: {commitments}
+    Do not repeat these arguments. Add a new reason or evidence, answer the specific point in front of you,
+    or openly concede what you now accept.
+  # 상대가 직전에 양보한 점 (상호 양보 규범)
+  reciprocity: |
+    Since you last spoke, others acknowledged these points of yours:
+    {conceded}
+    Consider honestly whether there is a part of their position you can acknowledge in return.
+    Do this only if you genuinely accept it; do not concede for politeness.
   target_block: |
     {target_name} said (#{target_seq}):
     <<<
@@ -248,9 +257,19 @@ debate_analysis:
     - addressed: participant names the speaker directly asked to respond (exact names), else empty.
     - stance: the speaker's position on the PROPOSITION after this utterance, from -1 (strongly disagree)
       to +1 (strongly agree); 0 if undecided.
-    - influence: for each OTHER listed participant, how persuasive this utterance is FOR THAT LISTENER
-      (0 = not at all, 1 = very), considering their current stance and claims. Persuasiveness comes from
-      new reasons, good evidence, or answering their concerns, not from agreement alone.
+    - concessions: points of ANOTHER participant that the speaker explicitly accepts or acknowledges as valid
+      in this utterance, even while keeping their overall position ("you are right that...", "I agree that...").
+      Give the participant's exact name and the accepted claim in a short phrase. Empty if none.
+      Polite phrases like "I understand your concern" are not concessions unless a claim is accepted.
+      The accepted claim must originate from the OTHER participant and go against or limit the speaker's own
+      side. If the speaker merely notes that the other person accepted the speaker's own point
+      ("as you admitted, ..."), that is NOT a concession by the speaker.
+    - influence: for each OTHER listed AI participant, rate this utterance FOR THAT LISTENER, each 0..1:
+      quality (strength of reasons and evidence), novelty (1 = new argument for them, near 0 if it repeats
+      something already said in the context), value_match (framed in terms of that listener's own values),
+      credibility (the speaker's role/expertise is relevant to this point), receptive (acknowledges that
+      listener's arguments), threat (attacks that listener's identity, motives or character rather than
+      their arguments). Rate what the utterance does, not whether the listener would agree.
   user: |
     Proposition: {proposition}
     Participants and current stances (-1..+1, null = unknown):
@@ -271,8 +290,9 @@ moderator:
 
     Define exactly {count} debatable propositions to structure the discussion. Each proposition must be a single
     clear statement that participants can agree or disagree with (not a theme or a question).
-    Together they must cover BOTH sides of the topic question (e.g. potential benefits AND potential harms),
-    and they should be the points on which reasonable experts actually disagree.
+    Each proposition must address a DIFFERENT sub-issue of the topic (e.g. effects, evidence, fairness, costs,
+    alternatives) — never restate the same claim from the opposite side. Together they should cover the points
+    on which reasonable experts actually disagree, so that each side has propositions it can support.
     {language_instruction}
     Write each proposition as short plain text, without numbering or markdown.
   opening:

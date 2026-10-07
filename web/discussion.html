@@ -220,11 +220,13 @@ function renderStances(d) {
   card.hidden = !names.length;
   if (!names.length) return;
   const moved = Object.fromEntries((d.moves || []).map(m => [m.listener, m]));
+  const moveText = m => m.kind === "concession" ? `${m.by}에게 양보하며 ${signed(m.delta)}`
+    : `${m.by}의 발언으로 ${signed(m.delta)}${m.boomerang ? ", 반발" : ""}`;
   document.getElementById("stances").replaceChildren(...names.map(n => {
     const x = d.stances[n];
     return el("div", { class: "stance" },
       el("div", {}, el("strong", {}, n), " ", el("span", { class: "muted" }, `${stanceLabel(x)} ${signed(x)}`),
-        moved[n] ? el("span", { class: "muted" }, ` (${moved[n].by}의 발언으로 ${signed(moved[n].delta)})`) : null),
+        moved[n] ? el("span", { class: "muted" }, ` (${moveText(moved[n])})`) : null),
       el("div", { class: "stance-bar" }, el("span", { style: `left:${Math.round((x + 1) * 50)}%` })));
   }));
   document.getElementById("open-challenges").textContent = (d.open_challenges || []).length
@@ -240,6 +242,9 @@ function dynamicsNodes(dyn) {
       el("strong", {}, t.name), t.kind === "human" ? " (사람, 관찰값)" : "",
       ` · ${stanceLabel(t.start)} ${signed(t.start)} → ${stanceLabel(t.end)} ${signed(t.end)}`,
       Math.abs(t.shift) >= 0.05 ? ` (${signed(t.shift)})` : " (변화 없음)"))),
+    (p.common_ground || []).length ? el("div", {}, el("strong", {}, "대립 속 공통 기반"),
+      el("ul", {}, ...p.common_ground.map(c => el("li", {}, `${c.by} → ${c.to}: ${c.claim} `, el("span", { class: "muted" }, `#${c.seq}`))))) : null,
+    (p.boomerangs || []).length ? el("p", { class: "muted" }, "반발 이동: " + p.boomerangs.map(b => `${b.by} → ${b.listener} ${signed(b.shift)}`).join(", ")) : null,
     p.influences.length ? el("p", { class: "muted" }, "영향: " + p.influences.map(i => `${i.by} → ${i.listener} ${signed(i.shift)}`).join(", ")) : null,
     p.unresolved.length ? el("p", { class: "muted" }, "답하지 않은 반박·질문: " + p.unresolved.map(u => `${u.challenger} → ${u.target}`).join(", ")) : null))];
 }

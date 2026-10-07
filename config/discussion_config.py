@@ -63,8 +63,18 @@ class DiscussionConfig:
     # 입장 동역학 (Friedkin-Johnsen + 제한 신뢰, src/core/debate_state.py)
     dynamics_step: float = 0.5
     dynamics_anchor: float = 0.1
-    confidence_bound: float = 1.0
-    confidence_penalty: float = 0.3
+    # 수용·거부 범위 (Sherif & Hovland): 수용 범위 폭 = accept_wide − (accept_wide − accept_narrow) × 고집도
+    accept_wide: float = 1.2
+    accept_narrow: float = 0.4
+    noncommit_width: float = 0.4      # 수용 범위 바깥 비관여 범위 폭 (그 너머는 거부 범위)
+    noncommit_factor: float = 0.5     # 비관여 범위 설득력 배수
+    reject_factor: float = 0.15       # 거부 범위 설득력 배수
+    threat_dampen: float = 0.5        # 정체성 위협이 설득력을 줄이는 정도
+    boomerang_threshold: float = 0.5  # 거부 범위에서 위협이 이 이상이면 반대로 멀어짐
+    boomerang_step: float = 0.1
+    # 양보에 따른 일관성 이동 (양보 1건당 × (1 − 고집도), 명제당 상한)
+    concession_step: float = 0.05
+    concession_cap: float = 0.2
     stubbornness_default: float = 0.5
     stubbornness_open: float = 0.3    # 성격에 개방적·유연 등이 있으면
     stubbornness_firm: float = 0.75   # 성격에 완고·원칙적 등이 있으면

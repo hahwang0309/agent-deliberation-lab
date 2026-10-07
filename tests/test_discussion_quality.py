@@ -9,9 +9,9 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
 from src.core.agent import DiscussionAgent
-from src.core.debate_state import DebateState, DynamicsParams
+from src.core.debate_state import DebateState, DynamicsParams, persuasion
 from src.core.moderator import DiscussionModerator
-from src.core.natural_discussion import ActionType, NaturalDiscussion, plan_debate
+from src.core.natural_discussion import ActionType, NaturalDiscussion, Turn, plan_debate
 from src.models.personas import Persona
 from src.services.consensus_report import ConsensusReportGenerator, TranscriptMessage, to_markdown
 from src.services.debate_dynamics import dynamics_markdown, summarize_dynamics
@@ -21,6 +21,7 @@ from tests.test_events_api import PERSONA
 from tests.test_runtime import FakeAnalyzer, FakeBundle
 
 BASE = {k: v for k, v in PERSONA.items() if k != "model"}
+STRONG = {"quality": 0.9, "novelty": 1.0, "value_match": 1.0, "credibility": 1.0, "receptive": 1.0}
 
 
 def analyzed(messages):
@@ -154,20 +155,90 @@ async def test_two_participants_stalemate_gets_moderator_question_and_obligation
 
 # ---------- 입장 동역학 ----------
 
-def test_friedkin_johnsen_update_with_bounded_confidence():
-    state = DebateState(DynamicsParams(step=0.5, anchor=0.1, confidence_bound=1.0, confidence_penalty=0.3))
-    listener = state.ensure("L", stubbornness=0.5)
+def test_friedkin_johnsen_update_inside_acceptance_zone():
+    state = DebateState(DynamicsParams(step=0.5, anchor=0.1))
+    listener = state.ensure("L", stubbornness=0.5)  # 수용 범위 폭 1.2 − 0.8×0.5 = 0.8
     listener.x0 = listener.x = -0.5
-    delta = state.update_listener(listener, speaker_x=0.5, persuasiveness=0.8)
-    assert delta == pytest.approx(0.5 * 0.5 * 0.8 * 1.0) and listener.x == pytest.approx(-0.3)
+    delta = state.update_listener(listener, speaker_x=0.2, q=0.8)  # 거리 0.7 → 수용 범위
+    assert delta == pytest.approx(0.5 * 0.5 * 0.8 * 0.7) and listener.x == pytest.approx(-0.36)
     # 고집도: 처음 입장으로 당기는 힘
-    delta = state.update_listener(listener, speaker_x=-0.3, persuasiveness=0.0)
-    assert delta == pytest.approx(0.5 * 0.1 * (-0.5 - -0.3))
+    delta = state.update_listener(listener, speaker_x=listener.x, q=0.0)
+    assert delta == pytest.approx(0.5 * 0.1 * (-0.5 - -0.36))
 
-    far = state.ensure("F", stubbornness=0.0)
-    far.x0 = far.x = -0.6
-    delta = state.update_listener(far, speaker_x=0.6, persuasiveness=1.0)  # 거리 1.2 > 1.0 → 설득력 ×0.3
-    assert delta == pytest.approx(0.5 * 1.0 * 0.3 * 1.2)
+
+@pytest.mark.parametrize("stubbornness,distance,zone", [
+    (0.5, 0.8, "accept"), (0.5, 1.1, "noncommit"), (0.5, 1.3, "reject"),
+    (0.75, 0.7, "noncommit"), (0.75, 2.0, "reject"), (0.3, 0.9, "accept"),
+])
+def test_latitude_narrows_with_stubbornness(stubbornness, distance, zone):
+    state = DebateState()
+    listener = state.ensure("L", stubbornness=stubbornness)
+    listener.x = -1.0
+    assert state.zone(listener, -1.0 + distance) == zone
+
+
+def test_rejection_zone_dampens_and_boomerangs_only_under_threat():
+    state = DebateState()
+    calm, threatened = state.ensure("C", stubbornness=0.5), state.ensure("T", stubbornness=0.5)
+    calm.x0 = calm.x = threatened.x0 = threatened.x = -0.8
+    delta = state.update_listener(calm, speaker_x=0.8, q=1.0)  # 거리 1.6 → 거부 범위
+    assert delta == pytest.approx(0.5 * 0.5 * 1.0 * 0.15 * 1.6)  # 줄었지만 화자 쪽으로 이동 (역효과 없음)
+    delta = state.update_listener(threatened, speaker_x=0.8, q=1.0, threat=0.8)
+    toward = 0.5 * 0.5 * (1 - 0.5 * 0.8) * 0.15 * 1.6
+    assert delta == pytest.approx(toward - 0.1 * 0.8 * 0.5) and delta < 0  # 화자 반대쪽으로 멀어짐
+
+
+def test_persuasion_combines_factors_and_repetition_has_no_effect():
+    full = {"quality": 1, "novelty": 1, "value_match": 1, "credibility": 1, "receptive": 1}
+    assert persuasion(full) == pytest.approx(1.0)
+    assert persuasion({**full, "value_match": 0, "credibility": 0, "receptive": 0}) == pytest.approx(0.5 * 0.5 * 0.7)
+    assert persuasion({**full, "novelty": 0.0}) == 0.0  # 반복된 논거
+    assert persuasion({"persuasiveness": 0.4}) == pytest.approx(0.4)  # 이전 형식
+
+
+def test_concessions_are_recorded_and_move_only_ai_conceder_within_cap():
+    state = DebateState(DynamicsParams(concession_step=0.05, concession_cap=0.08))
+    a, b, h = state.ensure("A", stubbornness=0.5), state.ensure("B"), state.ensure("H", kind="human")
+    b.x = 0.9
+    h.x = -0.5
+    moves = state.apply(5, "A", "ai", {"stance": -0.9, "concessions": [{"to": "B", "claim": "errors exist"}]})
+    assert state.concessions == [{"by": "A", "to": "B", "claim": "errors exist", "seq": 5}]
+    assert a.x == pytest.approx(-0.9 + 0.025) and moves[0]["kind"] == "concession"
+    for seq in (6, 7, 8):
+        state.apply(seq, "A", "ai", {"stance": -0.9, "concessions": [{"to": "B", "claim": f"c{seq}"}]})
+    assert a.conceded_shift == pytest.approx(0.08)  # 명제당 상한
+    state.apply(9, "H", "human", {"stance": -0.5, "concessions": [{"to": "B", "claim": "fair point"}]})
+    assert h.x == -0.5  # 사람 입장은 시뮬레이션하지 않음
+    assert [c["seq"] for c in state.concessions_to("B", after_seq=7)] == [8, 9]
+
+    restored = DebateState.from_snapshot(state.snapshot())
+    assert restored.concessions == state.concessions and restored.participants["A"].conceded_shift == pytest.approx(0.08)
+    legacy = {"participants": {"A": {"kind": "ai", "stubbornness": 0.5, "x0": 0.1, "x": 0.2, "commitments": []}}}
+    assert DebateState.from_snapshot(legacy).participants["A"].conceded_shift == 0.0  # 이전 스냅숏 호환
+    state.reset_subtopic()
+    assert state.concessions == [] and a.conceded_shift == 0.0
+
+
+@pytest.mark.asyncio
+async def test_concession_reaches_report_and_reciprocity_prompt():
+    def fn(messages):
+        seq, speaker, context = analyzed(messages)
+        if speaker == "B" and latest_by(context, "A"):
+            return {"stance": -0.7, "concessions": [{"to": "A", "claim": "wrongful convictions happen"}]}
+        return {"stance": 0.7 if speaker == "A" else -0.8}
+
+    engine, _ = make_engine(["A", "B"], max_statements=6, analyzer_fn=fn)
+    events = await run(engine)
+    records = [{"seq": e.meta["seq"], "speaker": e.speaker, "speaker_type": "ai", "action": None,
+                "meta": {"debate": e.meta["debate"], "moves": e.meta["moves"], "analysis": e.meta["analysis"]}}
+               for e in events if e.kind == "analysis"]
+    ground = summarize_dynamics(records)["propositions"][0]["common_ground"]
+    assert ground and ground[0]["by"] == "B" and ground[0]["to"] == "A"
+    assert "B → A: wrongful convictions happen" in "\n".join(dynamics_markdown(summarize_dynamics(records)))
+    # B가 마지막으로 양보했으므로 A가 다음에 말한다면 그 양보가 프롬프트에 들어간다 (상호 양보)
+    prompt = engine._build_prompt("topic", Turn(engine.agents[0], ActionType.REBUT, engine.messages[-1]))
+    assert "acknowledged these points" in prompt and "- B: wrongful convictions happen" in prompt
+    assert "B (Analyst)" in prompt  # 호칭은 이름과 역할
 
 
 @pytest.mark.asyncio
@@ -175,7 +246,7 @@ async def test_persuasion_moves_listener_and_shows_in_their_next_prompt():
     def fn(messages):
         seq, speaker, context = analyzed(messages)
         if speaker == "A":
-            return {"stance": 0.8, "influence": [{"listener": "B", "persuasiveness": 0.9}]}
+            return {"stance": 0.8, "influence": [{"listener": "B", **STRONG}]}
         return {"stance": -0.8 if seq < 5 else -0.2}
 
     engine, _ = make_engine(["A", "B"], max_statements=4, analyzer_fn=fn, personality=["open-minded"])
@@ -198,7 +269,7 @@ async def test_dynamics_summary_reports_trajectory_influence_and_unresolved():
         seq, speaker, context = analyzed(messages)
         if speaker == "A":
             target = latest_by(context, "B")
-            return {"stance": 0.8, "influence": [{"listener": "B", "persuasiveness": 0.9}],
+            return {"stance": 0.8, "influence": [{"listener": "B", **STRONG}],
                     "targets": [{"seq": target, "speaker": "B", "relation": "attack"}] if target else []}
         return {"stance": -0.8 if seq < 5 else -0.2}
 
@@ -227,7 +298,7 @@ async def test_human_stance_is_observed_but_not_simulated():
     state.apply(1, "Hana", "human", {"stance": -0.4})
     assert human.x == -0.4
     engine, _ = make_engine(["A", "B"], max_statements=2,
-                            analyzer_fn=lambda m: {"stance": 0.5, "influence": [{"listener": "Hana", "persuasiveness": 1.0}]})
+                            analyzer_fn=lambda m: {"stance": 0.5, "influence": [{"listener": "Hana", **STRONG}]})
     engine.debate.ensure("Hana", "human").x = -0.4
     events = await run(engine)
     assert all(m["listener"] != "Hana" for e in events if e.kind == "analysis" for m in e.meta["moves"])
@@ -247,7 +318,7 @@ async def test_prompt_carries_proposition_stance_commitments_and_full_target():
     from src.core.natural_discussion import Turn
     prompt = engine._build_prompt("topic", Turn(engine.agents[1], ActionType.REBUT, target))
     assert "Proposition under discussion: GAI raises productivity" in prompt
-    assert "Your earlier claims in this discussion: jobs vanish first" in prompt
+    assert "Arguments you have already made: jobs vanish first" in prompt and "Do not repeat these arguments" in prompt
     assert "A said (#7)" in prompt and long_text in prompt  # 대상 발언 전문 (900자)
     assert "Reply rules" in prompt
 

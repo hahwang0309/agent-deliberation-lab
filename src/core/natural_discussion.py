@@ -14,7 +14,7 @@ stream()은 진행을 EngineEvent로 yield한다. 저장·전송은 호출 측(A
 import logging
 import random
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Protocol, Tuple
 
@@ -110,8 +110,24 @@ class AnalysisTarget(BaseModel):
 
 
 class ListenerInfluence(BaseModel):
+    """청자별 설득 요인 (0~1). 결합 방식은 debate_state.persuasion 참고"""
     listener: str
-    persuasiveness: float = Field(ge=0.0, le=1.0)
+    quality: float = 0.0       # 근거·논리의 질
+    novelty: float = 1.0       # 이 청자에게 새로운 논거인가 (반복이면 0에 가깝게)
+    value_match: float = 0.0   # 청자의 가치·신념의 언어로 말했는가
+    credibility: float = 0.5   # 이 쟁점에서 화자의 전문성·신뢰성
+    receptive: float = 0.0     # 청자의 논거를 인정했는가
+    threat: float = 0.0        # 청자의 정체성·인격을 공격했는가
+
+    @field_validator("quality", "novelty", "value_match", "credibility", "receptive", "threat", mode="before")
+    @classmethod
+    def clamp_unit(cls, value):
+        return 0.0 if value is None else max(0.0, min(1.0, float(value)))
+
+
+class Concession(BaseModel):
+    to: str      # 양보받은 참가자
+    claim: str   # 인정한 상대 주장 (짧게)
 
 
 class UtteranceAnalysis(BaseModel):
@@ -119,6 +135,7 @@ class UtteranceAnalysis(BaseModel):
     move: str = "position"
     targets: List[AnalysisTarget] = Field(default_factory=list)
     addressed: List[str] = Field(default_factory=list)
+    concessions: List[Concession] = Field(default_factory=list)
     stance: float = Field(0.0, ge=-1.0, le=1.0)
     influence: List[ListenerInfluence] = Field(default_factory=list)
 
@@ -176,7 +193,7 @@ class NaturalDiscussion:
 
         self.debate = DebateState(DynamicsParams(
             step=self.config.dynamics_step, anchor=self.config.dynamics_anchor,
-            confidence_bound=self.config.confidence_bound, confidence_penalty=self.config.confidence_penalty))
+            **{f.name: getattr(self.config, f.name) for f in fields(DynamicsParams) if f.name not in ("step", "anchor")}))
         for agent in agents:
             self.debate.ensure(agent.persona.name, "ai", agent.stubbornness)
 
@@ -457,12 +474,19 @@ class NaturalDiscussion:
         prompts = config_loader.prompts
         name = turn.speaker.persona.name
         commitments = self.debate.participants[name].commitments
+        others = [n for n in self.debate.participants if n != name]
         parts = [prompts.render(
             "turn_actions.frame", topic=topic,
             proposition=self.propositions[self.subtopic_idx] if self.propositions else topic,
+            roster=", ".join(self._describe(n, with_values=False) for n in others),
             stance_note=self._stance_note(name),
-            commitments=" / ".join(commitments[-3:]) or "(none yet)",
+            commitments=" / ".join(commitments) or "(none yet)",
         )]
+        # 상호 양보: 내가 마지막으로 말한 뒤 상대가 나에게 인정한 점
+        conceded = self.debate.concessions_to(name, self._last_seq_of(name))
+        if conceded:
+            parts.append(prompts.render("turn_actions.reciprocity", conceded="\n".join(
+                f"- {c['by']}: {c['claim']}" for c in conceded)))
         if turn.target is not None and turn.action in TARGETED_ACTIONS + (ActionType.POSITION,):
             parts.append(prompts.render(
                 "turn_actions.target_block", target_name=turn.target.agent_name,
@@ -570,13 +594,25 @@ class NaturalDiscussion:
 
     # ---------- 발언 분석 ----------
 
+    def _describe(self, name: str, with_values: bool = True) -> str:
+        """참가자 이름·역할(·가치) — 분석의 출처 신뢰도·가치 일치 판정과 발언의 호칭에 쓴다"""
+        agent = self._agent(name)
+        if agent is None:
+            return f"{name} (human participant)"
+        persona = agent.persona
+        values = f"; values: {' / '.join(persona.beliefs[:3])}" if with_values and persona.beliefs else ""
+        return f"{name} ({persona.role}{values})"
+
+    def _last_seq_of(self, name: str) -> int:
+        return next((m.metadata.get("seq") or 0 for m in reversed(self.messages) if m.agent_name == name), 0)
+
     async def _analyze(self, seq: Optional[int], speaker: str, kind: str, text: str) -> Optional[EngineEvent]:
         """발언을 구조화 분석해 토론 상태(공약·도전·입장 동역학)에 반영"""
         if self.analyzer is None:
             return None
         prompts = config_loader.prompts
         participants = "\n".join(
-            f"- {name} ({p.kind}): {round(p.x, 2) if p.x is not None else 'null'}"
+            f"- {self._describe(name)}: stance {round(p.x, 2) if p.x is not None else 'null'}"
             for name, p in self.debate.participants.items())
         context = "\n".join(
             f"[#{m.metadata.get('seq')}] {m.agent_name}: {m.content[:600]}"
@@ -597,6 +633,8 @@ class NaturalDiscussion:
         analysis = result.model_dump()
         analysis["targets"] = [t for t in analysis["targets"]
                                if t["seq"] in known_seqs and t["seq"] != seq and t["speaker"] in self.debate.participants]
+        analysis["concessions"] = [c for c in analysis["concessions"]
+                                   if c["to"] in self.debate.participants and c["to"] != speaker and c["claim"]]
         analysis["influence"] = [i for i in analysis["influence"]
                                  if i["listener"] in self.debate.participants
                                  and self.debate.participants[i["listener"]].kind == "ai"]  # 사람 입장은 추정하지 않음
