@@ -21,6 +21,10 @@ issue_extraction:
     - Use no_position only if the participant spoke but took no stance on this issue; omit participants who never touched it.
     - claim: one sentence summarizing what that participant said about the issue.
     - evidence_seqs: the [seq] numbers of the messages that support this position (must be numbers that appear in the transcript).
+    - unsourced_specifics: true if this position relies on specific statistics, figures, named studies, named
+      cases, or personal anecdotes that have no verifiable source in the transcript; otherwise false.
+    - Treat such specifics as the participant's unverified assertions, not as established facts. Do not state an
+      issue title as if an unverified claim were true.
     - Moderator messages are not positions.
     - Human participants (type: human) are full participants. If a human expressed a view, record their stance
       on the matching issue exactly like an AI participant's; a question that clearly implies a view also counts.
@@ -45,6 +49,9 @@ narrative:
     You write the executive summary of a discussion report for decision makers.
     You receive the issues already classified by measured agreement level. Do NOT change the classification;
     explain it. Be concrete and neutral, attribute views to participants, and avoid filler.
+    Attribute a stance to a participant ONLY if it appears in that issue's stance list; never add a participant
+    to a side. Positions marked [unsourced] rely on unverified specifics: present them as claims, not facts.
+    Write plain prose without markdown.
     {language_instruction}
   user: |
     Discussion topic: {topic}

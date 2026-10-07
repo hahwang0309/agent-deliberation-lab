@@ -31,7 +31,7 @@ class DiscussionConfig:
     cot_depth: int = 3  # CoT 추론 깊이 (질문 수)
     
     # 자연스러운 토론 설정
-    prefer_building_over_challenging: float = 0.6  # 건설적 확장 선호도
+    prefer_building_over_challenging: float = 0.5  # 건설적 확장 선호도 (높을수록 맞장구가 늘어남)
     require_evidence_probability: float = 0.3  # 증거 요구 확률
     
     # 모더레이터 설정
@@ -58,6 +58,9 @@ class DiscussionConfig:
     
     # 소주제 설정
     max_subtopics: int = 5  # 최대 소주제 개수
+
+    # 모더레이터 개입 주기 (AI 발언 N개마다, 마지막 발언 뒤에는 개입하지 않음)
+    moderator_every_statements: int = 3
 
     # 사람 개입
     human_followup_responses: int = 1  # 사람 발언 직후 그 발언에 응답하는 AI 발언 수 (발언 예산을 넘어도 수행)

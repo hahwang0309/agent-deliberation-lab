@@ -62,7 +62,7 @@
 
 ### 기타
 
-`discussion`, `system` 등 나머지 섹션은 엔진의 세부 동작 값입니다. 토론 흐름 세부값(소주제 수, 사람 발언 후 AI 응답 수 `human_followup_responses` 등)은 `config/discussion_config.py`에 있습니다.
+`discussion`, `system` 등 나머지 섹션은 엔진의 세부 동작 값입니다. 토론 흐름 세부값은 `config/discussion_config.py`에 있습니다. 예: 소주제 수, 모더레이터 개입 주기 `moderator_every_statements`(기본 3), 확장 선호도 `prefer_building_over_challenging`(기본 0.5), 사람 발언 후 AI 응답 수 `human_followup_responses`.
 
 ## 프롬프트·템플릿
 

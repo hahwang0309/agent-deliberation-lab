@@ -7,6 +7,7 @@ import itertools
 import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableLambda
 
 from api.database import SessionLocal
 from api.models.discussion import Discussion, DiscussionStatus
@@ -17,7 +18,7 @@ from api.schemas.discussion import CreateDiscussionRequest
 from api.services.discussion_service import DiscussionService
 from tests.conftest import create_user
 
-SUBTOPICS = "1. Economic impact on households\n2. Ethical considerations for society\n3. Technical feasibility today"
+SUBTOPICS = ["Economic impact on households", "Ethical considerations for society", "Technical feasibility today"]
 
 
 class SlowFakeChatModel(GenericFakeChatModel):
@@ -29,12 +30,23 @@ class SlowFakeChatModel(GenericFakeChatModel):
             yield chunk
 
 
+def _with_structured_subtopics(base):
+    """모더레이터용: 소주제는 구조화 출력으로, 질문은 일반 응답으로 돌려주는 가짜 모델"""
+
+    class FakeModerator(base):
+        def with_structured_output(self, schema, **kwargs):
+            return RunnableLambda(lambda _messages: schema(subtopics=list(SUBTOPICS)))
+
+    return FakeModerator
+
+
 class FakeBundle:
     """LLMBundle 대체: temperature 0.5 = 모더레이터, 그 외 = 에이전트"""
 
     def __init__(self, callbacks=None, slow=False):
         cls = SlowFakeChatModel if slow else GenericFakeChatModel
-        self.moderator = cls(messages=itertools.cycle([AIMessage(content=SUBTOPICS)]))
+        self.moderator = _with_structured_subtopics(cls)(
+            messages=itertools.cycle([AIMessage(content="What is the strongest counterargument here?")]))
         self.agent = cls(messages=itertools.cycle(
             [AIMessage(content=f"Point number {i} with concrete evidence and data.") for i in range(1, 50)]
         ))

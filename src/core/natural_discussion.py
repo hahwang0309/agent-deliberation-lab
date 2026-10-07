@@ -86,6 +86,7 @@ class NaturalDiscussion:
 
         self.config = get_config()
         self.restored = False
+        self.statements_on_subtopic = 0  # 현재 소주제에서 나온 AI 발언 수
 
     def restore(self, prior_messages: List[Message], subtopics: Optional[List[str]] = None,
                 current_subtopic: Optional[str] = None) -> None:
@@ -162,6 +163,7 @@ class NaturalDiscussion:
                               content=response, action=action.value, meta=meta)
 
             self._update_state(speaker)
+            self.statements_on_subtopic += 1
             self._process_evolution(speaker, response, topic)
             if action == ActionType.RESPOND_TO_HUMAN:
                 self.pending_followups -= 1
@@ -203,7 +205,8 @@ class NaturalDiscussion:
             eligible = [a for a in eligible if a.persona.name not in self.last_speakers[-1:]] or self.agents
 
         progress = self.turn_count / self.max_statements if self.max_statements > 0 else 0
-        least_spoken = min(eligible, key=lambda a: self.agent_turn_count[a.persona.name])
+        fewest = min(self.agent_turn_count[a.persona.name] for a in eligible)
+        least_spoken = random.choice([a for a in eligible if self.agent_turn_count[a.persona.name] == fewest])
 
         if self.turn_count == 0:
             return random.choice(eligible), ActionType.PRESENT
@@ -218,7 +221,7 @@ class NaturalDiscussion:
             )[0]
             return least_spoken, action
         action = random.choices([ActionType.SYNTHESIZE, ActionType.BUILD], weights=[0.6, 0.4])[0]
-        return random.choice(eligible), action
+        return least_spoken, action
 
     def _generate_prompt(self, topic: str, speaker: DiscussionAgent, action: ActionType) -> str:
         """액션에 맞는 프롬프트 생성 (config/prompts.yaml의 turn_actions)"""
@@ -266,30 +269,39 @@ class NaturalDiscussion:
                 if change and change.get('position_changed'):
                     logger.debug("%s shifted position", agent.persona.name)
 
+    def _statements_per_subtopic(self) -> Optional[int]:
+        count = len(self.moderator.subtopics) if self.moderator else 0
+        return max(2, self.max_statements // count) if count else None
+
+    def _transition_due(self) -> bool:
+        return self.moderator.should_transition_subtopic(
+            self.messages, self.statements_on_subtopic, self._statements_per_subtopic())
+
     def _should_moderator_intervene(self) -> bool:
-        """모더레이터 개입 필요 판단"""
-        if self.turn_count < 2:
+        """모더레이터 개입 판단: 소주제 전환 시점, 추상적 발언 연속, 또는 AI 발언 N개마다.
+        마지막 AI 발언 뒤에는 개입하지 않는다 (답 없는 질문으로 끝나지 않도록)."""
+        done = self.turn_count + 1  # 지금까지 나온 AI 발언 수
+        if done >= self.max_statements:
             return False
-        if self.turn_count % 2 == 0:
+        if self._transition_due():
             return True
         if self._should_probe_for_specifics():
             return True
-        if self.moderator.should_transition_subtopic(self.messages):
-            return True
-        return random.random() > 0.5
+        every = self.config.moderator_every_statements
+        return done >= 2 and done % every == 0
 
     async def _moderator_intervention(self, topic: str) -> Optional[EngineEvent]:
         """모더레이터 개입 - 주제 전환, 구체화 질문, 심화 질문"""
-        if self.moderator.should_transition_subtopic(self.messages):
+        if self._transition_due():
             content = await self.moderator.transition_to_next_subtopic(topic)
             msg_type = "transition"
+            self.statements_on_subtopic = 0
         elif self._should_probe_for_specifics():
             content = await self.moderator.generate_probing_question(topic, self.messages, is_abstract=True)
             msg_type = "probing"
         else:
-            msg_type = "question" if self.moderator.should_ask_question(self.turn_count) else "forced"
+            msg_type = "question"
             content = await self.moderator.generate_probing_question(topic, self.messages)
-            self.moderator.last_question_turn = self.turn_count
 
         if not content:
             return None

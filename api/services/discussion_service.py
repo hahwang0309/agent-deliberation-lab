@@ -1,6 +1,7 @@
 """
 토론 서비스 - 토론 생성·조회·시작·중지·삭제
 """
+import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -35,6 +36,10 @@ class DiscussionService:
                 and (request.enable_web_search or request.enable_belief_reasoning)):
             raise _error(status.HTTP_403_FORBIDDEN, "FEATURE_RESTRICTED",
                          "웹 검색·신념 추론은 관리자만 켤 수 있습니다.")
+        if request.enable_web_search and not os.getenv("TAVILY_API_KEY"):
+            # 키 없이 켜면 근거는 0건인데 검색 질의용 LLM 호출 비용만 발생함
+            raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "WEB_SEARCH_UNAVAILABLE",
+                         "웹 검색을 쓰려면 서버에 TAVILY_API_KEY를 설정해야 합니다.")
         names = [p.name for p in request.personas]
         if len(set(names)) != len(names):
             raise _error(status.HTTP_400_BAD_REQUEST, "DUPLICATE_PERSONA_NAME", "페르소나 이름이 중복됩니다.")

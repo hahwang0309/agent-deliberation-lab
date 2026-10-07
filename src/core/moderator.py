@@ -1,9 +1,9 @@
 """
 모더레이터 모듈 - 토론 진행자 및 소주제 관리
 """
-import re
 from typing import List, Optional
 from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
 from langchain_core.language_models import BaseChatModel
 from src.models.personas import Message, LLMProvider
 from src.utils.llm_provider import LLMFactory
@@ -12,6 +12,12 @@ from config.config_loader import config_loader
 from config.discussion_config import get_config
 
 AI_ROLES = ("agent", "assistant")
+QUESTION_TYPES = ("probing", "question", "forced")
+
+
+class Subtopics(BaseModel):
+    """소주제 구조화 출력 (텍스트 목록 파싱은 응답 형식에 따라 0개가 될 수 있어 사용하지 않음)"""
+    subtopics: List[str] = Field(description="4-5 short subtopics as plain text")
 
 
 class DiscussionModerator:
@@ -27,7 +33,6 @@ class DiscussionModerator:
 
         # 질문 관리
         self.question_count = 0
-        self.last_question_turn = 0
 
     @property
     def current_subtopic(self) -> Optional[str]:
@@ -48,31 +53,23 @@ class DiscussionModerator:
         prompt = config_loader.prompts.render(
             "moderator.subtopics", topic=topic, language_instruction=self._lang_instruction()
         )
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-
-        parsed_subtopics = []
-        for line in response.content.strip().split('\n'):
-            line = line.strip()
-            if line and any(char.isdigit() for char in line[:3]):
-                subtopic = re.sub(r'^[\d.)\s]+', '', line).replace('**', '').strip().lstrip('-•* ').strip()
-                if subtopic and len(subtopic) > 5:
-                    parsed_subtopics.append(subtopic)
-
-        self.subtopics = parsed_subtopics[:get_config().max_subtopics]
+        result = await self.llm.with_structured_output(Subtopics).ainvoke([HumanMessage(content=prompt)])
+        cleaned = [s.replace('**', '').strip().lstrip('#-•* ').strip() for s in result.subtopics]
+        self.subtopics = [s for s in cleaned if s][:get_config().max_subtopics]
         self.current_subtopic_idx = 0
         return self.subtopics
 
-    def should_ask_question(self, turn_count: int) -> bool:
-        """질문을 해야 하는지 판단 (5턴 간격)"""
-        return turn_count - self.last_question_turn >= 5
-
     async def generate_probing_question(self, topic: str, messages: List[Message],
                                         is_abstract: bool = False) -> str:
-        """심화 질문 생성 - 추상적 발언에 대한 구체화 유도"""
+        """심화 질문 생성 (이전에 한 질문은 반복하지 않음)"""
+        previous = [m.content[:200] for m in messages
+                    if m.role == "moderator" and m.metadata.get("type") in QUESTION_TYPES]
+        previous_questions = " / ".join(previous[-5:]) or "(none)"
         if is_abstract and messages:
             prompt = config_loader.prompts.render(
                 "moderator.probing_abstract",
                 statement=messages[-1].content[:200],
+                previous_questions=previous_questions,
                 language_instruction=self._lang_instruction(),
             )
         else:
@@ -81,6 +78,7 @@ class DiscussionModerator:
                 topic=topic,
                 subtopic=self.current_subtopic,
                 recent_points=' | '.join(m.content[:100] for m in messages[-3:]),
+                previous_questions=previous_questions,
                 language_instruction=self._lang_instruction(),
             )
 
@@ -88,12 +86,15 @@ class DiscussionModerator:
         self.question_count += 1
         return response.content.strip()
 
-    def should_transition_subtopic(self, messages: List[Message]) -> bool:
-        """주제 전환 필요 여부 판단"""
+    def should_transition_subtopic(self, messages: List[Message], statements_on_current: int = 0,
+                                   statements_per_subtopic: Optional[int] = None) -> bool:
+        """주제 전환 필요 여부 판단 (발언 예산을 소주제 수로 나눈 몫을 다 쓰면 전환해 모든 관점을 다룸)"""
         config = get_config()
         current_topic = self.current_subtopic
-        if current_topic is None:
-            return False  # 모든 주제 완료
+        if current_topic is None or self.current_subtopic_idx >= len(self.subtopics) - 1:
+            return False  # 마지막 소주제거나 모든 주제 완료
+        if statements_per_subtopic and statements_on_current >= statements_per_subtopic:
+            return True
 
         keywords = current_topic.lower().split()[:2]  # 주제의 첫 2단어
 

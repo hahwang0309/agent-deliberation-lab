@@ -34,6 +34,7 @@ class Position(BaseModel):
     stance: Stance
     claim: str = Field(description="One sentence summary of this participant's view on the issue")
     evidence_seqs: List[int] = Field(default_factory=list, description="Transcript [seq] numbers")
+    unsourced_specifics: bool = Field(False, description="Relies on statistics/named cases/anecdotes without a verifiable source")
 
 
 class Issue(BaseModel):
@@ -271,7 +272,9 @@ class ConsensusReportGenerator:
         prompts = config_loader.prompts
         issue_lines = []
         for issue in issues:
-            stances = "; ".join(f"{p['participant']}: {p['stance']} — {p['claim']}" for p in issue["positions"])
+            stances = "; ".join(
+                f"{p['participant']}: {p['stance']}{' [unsourced]' if p.get('unsourced_specifics') else ''} — {p['claim']}"
+                for p in issue["positions"])
             issue_lines.append(f"- [{issue['label']} {issue['scores']['overall']}] {issue['title']} | {stances}")
         messages = [
             SystemMessage(content=prompts.render("report.narrative.system", language_instruction=language_instruction)),
@@ -332,7 +335,8 @@ def to_markdown(report: Dict[str, Any]) -> str:
                          f"{DIRECTION_TEXT.get(issue['direction'], '-')}")
             lines += ["", issue["summary"], ""]
             for p in issue["positions"]:
-                lines.append(f"- **{p['participant']}** ({STANCE_TEXT[p['stance']]}): {p['claim']}")
+                flag = " ⚠ 출처 없는 수치·사례" if p.get("unsourced_specifics") else ""
+                lines.append(f"- **{p['participant']}** ({STANCE_TEXT[p['stance']]}): {p['claim']}{flag}")
             lines.append("")
     for title, key in (("열린 질문", "open_questions"), ("제언", "recommendations")):
         items = narrative.get(key) or []
