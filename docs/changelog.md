@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 데이터 추출 (2026-10)
+- 분석용 표 7개(토론, 발언, 입장, 이동, 양보, 반박, 설문): `GET /discussions/{id}/dataset`, 여러 토론은 `scripts/export_dataset.py --label <조건> --out <폴더>` (CSV 또는 JSONL).
+- `--coding-sample N --seed S`: 사람 코딩용 표본. `coding_blind.csv`(직전·대상 발언 문맥과 빈 코딩 칸: 양보, 응답 여부, 정당화 수준, 존중 수준)와 `coding_key.csv`(LLM 판정, 코더에게 주지 않음)를 따로 만듭니다.
+
 ## 실행 기록 (2026-10)
 - 시작·재개마다 실행 기록(코드 커밋, 프롬프트 해시, 적용 설정, 모델·temperature, 패키지 버전)을 `discussions.run_info`에 남깁니다(Alembic `baf41bfd5b40`). 상세 응답에 포함됩니다.
 - 실험 조건이 있는 토론은 발언별 최종 지시 프롬프트를 `meta.prompt`에 저장합니다.

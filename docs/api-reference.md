@@ -82,6 +82,7 @@
 |---|---|---|
 | GET | `/discussions/{id}/messages?after_seq=&limit=` | 완성된 발언 목록 |
 | GET | `/discussions/{id}/survey` | 설문 문항과 응답 `{survey, responses: [{phase, participant, participant_type, item_id, score, scale, reason}]}` |
+| GET | `/discussions/{id}/dataset` | 분석용 표 `{discussions, utterances, stances, moves, concessions, attacks, surveys}` (행 목록). 여러 토론을 모을 때는 `scripts/export_dataset.py` |
 | GET | `/discussions/{id}/events?since=` | SSE. 재접속 시 브라우저가 보내는 `Last-Event-ID` 이후 메시지부터 다시 보냄 |
 
 **SSE 이벤트**

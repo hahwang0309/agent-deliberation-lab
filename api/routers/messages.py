@@ -16,6 +16,7 @@ from api.runtime import broker, registry
 from api.runtime import persistence
 from api.schemas.message import MessageListResponse
 from api.services.discussion_service import DiscussionService
+from src.services.experiment_export import build_tables
 
 router = APIRouter(prefix="/api/v1/discussions", tags=["Messages"], dependencies=[Depends(require_active_user)])
 
@@ -43,6 +44,12 @@ def list_messages(discussion_id: str, after_seq: int = Query(0, ge=0), limit: in
 def list_survey(discussion_id: str, db: Session = Depends(get_db)):
     discussion = DiscussionService.get(db, discussion_id)
     return {"survey": (discussion.config or {}).get("survey"), "responses": persistence.list_survey(discussion_id)}
+
+
+@router.get("/{discussion_id}/dataset", summary="분석용 데이터셋 (토론·발언·입장·이동·양보·반박·설문 표)")
+def get_dataset(discussion_id: str, db: Session = Depends(get_db)):
+    DiscussionService.get(db, discussion_id)
+    return build_tables(persistence.export_bundle(discussion_id))
 
 
 @router.get("/{discussion_id}/events", summary="실시간 토론 이벤트 (SSE)")

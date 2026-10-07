@@ -3,6 +3,7 @@
 (가짜 LLM)
 """
 import asyncio
+import json
 from dataclasses import fields
 
 import pytest
@@ -417,3 +418,76 @@ async def test_runtime_records_run_info_and_prompts_only_for_experiments(monkeyp
     plain_ai = [m for m in persistence.list_messages_after(ids[1], 0) if m["speaker_type"] == "ai"]
     assert all("Continue the discussion" in m["meta"]["prompt"] for m in exp_ai if m["action"] == "reply")
     assert all("prompt" not in m["meta"] for m in plain_ai)
+
+
+# ---------- 데이터 추출 (E7) ----------
+
+import csv  # noqa: E402
+
+from scripts.export_dataset import main as export_main  # noqa: E402
+from src.services.experiment_export import TABLES, build_tables, coding_sample  # noqa: E402
+
+
+def export_analyzer(messages):
+    seq, speaker, context = analyzed(messages)
+    other = {"Alice": "Bob", "Bob": "Alice"}[speaker]
+    target = latest_by(context, other)
+    if not target:
+        return {"stance": 0.6 if speaker == "Alice" else -0.6, "claims": [f"{speaker} claim"]}
+    return {"stance": 0.5 if speaker == "Alice" else -0.5, "claims": [f"{speaker} claim"],
+            "targets": [{"seq": target, "speaker": other, "relation": "attack"}],
+            "concessions": [{"to": other, "claim": "a fair point"}],
+            "influence": [{"listener": other, "quality": 0.9, "novelty": 1, "value_match": 1, "credibility": 1, "receptive": 1}]}
+
+
+async def run_labelled(client, label, n=1):
+    ids = []
+    for _ in range(n):
+        r = await client.post("/api/v1/discussions", json={**BODY, "max_statements": 4, "survey": SURVEY,
+                                                             "experiment": {"label": label}})
+        ids.append(r.json()["id"])
+        assert (await client.post(f"/api/v1/discussions/{ids[-1]}/start")).status_code == 202
+        await asyncio.wait_for(registry.get(ids[-1]).task, timeout=10)
+    return ids
+
+
+@pytest.mark.asyncio
+async def test_dataset_tables_api_and_cli(monkeypatch, tmp_path):
+    monkeypatch.setattr(runtime_module, "LLMBundle",
+                        lambda callbacks=None: FakeBundle(analyzer=FakeAnalyzer(export_analyzer)))
+    admin = create_user(role="admin")
+    async with LoggedInClient(admin) as client:
+        ids = await run_labelled(client, "export-test", n=2)
+        api_tables = (await client.get(f"/api/v1/discussions/{ids[0]}/dataset")).json()
+
+    tables = build_tables(persistence.export_bundle(ids[0]))
+    assert api_tables == json.loads(json.dumps(tables))
+    assert set(tables) == set(TABLES)
+    d = tables["discussions"][0]
+    assert d["label"] == "export-test" and d["mode"] == "stateful" and d["n_participants"] == 2 and d["git_commit"]
+    ai = [u for u in tables["utterances"] if u["speaker_type"] == "ai"]
+    assert len(ai) == 4 and all(u["analyzed"] for u in ai)
+    assert tables["concessions"] and tables["attacks"] and tables["stances"]
+    assert {m["kind"] for m in tables["moves"]} >= {"concession"}
+    assert len(tables["surveys"]) == 2 * 2 * 2
+
+    out = tmp_path / "ds"
+    assert export_main(["--label", "export-test", "--out", str(out), "--coding-sample", "3", "--seed", "1"]) == 0
+    with (out / "discussions.csv").open(encoding="utf-8-sig") as f:
+        assert [r["discussion_id"] for r in csv.DictReader(f)] == ids  # label로 모은 두 토론
+    with (out / "coding_blind.csv").open(encoding="utf-8-sig") as f:
+        blind = list(csv.DictReader(f))
+    with (out / "coding_key.csv").open(encoding="utf-8-sig") as f:
+        key = list(csv.DictReader(f))
+    assert len(blind) == len(key) == 3 and [b["sample_id"] for b in blind] == [k["sample_id"] for k in key]
+    assert not any(c.startswith("llm_") for c in blind[0]) and all(b["code_concession"] == "" for b in blind)
+    assert export_main(["--label", "no-such-label", "--out", str(tmp_path / "none")]) == 1
+
+
+def test_coding_sample_is_reproducible_with_seed():
+    bundle = {"discussion": {"id": "d1"}, "messages": [
+        {"seq": i, "speaker": "A" if i % 2 else "B", "speaker_type": "ai", "content": f"m{i}", "action": "rebut",
+         "meta": {"analysis": {"move": "rebut", "concessions": [], "targets": []}}} for i in range(1, 11)]}
+    a, _ = coding_sample([bundle], 4, seed=3)
+    b, _ = coding_sample([bundle], 4, seed=3)
+    assert a == b and len(a) == 4 and all(row["previous"] for row in a if row["text"] != "m1")

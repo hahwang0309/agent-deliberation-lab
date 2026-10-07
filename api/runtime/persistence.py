@@ -247,3 +247,35 @@ def list_survey(discussion_id: str) -> List[Dict[str, Any]]:
                 .order_by(SurveyResponse.created_at, SurveyResponse.participant, SurveyResponse.item_id).all())
         return [{"phase": r.phase, "participant": r.participant, "participant_type": r.participant_type,
                  "item_id": r.item_id, "score": r.score, "scale": r.scale, "reason": r.reason} for r in rows]
+
+
+def export_bundle(discussion_id: str) -> Dict[str, Any]:
+    """분석용 추출 입력: 토론·참가자·실행 기록·사용량·보고서 점수·전체 메시지·설문"""
+    with session_scope() as db:
+        d = db.get(Discussion, discussion_id)
+        if d is None:
+            raise LookupError(discussion_id)
+        report = db.get(DiscussionReport, discussion_id)
+        participants = (db.query(Participant).filter(Participant.discussion_id == discussion_id)
+                        .order_by(Participant.created_at, Participant.id).all())
+        discussion = {
+            "id": d.id, "topic": d.topic, "language": d.language, "status": d.status,
+            "config": dict(d.config or {}), "run_info": d.run_info or [], "subtopics": d.subtopics or [],
+            "prompt_tokens": d.prompt_tokens, "completion_tokens": d.completion_tokens, "llm_calls": d.llm_calls,
+            "started_at": d.started_at.isoformat() if d.started_at else None,
+            "completed_at": d.completed_at.isoformat() if d.completed_at else None,
+            "participants": [{"name": p.name, "role": p.role, "provider": p.llm_provider, "model": p.model}
+                             for p in participants],
+            "report": ({"status": report.status, "consensus_score": report.consensus_score, "ai_score": report.ai_score,
+                        "human_score": report.human_score, "ai_human_score": report.ai_human_score,
+                        "label": report.consensus_label} if report else None),
+        }
+    return {"discussion": discussion, "messages": list_messages_after(discussion_id, 0, 100000),
+            "survey": list_survey(discussion_id)}
+
+
+def discussion_ids_by_label(label: str) -> List[str]:
+    """실험 조건 label이 같은 토론 id (생성 순)"""
+    with session_scope() as db:
+        rows = db.query(Discussion.id, Discussion.config).order_by(Discussion.created_at, Discussion.id).all()
+        return [i for i, config in rows if ((config or {}).get("experiment") or {}).get("label") == label]
