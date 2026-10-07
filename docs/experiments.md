@@ -68,8 +68,20 @@ API 키와 `SECRET_KEY`는 `.env`에서 읽습니다. `--db`는 필수이며, �
 | 재현성 | 코드 커밋, 프롬프트 해시, 적용 설정, 모델 | `discussions`(요약), 토론 상세의 `run_info`(전체) |
 
 **사람 코딩:** `--coding-sample N`을 주면 파일 두 개가 만들어집니다.
-- `coding_blind.csv`: 코더에게 주는 파일. 발언, 직전 발언, 대상 발언과 빈 코딩 칸(양보, 응답 여부, 정당화 수준, 존중 수준)이 들어 있습니다.
+- `coding_blind.csv`: 코더에게 주는 파일. 발언, 직전 발언, 대상 발언, 같은 화자의 이전 발언과 빈 코딩 칸(양보, 응답 여부, 자기 논거 반복, 정당화 수준, 존중 수준)이 들어 있습니다.
 - `coding_key.csv`: LLM 판정. 코더에게 주지 않고, 일치도 계산에만 씁니다.
+
+**일치도 계산:** 코더가 채운 파일로 사람-자동 판정, 코더 간 일치도(일치율, Cohen's kappa)를 계산합니다.
+
+```bash
+python scripts/coding_agreement.py --coded coder1.csv --key data/example/coding_key.csv
+```
+
+```bash
+python scripts/coding_agreement.py --coded coder1.csv --second coder2.csv
+```
+
+**논거 반복 지표:** `utterances.repeat_score`는 같은 화자의 이전 주장과의 문자 2-gram 유사도(0~1)이고, `discussions.repeat_rate`는 그 값이 0.4 이상인 AI 발언의 비율입니다. 표현을 바꿔 같은 논거를 되풀이하면 잘 잡지 못하는 **대리 지표**입니다(실측에서 바꿔 말한 반복이 0.37~0.55). 사람 코딩(`code_repeats_own_argument`)과 비교해 기준을 보정한 뒤 쓰세요.
 
 ## 주의
 

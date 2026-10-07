@@ -18,6 +18,39 @@
 import random
 from typing import Any, Dict, List, Tuple
 
+# 이 이상이면 같은 화자가 앞서 한 주장을 되풀이한 것으로 본다. 문자 2-gram 유사도라 표현을 바꾼 반복은
+# 잘 잡지 못하는 대리 지표다(실측: 같은 논거의 바꿔 말하기가 0.37~0.55). 사람 코딩(code_repeats_own_argument)으로 보정할 것.
+REPEAT_THRESHOLD = 0.4
+
+
+def _bigrams(text: str) -> set:
+    """문자 2-gram (공백·문장부호 제거, 한국어에도 형태소 분석 없이 쓸 수 있음)"""
+    chars = "".join(ch for ch in text.lower() if ch.isalnum())
+    return {chars[i:i + 2] for i in range(len(chars) - 1)}
+
+
+def similarity(a: str, b: str) -> float:
+    """문자 2-gram Jaccard 유사도 (0~1)"""
+    x, y = _bigrams(a), _bigrams(b)
+    return len(x & y) / len(x | y) if x and y else 0.0
+
+
+def repeat_scores(messages: List[Dict[str, Any]]) -> Dict[int, float]:
+    """발언 seq → 이 발언의 주장들이 같은 화자의 이전 주장과 가장 비슷한 정도(0~1).
+    발언 분석의 claims를 쓰며, 주장이 없거나 화자의 첫 발언이면 기록하지 않는다."""
+    earlier: Dict[str, List[str]] = {}
+    scores: Dict[int, float] = {}
+    for m in messages:
+        claims = ((m.get("meta") or {}).get("analysis") or {}).get("claims") or []
+        if m["speaker_type"] == "moderator" or not claims:
+            continue
+        previous = earlier.get(m["speaker"], [])
+        if previous:
+            scores[m["seq"]] = round(max(similarity(c, p) for c in claims for p in previous), 3)
+        earlier[m["speaker"]] = previous + claims
+    return scores
+
+
 TABLES = ("discussions", "utterances", "stances", "moves", "concessions", "attacks", "surveys")
 
 
@@ -56,7 +89,12 @@ def build_tables(bundle: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
     discussion = bundle["discussion"]
     did = discussion["id"]
     tables: Dict[str, List[Dict[str, Any]]] = {name: [] for name in TABLES}
-    tables["discussions"].append(discussion_row(discussion))
+    repeats = repeat_scores(bundle["messages"])
+    row = discussion_row(discussion)
+    ai_repeats = [s for m in bundle["messages"] if m["speaker_type"] == "ai" and (s := repeats.get(m["seq"])) is not None]
+    row["repeat_rate"] = (round(sum(s >= REPEAT_THRESHOLD for s in ai_repeats) / len(ai_repeats), 3)
+                          if ai_repeats else None)  # AI 발언 중 이전 주장을 되풀이한 비율
+    tables["discussions"].append(row)
 
     for m in bundle["messages"]:
         meta = m.get("meta") or {}
@@ -71,6 +109,7 @@ def build_tables(bundle: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
             "n_attacks": sum(t.get("relation") == "attack" for t in analysis.get("targets") or []),
             "n_supports": sum(t.get("relation") == "support" for t in analysis.get("targets") or []),
             "n_concessions": len(analysis.get("concessions") or []),
+            "repeat_score": repeats.get(seq),
         })
         for name, x in (meta.get("stances") or {}).items():
             if x is not None:
@@ -102,33 +141,38 @@ def merge_tables(bundles: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]
     return merged
 
 
-CODING_COLUMNS = ("code_concession", "code_responds_to_previous", "code_justification_level", "code_respect_level")
+CODING_COLUMNS = ("code_concession", "code_responds_to_previous", "code_repeats_own_argument",
+                  "code_justification_level", "code_respect_level")
 
 
 def coding_sample(bundles: List[Dict[str, Any]], n: int, seed: int = 0) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """사람 코딩용 표본: (블라인드 파일, 정답 키). 분석된 AI 발언 중 n개를 무작위로 뽑는다.
     블라인드 파일에는 직전 발언과 대상 발언을 문맥으로 넣고 코딩 칸은 비워 둔다. LLM 판정은 키에만 있다.
-    코딩 항목: 양보 여부, 직전·대상 발언에 대한 응답 여부, 정당화 수준(DQI 0~3), 존중 수준(DQI 0~2)."""
+    코딩 항목: 양보 여부, 직전·대상 발언에 대한 응답 여부, 자기 논거 반복 여부, 정당화 수준(DQI 0~3), 존중 수준(DQI 0~2).
+    반복 여부를 판단할 수 있도록 같은 화자의 이전 발언을 문맥에 넣는다."""
     candidates = []
     for bundle in bundles:
         messages = bundle["messages"]
+        repeats = repeat_scores(messages)
         by_seq = {m["seq"]: m for m in messages}
         for i, m in enumerate(messages):
             analysis = (m.get("meta") or {}).get("analysis")
             if m["speaker_type"] != "ai" or not analysis:
                 continue
             previous = next((p for p in reversed(messages[:i]) if p["speaker_type"] != "moderator"), None)
+            own = [p["content"] for p in messages[:i] if p["speaker"] == m["speaker"]]
             target = by_seq.get((m.get("meta") or {}).get("target_seq"))
-            candidates.append((bundle["discussion"]["id"], m, previous, target, analysis))
+            candidates.append((bundle["discussion"]["id"], m, previous, target, analysis, repeats.get(m["seq"]), own))
     rng = random.Random(seed)
     picked = rng.sample(candidates, min(n, len(candidates)))
     blind, key = [], []
-    for k, (did, m, previous, target, analysis) in enumerate(picked, start=1):
+    for k, (did, m, previous, target, analysis, repeat, own) in enumerate(picked, start=1):
         sample_id = f"S{k:04d}"
         blind.append({
             "sample_id": sample_id, "speaker": m["speaker"],
             "previous": f"{previous['speaker']}: {previous['content']}" if previous else "",
             "target": f"{target['speaker']}: {target['content']}" if target and target is not previous else "",
+            "own_earlier": "\n---\n".join(own),
             "text": m["content"], **{c: "" for c in CODING_COLUMNS},
         })
         key.append({
@@ -136,5 +180,6 @@ def coding_sample(bundles: List[Dict[str, Any]], n: int, seed: int = 0) -> Tuple
             "llm_move": analysis.get("move"), "llm_concession": bool(analysis.get("concessions")),
             "llm_concessions": " | ".join(f"{c['to']}: {c['claim']}" for c in analysis.get("concessions") or []),
             "llm_attacks": sum(t.get("relation") == "attack" for t in analysis.get("targets") or []),
+            "repeat_score": repeat,
         })
     return blind, key

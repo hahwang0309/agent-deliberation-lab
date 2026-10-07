@@ -559,3 +559,72 @@ def test_run_experiment_cli_dry_run_uses_separate_db(tmp_path):
     assert db.exists()  # 실험 DB가 따로 만들어지고 마이그레이션 적용됨
     missing = subprocess.run([sys.executable, "scripts/run_experiment.py", str(plan_file)], capture_output=True, text=True)
     assert missing.returncode != 0 and "--db" in missing.stderr  # 웹 DB에 섞이지 않도록 --db 필수
+
+
+# ---------- 측정 신뢰도 (E8) ----------
+
+from scripts.coding_agreement import main as agreement_main  # noqa: E402
+from src.services.coding_agreement import coder_vs_coder, cohen_kappa, human_vs_llm  # noqa: E402
+from src.services.experiment_export import repeat_scores, similarity  # noqa: E402
+
+
+def test_repeat_scores_compare_only_with_same_speakers_earlier_claims():
+    claims = lambda *cs: {"analysis": {"claims": list(cs)}}  # noqa: E731
+    messages = [
+        {"seq": 1, "speaker": "A", "speaker_type": "ai", "meta": claims("오판으로 집행된 사형은 되돌릴 수 없다")},
+        {"seq": 2, "speaker": "B", "speaker_type": "ai", "meta": claims("오판으로 집행된 사형은 되돌릴 수 없다")},
+        {"seq": 3, "speaker": "A", "speaker_type": "ai", "meta": claims("오판으로 집행된 사형은 결코 되돌릴 수 없다")},
+        {"seq": 4, "speaker": "A", "speaker_type": "ai", "meta": claims("피해자 지원 예산을 늘려야 한다")},
+    ]
+    scores = repeat_scores(messages)
+    assert 1 not in scores and 2 not in scores  # 화자의 첫 발언은 비교 대상 없음 (B는 A와 비교하지 않음)
+    assert scores[3] >= 0.7 and scores[4] < 0.2
+    assert similarity("abc", "abc") == 1.0 and similarity("", "abc") == 0.0
+
+
+def test_cohen_kappa_and_agreement_reports():
+    assert cohen_kappa([1, 1, 0, 0], [1, 0, 0, 0]) == 0.5
+    assert cohen_kappa([1, 1], [1, 1]) is None  # 한 범주만 나오면 정의되지 않음
+    coded = [{"sample_id": "S1", "code_concession": "예", "code_responds_to_previous": "1", "code_justification_level": "2",
+              "code_respect_level": "1"},
+             {"sample_id": "S2", "code_concession": "no", "code_responds_to_previous": "0", "code_justification_level": "",
+              "code_respect_level": "2"},
+             {"sample_id": "S3", "code_concession": "", "code_responds_to_previous": "1", "code_justification_level": "1",
+              "code_respect_level": "1"}]
+    key = [{"sample_id": "S1", "llm_concession": "True"}, {"sample_id": "S2", "llm_concession": "True"},
+           {"sample_id": "S3", "llm_concession": "False"}]
+    result = human_vs_llm(coded, key)["concession"]
+    assert result["n"] == 2 and result["agreement"] == 0.5  # 빈칸(S3) 제외
+    second = [dict(r, code_justification_level="2") for r in coded]
+    inter = coder_vs_coder(coded, second)
+    assert inter["code_concession"]["agreement"] == 1.0 and inter["code_justification_level"]["n"] == 2
+
+
+def test_coding_agreement_cli(tmp_path, capsys):
+    rows = [{"sample_id": "S1", "code_concession": "1"}, {"sample_id": "S2", "code_concession": "0"}]
+    key = [{"sample_id": "S1", "llm_concession": "True"}, {"sample_id": "S2", "llm_concession": "False"}]
+    for name, data in (("coded.csv", rows), ("key.csv", key)):
+        with (tmp_path / name).open("w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(data[0]))
+            writer.writeheader()
+            writer.writerows(data)
+    assert agreement_main(["--coded", str(tmp_path / "coded.csv"), "--key", str(tmp_path / "key.csv")]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["human_vs_llm"]["concession"]["agreement"] == 1.0
+
+
+def test_repetition_is_coded_and_compared_with_lexical_proxy():
+    claims = lambda c: {"analysis": {"claims": [c], "concessions": [], "targets": []}}  # noqa: E731
+    bundle = {"discussion": {"id": "d1"}, "messages": [
+        {"seq": 1, "speaker": "A", "speaker_type": "ai", "content": "first", "action": "position",
+         "meta": claims("오판으로 집행된 사형은 되돌릴 수 없다")},
+        {"seq": 2, "speaker": "A", "speaker_type": "ai", "content": "second", "action": "rebut",
+         "meta": claims("오판으로 집행된 사형은 결코 되돌릴 수 없다")}]}
+    blind, key = coding_sample([bundle], 2, seed=0)
+    second = next(b for b in blind if b["text"] == "second")
+    assert second["own_earlier"] == "first" and second["code_repeats_own_argument"] == ""
+    k = next(k for k in key if k["sample_id"] == second["sample_id"])
+    assert k["repeat_score"] >= 0.7
+    coded = [dict(second, code_repeats_own_argument="예")]
+    assert human_vs_llm(coded, key)["repeats_own_argument"] == {"n": 1, "agreement": 1.0, "kappa": None,
+                                                               "confusion": {"True/True": 1}}
