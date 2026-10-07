@@ -45,6 +45,7 @@ class Discussion(Base):
 
     # 설정 (JSON): max_statements, use_moderator, enable_web_search, enable_belief_reasoning
     config = Column(JSON, nullable=False)
+    run_info = Column(JSON, nullable=True)  # 실행 기록 목록 (시작·재개마다 1개, src/utils/run_info.py)
 
     # 결과
     consensus_score = Column(Float, nullable=True)

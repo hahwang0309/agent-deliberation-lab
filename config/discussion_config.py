@@ -81,6 +81,7 @@ class DiscussionConfig:
 
     # 엔진 모드: stateful(상태 기반 진행) | baseline(순서대로 앞 발언에 답하는 단순 토론, 비교 기준선)
     engine_mode: str = "stateful"
+    record_prompts: bool = False  # 발언마다 최종 지시 프롬프트를 메시지 meta에 저장 (실험 조건이 있으면 기본 켬)
 
     # 진행 장치 on/off (실험 조건으로 끌 수 있음, src/core/experiment.py)
     use_reply_obligation: bool = True     # 반박·질문을 받은 참가자의 응답 의무

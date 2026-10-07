@@ -378,3 +378,42 @@ async def test_baseline_two_people_get_no_moderator_mediation_and_same_structure
     subtopics = lambda evs: next(e for e in evs if e.kind == "subtopics").meta["subtopics"]  # noqa: E731
     assert count(events) == count(stateful) == 10 and subtopics(events) == subtopics(stateful)
     assert ai_actions(events)[-2:] == ai_actions(stateful)[-2:] == ["closing", "closing"]
+
+
+# ---------- 재현성 기록 (E6) ----------
+
+from src.utils.run_info import PROMPT_FILES, collect_run_info  # noqa: E402
+
+
+def test_collect_run_info_has_code_prompt_settings_and_models():
+    engine = create_discussion(specs(), bundle=RecordingBundle(),
+                               experiment=ExperimentConfig(agent_temperature=0.3, analyzer={"model": "m-judge"}))
+    info = collect_run_info(engine.config, engine.llm_spec)
+    assert info["git_commit"] and len(info["git_commit"]) == 40 and isinstance(info["git_dirty"], bool)
+    assert set(info["prompt_hashes"]) == set(PROMPT_FILES) and all(info["prompt_hashes"].values())
+    assert info["settings"]["agent_temperature"] == 0.3 and info["settings"]["engine_mode"] == "stateful"
+    assert info["llm"]["participants"]["A"] == {"provider": "claude", "model": "m-agent", "temperature": 0.3}
+    assert info["llm"]["analyzer"] == {"provider": "claude", "model": "m-judge", "temperature": 0.0}
+    assert "langchain-core" in info["packages"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_records_run_info_and_prompts_only_for_experiments(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    admin = create_user(role="admin")
+    async with LoggedInClient(admin) as client:
+        ids = []
+        for extra in ({"experiment": {"label": "exp", "mode": "baseline"}}, {}):
+            r = await client.post("/api/v1/discussions", json={**BODY, "max_statements": 4, **extra})
+            ids.append(r.json()["id"])
+            assert (await client.post(f"/api/v1/discussions/{ids[-1]}/start")).status_code == 202
+            await asyncio.wait_for(registry.get(ids[-1]).task, timeout=10)
+        exp, plain = [(await client.get(f"/api/v1/discussions/{i}")).json() for i in ids]
+
+    assert len(exp["run_info"]) == 1 and exp["run_info"][0]["resumed"] is False
+    assert exp["run_info"][0]["settings"]["engine_mode"] == "baseline"
+    assert plain["run_info"][0]["settings"]["engine_mode"] == "stateful"
+    exp_ai = [m for m in persistence.list_messages_after(ids[0], 0) if m["speaker_type"] == "ai"]
+    plain_ai = [m for m in persistence.list_messages_after(ids[1], 0) if m["speaker_type"] == "ai"]
+    assert all("Continue the discussion" in m["meta"]["prompt"] for m in exp_ai if m["action"] == "reply")
+    assert all("prompt" not in m["meta"] for m in plain_ai)

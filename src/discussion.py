@@ -41,7 +41,7 @@ def create_discussion(participants: List[ParticipantSpec],
         for spec in participants
     ]
 
-    agents = []
+    agents, temperatures = [], []
     for spec in participants:
         condition = conditions.get(spec.persona.name) or ParticipantCondition()
         temperature = condition.temperature if condition.temperature is not None else settings.agent_temperature
@@ -56,18 +56,29 @@ def create_discussion(participants: List[ParticipantSpec],
             stubbornness=condition.stubbornness,
             materials=materials,
         ))
+        temperatures.append(temperature)
 
     lead = participants[0] if participants else ParticipantSpec(None, LLMFactory.default_provider())
     moderator = (DiscussionModerator(llm=bundle.get(lead.provider, lead.model, settings.moderator_temperature))
                  if use_moderator and participants else None)
     # 발언 분석(토론 상태·입장 동역학)은 판정이 흔들리지 않도록 temperature 0.
     # 실험 조건으로 분석 모델을 따로 지정할 수 있다(판정자와 참가자 모델 분리).
-    analyzer = None
+    analyzer, provider, model = None, None, None
     if participants and (experiment is None or experiment.mechanisms.analysis):
         ref = experiment.analyzer if experiment and experiment.analyzer else None
         provider = LLMProvider(ref.provider) if ref and ref.provider else lead.provider
         model = ref.model if ref and ref.model else (lead.model if provider == lead.provider else None)
         analyzer = bundle.get(provider, model, 0.0)
 
-    return NaturalDiscussion(agents, moderator, max_statements, analyzer=analyzer, config=settings,
-                             propositions=propositions, survey=survey)
+    engine = NaturalDiscussion(agents, moderator, max_statements, analyzer=analyzer, config=settings,
+                               propositions=propositions, survey=survey)
+    # 실행 기록용: 실제로 요청한 모델·temperature (model None은 프로바이더 기본 모델)
+    engine.llm_spec = {
+        "participants": {spec.persona.name: {"provider": spec.provider.value, "model": spec.model,
+                                             "temperature": t}
+                         for spec, t in zip(participants, temperatures)},
+        "moderator": ({"provider": lead.provider.value, "model": lead.model,
+                       "temperature": settings.moderator_temperature} if moderator else None),
+        "analyzer": ({"provider": provider.value, "model": model, "temperature": 0.0} if analyzer else None),
+    }
+    return engine

@@ -65,6 +65,7 @@ class ExperimentConfig(_Strict):
     label: Optional[str] = Field(None, max_length=100, description="조건 이름 (분석 시 구분용)")
     mode: Literal["stateful", "baseline"] = Field(
         "stateful", description="baseline: 순서대로 앞 발언에 답하는 단순 토론 (비교 기준선)")
+    record_prompts: bool = Field(True, description="발언마다 최종 지시 프롬프트를 meta.prompt에 저장")
     mechanisms: Mechanisms = Field(default_factory=Mechanisms)
     dynamics: Dynamics = Field(default_factory=Dynamics)
     stalemate_exchanges: Optional[int] = Field(None, ge=1, le=10)
@@ -90,6 +91,7 @@ def engine_settings(experiment: Optional[ExperimentConfig] = None) -> Discussion
         if value is not None:
             overrides[key] = value
     overrides["engine_mode"] = experiment.mode
+    overrides["record_prompts"] = experiment.record_prompts
     m = experiment.mechanisms
     overrides.update(use_reply_obligation=m.reply_obligation, use_stalemate_mediation=m.stalemate_mediation,
                      use_devils_advocate=m.devils_advocate, use_closing_round=m.closing_round)

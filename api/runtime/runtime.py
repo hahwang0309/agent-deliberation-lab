@@ -22,6 +22,7 @@ from src.services.survey import SurveyConfig
 from src.discussion import ParticipantSpec, create_discussion
 from src.models.personas import LLMProvider, Message, Persona
 from src.utils.llm_provider import LLMBundle
+from src.utils.run_info import collect_run_info
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,8 @@ class DiscussionRuntime:
                 survey=SurveyConfig(**config["survey"]) if config.get("survey") else None,
             )
 
+            await asyncio.to_thread(persistence.append_run_info, self.discussion_id,
+                                    collect_run_info(engine.config, engine.llm_spec, resumed=self.resume))
             if self.resume:
                 await self._restore(engine, data)
                 await self.set_status(DiscussionStatus.RUNNING, error=None)
@@ -111,12 +114,14 @@ class DiscussionRuntime:
     async def _restore(self, engine, data: Dict[str, Any]) -> None:
         rows = await asyncio.to_thread(persistence.list_messages_after, self.discussion_id, 0, 100000)
         role = {SpeakerType.AI: "assistant", SpeakerType.MODERATOR: "moderator", SpeakerType.HUMAN: "user"}
+        snapshot_row = next((r for r in reversed(rows) if r["meta"].get("debate")), None)
         engine.restore(
             [Message(role=role.get(r["speaker_type"], "system"), content=r["content"], agent_name=r["speaker"],
-                     metadata={**r["meta"], "speaker_type": r["speaker_type"], "seq": r["seq"]})
+                     metadata={**r["meta"], "speaker_type": r["speaker_type"], "seq": r["seq"], "action": r["action"]})
              for r in rows if r["speaker_type"] in role],
             subtopics=data["subtopics"], current_subtopic=data["current_subtopic"],
-            snapshot=next((r["meta"]["debate"] for r in reversed(rows) if r["meta"].get("debate")), None),
+            snapshot=snapshot_row["meta"]["debate"] if snapshot_row else None,
+            snapshot_seq=snapshot_row["seq"] if snapshot_row else None,
         )
         self.ai_messages = sum(r["speaker_type"] == SpeakerType.AI for r in rows)
         for r in rows:

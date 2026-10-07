@@ -77,6 +77,8 @@ alembic/        DB 마이그레이션
 
 **기준선 모드:** `experiment.mode = "baseline"`이면 `_select_turn`이 순서대로 돌아가는 발언(`reply`)만 고르고, 발언 프롬프트에는 주제·명제·참가자만 들어갑니다. 상태 기반 진행과 같은 구조(명제, 발언 수, 종결 라운드)에서 장치의 효과만 비교하기 위한 것입니다.
 
+**실행 기록:** 토론을 시작하거나 재개할 때마다 `src/utils/run_info.py`가 코드 커밋(미커밋 변경 여부 포함), 프롬프트·설정 파일 해시, 실제 적용된 설정 전체, 참가자·모더레이터·분석 모델과 temperature, 주요 패키지 버전을 `discussions.run_info`에 추가합니다. 실험 조건이 있는 토론은 발언별 최종 지시 프롬프트도 `meta.prompt`에 저장합니다.
+
 **실험 조건:** `src/core/experiment.py`의 `engine_settings()`가 기본 설정(`config/discussion_config.py`) 사본에 토론별 조건을 덮어써 엔진·에이전트에 넘깁니다. 진행 장치 on/off, 동역학 파라미터, 참가자별 고집도·temperature, 분석 모델 분리를 지원합니다. 조건은 `discussions.config.experiment`에 저장됩니다.
 
 **재개:** 상태는 매 분석 시 메시지 `meta.debate`에 스냅숏으로 저장되고, 재개 시 마지막 스냅숏으로 복원합니다. 스냅숏이 없는 이전 토론은 AI 발언 수를 진행 계획에 대입해 위치를 정합니다.

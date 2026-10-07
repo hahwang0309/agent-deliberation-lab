@@ -93,6 +93,13 @@ def update_discussion(discussion_id: str, **fields: Any) -> None:
             setattr(d, key, value)
 
 
+def append_run_info(discussion_id: str, info: Dict[str, Any]) -> None:
+    with session_scope() as db:
+        d = db.get(Discussion, discussion_id)
+        if d is not None:
+            d.run_info = [*(d.run_info or []), info]
+
+
 def save_message(discussion_id: str, seq: int, speaker_type: str, speaker: str, content: str,
                  action: Optional[str] = None, meta: Optional[Dict[str, Any]] = None,
                  participant_id: Optional[str] = None, user_id: Optional[str] = None) -> Dict[str, Any]:

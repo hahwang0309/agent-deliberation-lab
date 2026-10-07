@@ -60,6 +60,7 @@ async def test_resume_continues_seq_without_regenerating_subtopics():
         assert not any(e.event == "subtopics" for e in events)                    # 소주제 재생성 없음
         detail = (await client.get(f"/api/v1/discussions/{discussion_id}")).json()
         assert detail["subtopics"] == subtopics_before
+        assert [r["resumed"] for r in detail["run_info"]] == [False, True]  # 시작·재개마다 실행 기록
         assert detail["status"] == "completed" and detail["error"] is None
 
 
@@ -117,3 +118,17 @@ def test_restore_without_snapshot_places_progress_by_plan(spoken, idx, on_subtop
                     for i in range(spoken)])
     assert (engine.subtopic_idx, engine.statements_on_subtopic) == (idx, on_subtopic)
     assert engine.closing_started == bool(closing_done) and engine.closing_done == closing_done
+
+
+def test_restore_replays_statements_saved_after_last_snapshot():
+    """발언은 저장됐지만 분석(스냅숏) 전에 중단되면, 스냅숏 이후 발언을 진행 상태에 다시 반영해 예산을 초과하지 않는다"""
+    bundle = FakeBundle()
+    base = {k: v for k, v in PERSONA.items() if k != "model"}
+    agents = [DiscussionAgent(Persona(name=n, **base), llm=bundle.agent) for n in ("Alice", "Bob")]
+    engine = NaturalDiscussion(agents, moderator=None, max_statements=6)
+    snapshot = {"subtopic_idx": 0, "statements_on_subtopic": 2, "spoken_in_subtopic": {"Alice": 1, "Bob": 1},
+                "closing_started": False, "closing_done": [], "devils_advocate_used": False}
+    msgs = [Message(role="assistant", content=c, agent_name=n, metadata={"seq": s, "action": "position"})
+            for s, n, c in ((1, "Alice", "a1"), (2, "Bob", "b1"), (3, "Alice", "a2"))]
+    engine.restore(msgs, snapshot=snapshot, snapshot_seq=2)  # #3은 분석 전에 중단됨
+    assert engine.statements_on_subtopic == 3 and engine.spoken_in_subtopic["Alice"] == 2

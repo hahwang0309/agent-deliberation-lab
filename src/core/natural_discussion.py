@@ -201,6 +201,7 @@ class NaturalDiscussion:
         # 기준선 모드: 순서대로 돌아가며 앞 발언에 답하는 단순 토론 (발화 행위·응답 의무·중재·입장 안내 없음).
         # 발언 분석은 측정용으로만 돌고 진행에는 쓰지 않는다.
         self.baseline = self.config.engine_mode == "baseline"
+        self.llm_spec: Dict[str, Any] = {}  # 실행 기록용 모델·temperature (create_discussion이 채움)
         self.messages: List[Message] = []
 
         self.debate = DebateState(DynamicsParams(
@@ -236,8 +237,10 @@ class NaturalDiscussion:
     # ---------- 복원 ----------
 
     def restore(self, prior_messages: List[Message], subtopics: Optional[List[str]] = None,
-                current_subtopic: Optional[str] = None, snapshot: Optional[Dict[str, Any]] = None) -> None:
-        """중단된 토론을 저장된 발언과 마지막 상태 스냅숏으로 복원"""
+                current_subtopic: Optional[str] = None, snapshot: Optional[Dict[str, Any]] = None,
+                snapshot_seq: Optional[int] = None) -> None:
+        """중단된 토론을 저장된 발언과 마지막 상태 스냅숏으로 복원.
+        snapshot_seq: 스냅숏이 붙은 메시지 번호. 그 뒤에 저장됐지만 분석 전에 중단된 발언은 진행 상태에 다시 반영한다."""
         self.messages = list(prior_messages)
         for msg in self.messages:
             if msg.role in AI_ROLES:
@@ -269,11 +272,35 @@ class NaturalDiscussion:
             self.devils_advocate_used = snapshot.get("devils_advocate_used", False)
             if snapshot.get("state"):
                 self.debate = DebateState.from_snapshot(snapshot["state"], self.debate.params)
+            if snapshot_seq is not None:
+                self._replay_after_snapshot(snapshot_seq)
             if self.moderator:
                 self.moderator.current_subtopic_idx = self.subtopic_idx
         else:
             self._restore_progress_from_count(subtopics)
         self.restored = True
+
+    def _replay_after_snapshot(self, snapshot_seq: int) -> None:
+        """스냅숏 이후 메시지(분석이 저장되기 전에 중단된 발언, 그 뒤의 전환 안내)를 진행 상태에 반영"""
+        for msg in self.messages:
+            if (msg.metadata.get("seq") or 0) <= snapshot_seq:
+                continue
+            action = msg.metadata.get("action") or msg.metadata.get("type")
+            if msg.role == "moderator":
+                if action == "transition":
+                    self.subtopic_idx += 1
+                    self.statements_on_subtopic = 0
+                    self.spoken_in_subtopic.clear()
+                    self.devils_advocate_used = False
+                    self.debate.reset_subtopic()
+                elif action == "closing_announce":
+                    self.closing_started = True
+            elif msg.role in AI_ROLES:
+                if action == ActionType.CLOSING.value:
+                    self.closing_done.append(msg.agent_name)
+                elif not self.closing_started:
+                    self.statements_on_subtopic += 1
+                    self.spoken_in_subtopic[msg.agent_name] += 1
 
     def _restore_progress_from_count(self, subtopics: Optional[List[str]]) -> None:
         """스냅숏이 없는 토론(이전 버전)은 지금까지의 AI 발언 수를 진행 계획에 대입해 위치를 정한다"""
@@ -586,6 +613,8 @@ class NaturalDiscussion:
             "rag_query": rag.query if rag else None,
             "sources": rag.sources if rag else None,
         }
+        if self.config.record_prompts:  # 실험 재현·감사용 (시스템 프롬프트는 페르소나·프롬프트 해시로 재구성 가능)
+            meta["prompt"] = prompt
         self.messages.append(Message(role="assistant", content=response, agent_name=name,
                                      metadata={"action": action.value, "speaker_type": "ai", **meta}))
         yield EngineEvent(kind="utterance", speaker=name, speaker_type="ai", content=response,

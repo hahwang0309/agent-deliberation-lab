@@ -88,6 +88,7 @@ class DiscussionResponse(BaseModel):
     completed_at: Optional[datetime] = None
     stopped_at: Optional[datetime] = None
     participants: List[ParticipantResponse] = Field(default_factory=list)
+    run_info: Optional[List[Dict[str, Any]]] = None  # 실행 기록 (시작·재개마다 1개)
 
 
 class DiscussionListItem(BaseModel):

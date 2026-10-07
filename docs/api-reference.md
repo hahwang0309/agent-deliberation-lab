@@ -34,7 +34,7 @@
 |---|---|---|---|
 | POST | `/discussions` | 활성 사용자 | `draft` 토론 생성 (요청 본문은 아래) |
 | GET | `/discussions?page=&page_size=&status=&mine=` | 활성 사용자 | 목록 (생성자 이름, 토큰 사용량 포함) |
-| GET | `/discussions/{id}` | 활성 사용자 | 상세 (참가자, 소주제, 사용량) |
+| GET | `/discussions/{id}` | 활성 사용자 | 상세 (참가자, 소주제, 사용량, 실행 기록 `run_info`) |
 | POST | `/discussions/{id}/start` | 생성자·관리자 | `draft` → 실행. 사용자 제한 초과 시 403/429 |
 | POST | `/discussions/{id}/resume` | 생성자·관리자 | `interrupted` → 이어서 실행 (일일 시작 수에 포함 안 됨) |
 | POST | `/discussions/{id}/stop` | 생성자·관리자 | `{reason?}`. AI 발언이 충분하면 보고서 자동 생성 |
