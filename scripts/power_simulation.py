@@ -399,11 +399,24 @@ def h2h5(args):
                              "groups_per_item": blocks, "kappa": round(k, 3), "null_95": [round(lo_c, 3), round(hi_c, 3)],
                              "power": power})
             else:
-                kb, ks = kappa_for(1.5, blocks, scen), kappa_for(1.3, blocks, scen)
-                null = [np.subtract(*fm.fr_pair(blocks, scen, [kb, kb])[::-1]) for _ in range(args.sims)]
+                # FR의 척도는 표본 크기에 따라 달라진다(AI 표본이 클수록 표본 잡음이 줄어 같은 실제 차이도 FR 차이가 커짐).
+                # 그래서 효과는 실제 수렴 차이(κ)로 고정한다: 문항당 8집단에서 FR 1.5 → 1.3에 해당하는 κ (SESOI).
+                # 검정은 두 조건의 인간 전체 기준 거리 차이 ΔD (분모가 같아 ΔFR과 부호가 같음), 같은 집단 복제
+                key = ("kappas", scen)
+                if key not in fm.__dict__:
+                    fm.__dict__[key] = (kappa_for(1.5, 8, scen), kappa_for(1.3, 8, scen))
+                kb, ks = fm.__dict__[key]
+
+                def delta(kb_, ks_):
+                    human = fm.df.copy()
+                    human["sim"] = fm.gen(human, "ig")
+                    personas = fm.blocks(fm.df, blocks, True)
+                    a, b = personas.copy(), personas.copy()
+                    a["sim"], b["sim"] = fm.gen(a, "blk", scen, kb_), fm.gen(b, "blk", scen, ks_)
+                    return fm.dist(b, human, "sim") - fm.dist(a, human, "sim")
+                null = [delta(kb, kb) for _ in range(args.sims)]
                 crit = np.percentile(null, 2.5)
-                alt = [np.subtract(*fm.fr_pair(blocks, scen, [kb, ks])[::-1]) for _ in range(args.sims)]
-                power = float(np.mean([v < crit for v in alt]))
+                power = float(np.mean([delta(kb, ks) < crit for _ in range(args.sims)]))
                 rows.append({"hypothesis": "H5", "ai_variance_x_human": scen, "items": len(items),
                              "groups_per_item": blocks, "kappa_base": round(kb, 3), "kappa_state": round(ks, 3),
                              "null_2.5%": round(crit, 3), "power": power})
@@ -411,9 +424,157 @@ def h2h5(args):
     return rows
 
 
+# ---------------- 주 검정: 엔진 효과 E1~E5 (분산은 분산 추정 파일럿 2차, 효과는 SESOI) ----------------
+
+def _pilot_rows(dbs, batch_word):
+    """분산 추정 파일럿의 완료 토론: (실험 조건, 설문 행)"""
+    out = []
+    for db in dbs:
+        con = sqlite3.connect(db)
+        con.row_factory = sqlite3.Row
+        for d in con.execute("select id, config from discussions where status='completed'"):
+            e = json.loads(d["config"])["experiment"]
+            if batch_word not in e["batch"]:
+                continue
+            sv = [dict(r) for r in con.execute(
+                "select phase, participant, score, correct from survey_responses where discussion_id=?", (d["id"],))]
+            out.append((Path(db).name, e, sv))
+    return out
+
+
+def e1(args):
+    """E1: 1-A 정답 추적. 실행 단위 정답 비율 ~ 모드, 블록(복제 집단) 무작위 절편·모드 기울기. SESOI 10%p"""
+    import statsmodels.formula.api as smf
+    rng = np.random.default_rng(args.seed)
+    rows = []
+    for db, e, sv in _pilot_rows(args.pilot_db, "wason"):
+        post = [x["correct"] for x in sv if x["phase"] == "post"]
+        if post and None not in post:
+            rows.append({"db": db, "block": e["topic_key"], "mode": 1.0 if e["label"] == "A-stateful" else 0.0,
+                         "acc": float(np.mean([bool(c) for c in post]))})
+    df = pd.DataFrame(rows)
+    out = []
+    for db, g in df.groupby("db"):
+        m = smf.mixedlm("acc ~ mode", g, groups="block", re_formula="~mode").fit()
+        sd_b, sd_s, sd_r = (float(np.sqrt(max(v, 0))) for v in (m.cov_re.iloc[0, 0], m.cov_re.iloc[1, 1], m.scale))
+        print(f"variance calibration {db}: block SD {sd_b:.3f}, mode-slope SD {sd_s:.3f}, run SD {sd_r:.3f} (n={len(g)})")
+        for blocks in args.blocks:
+            for reps in args.reps:
+                hits = 0
+                for _ in range(args.sims):
+                    data = []
+                    for b in range(blocks):
+                        u, sl = rng.normal(0, sd_b), rng.normal(0, sd_s)
+                        for mode in (0.0, 1.0):
+                            for _ in range(reps):
+                                data.append((b, mode, 0.5 + u + mode * (0.10 + sl) + rng.normal(0, sd_r)))
+                    sim = pd.DataFrame(data, columns=["block", "mode", "acc"])
+                    try:
+                        r = smf.mixedlm("acc ~ mode", sim, groups="block", re_formula="~mode").fit()
+                    except Exception:
+                        continue
+                    hits += r.pvalues["mode"] < ALPHA
+                out.append({"hypothesis": "E1", "variance_from": db, "groups": blocks, "reps_per_mode": reps,
+                            "power": hits / args.sims})
+                print(out[-1], flush=True)
+    return out
+
+
+def e23(args):
+    """E2(순수 이동량)·E3(집단 내 표준편차 감소): 1-B 블록별 상태 기반 − 기준선 차이 ~ 1 + (1 | 문항). SESOI 0.3점"""
+    import statsmodels.formula.api as smf
+    rng = np.random.default_rng(args.seed)
+    per = {}
+    for db, e, sv in _pilot_rows(args.pilot_db, "a1r"):
+        if e["label"] not in ("A-baseline", "A-stateful"):
+            continue
+        pre = {x["participant"]: x["score"] for x in sv if x["phase"] == "pre"}
+        post = {x["participant"]: x["score"] for x in sv if x["phase"] == "post"}
+        both = [p for p in post if p in pre and None not in (pre[p], post[p])]
+        if len(both) < 3:
+            continue
+        key = (db, e["topic_key"], e["replicate"])
+        per.setdefault(key, {})[e["label"]] = {
+            "E2": float(np.mean([abs(post[p] - pre[p]) for p in both])),
+            "E3": float(np.std([pre[p] for p in both]) - np.std([post[p] for p in both]))}
+    rows = [{"db": k[0], "item": k[1][:3], "E2": v["A-stateful"]["E2"] - v["A-baseline"]["E2"],
+             "E3": v["A-stateful"]["E3"] - v["A-baseline"]["E3"]}
+            for k, v in per.items() if len(v) == 2]
+    df = pd.DataFrame(rows)
+    out = []
+    for (db, g) in df.groupby("db"):
+        for h in ("E2", "E3"):
+            sd_item = float(g.groupby("item")[h].mean().std(ddof=1)) if g["item"].nunique() > 1 else 0.0
+            sd_res = float(g[h].std(ddof=1))
+            print(f"variance calibration {db} {h}: block-difference SD {sd_res:.3f}, item SD {sd_item:.3f} (n={len(g)})")
+            for blocks in args.blocks:
+                hits = 0
+                for _ in range(args.sims):
+                    data = []
+                    for it in range(30):
+                        iu = rng.normal(0, sd_item)
+                        data += [(it, 0.3 + iu + rng.normal(0, sd_res)) for _ in range(blocks)]
+                    sim = pd.DataFrame(data, columns=["item", "d"])
+                    r = smf.mixedlm("d ~ 1", sim, groups="item").fit()
+                    hits += r.pvalues["Intercept"] < ALPHA
+                out.append({"hypothesis": h, "variance_from": db, "items": 30, "groups_per_item": blocks,
+                            "power": hits / args.sims})
+                print(out[-1], flush=True)
+    return out
+
+
+def e45(args):
+    """E4(질 × 엔진)·E5(지지 × 엔진): 1-C Δ ~ q × sup × engine + (1 + q | set). SESOI 5점 (0~100)"""
+    import statsmodels.formula.api as smf
+    rng = np.random.default_rng(args.seed)
+    rows = []
+    for db, e, sv in _pilot_rows(args.pilot_db, "argq"):
+        parts = e["label"].split("-")
+        if len(parts) != 3 or parts[0] not in ("strong", "weak"):
+            continue
+        sc = {x["phase"]: x["score"] for x in sv if x["participant"] == "Jordan"}
+        if None in (sc.get("pre"), sc.get("post")):
+            continue
+        delta = (sc["pre"] - sc["post"]) if e["topic_key"].endswith("pro") else (sc["post"] - sc["pre"])
+        rows.append({"db": db, "set": e["topic_key"], "q": 0.5 if parts[0] == "strong" else -0.5,
+                     "sup": 0.5 if parts[1] == "majority" else -0.5, "eng": 0.5 if parts[2] == "stateful" else -0.5,
+                     "delta": delta})
+    df = pd.DataFrame(rows)
+    out = []
+    for db, g in df.groupby("db"):
+        m = smf.mixedlm("delta ~ q * sup * eng", g, groups="set", re_formula="~q").fit()
+        sd_set = float(np.sqrt(max(m.cov_re.iloc[0, 0], 0)))
+        sd_q = float(np.sqrt(max(m.cov_re.iloc[1, 1], 0)))
+        sd_res = float(np.sqrt(m.scale))
+        print(f"variance calibration {db}: set SD {sd_set:.2f}, q-slope SD {sd_q:.2f}, residual SD {sd_res:.2f} (n={len(g)})")
+        eff = 5.0
+        for reps in args.reps:
+            hits = {"E4": 0, "E5": 0}
+            for _ in range(args.sims):
+                data = []
+                for s_ in range(args.sets):
+                    u, sl = rng.normal(0, sd_set), rng.normal(0, sd_q)
+                    for q in (-0.5, 0.5):
+                        for sup in (-0.5, 0.5):
+                            for eng in (-0.5, 0.5):
+                                mu = u + (eff + sl) * q + eff * sup + eff * q * eng + eff * sup * eng
+                                data += [(s_, q, sup, eng, mu + rng.normal(0, sd_res)) for _ in range(reps)]
+                sim = pd.DataFrame(data, columns=["set", "q", "sup", "eng", "delta"])
+                try:
+                    r = smf.mixedlm("delta ~ q * sup * eng", sim, groups="set", re_formula="~q").fit()
+                except Exception:
+                    continue
+                hits["E4"] += r.pvalues["q:eng"] < ALPHA
+                hits["E5"] += r.pvalues["sup:eng"] < ALPHA
+            out.append({"hypothesis": "E4/E5", "variance_from": db, "sets": args.sets, "reps_per_cell": reps,
+                        **{k: v / args.sims for k, v in hits.items()}})
+            print(out[-1], flush=True)
+    return out
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="연구 1 검정력 시뮬레이션")
-    parser.add_argument("hypothesis", choices=("h1", "h3", "h2b", "h2", "h5"))
+    parser.add_argument("hypothesis", choices=("h1", "h3", "h2b", "h2", "h5", "e1", "e23", "e45"))
     parser.add_argument("--sims", type=int, default=200)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--reps", type=int, nargs="+", default=[1, 2, 3], help="H1: AI 반복, H3: 셀당 반복")
@@ -427,7 +588,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.hypothesis in ("h2", "h5"):
         args.target = args.hypothesis
-    rows = {"h1": h1, "h3": h3, "h2b": h2b, "h2": h2h5, "h5": h2h5}[args.hypothesis](args)
+    rows = {"h1": h1, "h3": h3, "h2b": h2b, "h2": h2h5, "h5": h2h5,
+            "e1": e1, "e23": e23, "e45": e45}[args.hypothesis](args)
     if args.out:
         pd.DataFrame(rows).to_csv(args.out, index=False)
     return 0
