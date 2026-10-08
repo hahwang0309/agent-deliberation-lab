@@ -147,6 +147,14 @@ agent:
 
     Now provide your response based on this reasoning.
 
+  # 심은 초기 응답 (실험 조건 participants.{이름}.seed): 토론 전 내 입장
+  initial_position_block: |
+
+
+    Before this discussion, you answered the following. This is your own starting position;
+    hold it as your view unless something in the discussion genuinely changes your mind.
+    {answers}
+
   # 배경 자료집 (토론 생성 시 materials, 모든 참가자에게 같은 내용)
   materials_block: |
 
@@ -306,10 +314,9 @@ debate_analysis:
 survey:
   pre: |
     Before the discussion begins, answer this questionnaire as yourself, based on your own background and beliefs.
-    For each statement give a score from 1 (strongly disagree) to {scale} (strongly agree) and one short sentence of reason.
-    Answer every statement, using its id exactly as shown.
+    Answer every item in the format shown for it, using its id exactly as shown, and give one short sentence of reason.
 
-    Statements:
+    Items:
     {items}
   post: |
     The discussion has ended. Here is the record of what was said:
@@ -318,14 +325,20 @@ survey:
     transcript>>>
 
     Now answer the same questionnaire again as yourself, reflecting where you stand AFTER this discussion.
-    Change a score only if the discussion actually changed your view; keep it if it did not.
-    For each statement give a score from 1 (strongly disagree) to {scale} (strongly agree) and one short sentence of reason.
-    Answer every statement, using its id exactly as shown.
+    Change an answer only if the discussion actually changed your view; keep it if it did not.
+    Answer every item in the format shown for it, using its id exactly as shown, and give one short sentence of reason.
 
-    Statements:
+    Items:
     {items}
+  # 문항별 답 형식
+  format_likert: "Answer with an integer score from {low} (strongly disagree / strongly oppose) to {high} (strongly agree / strongly favor)."
+  format_single: "Choose exactly one of: {options}."
+  format_multi: "Choose all that apply from: {options} (list every option you choose)."
+  # 심은 초기값을 시스템 프롬프트에 넣을 때의 표현
+  seed_likert: "Your answer: {value} (on a scale from {low} to {high})."
+  seed_choice: "Your answer: {choices}."
   retry: |
-    Your answer had problems: {errors}. Answer again, covering every statement id exactly once with an integer score in range.
+    Your answer had problems: {errors}. Answer again, covering every item id exactly once in the required format.
 
 # 모더레이터 프롬프트 (src/core/moderator.py)
 moderator:

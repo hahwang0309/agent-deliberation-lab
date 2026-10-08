@@ -238,7 +238,9 @@ def save_survey(discussion_id: str, phase: str, participant: str, participant_ty
         for a in answers:
             db.add(SurveyResponse(discussion_id=discussion_id, phase=phase, participant=participant,
                                   participant_type=participant_type, user_id=user_id, item_id=a["item_id"],
-                                  score=a.get("score"), scale=a["scale"], reason=a.get("reason") or None))
+                                  score=a.get("score"), scale=a["scale"], scale_min=a.get("scale_min"),
+                                  choices=a.get("choices"), correct=a.get("correct"), source=a.get("source"),
+                                  reason=a.get("reason") or None))
 
 
 def list_survey(discussion_id: str) -> List[Dict[str, Any]]:
@@ -246,7 +248,9 @@ def list_survey(discussion_id: str) -> List[Dict[str, Any]]:
         rows = (db.query(SurveyResponse).filter(SurveyResponse.discussion_id == discussion_id)
                 .order_by(SurveyResponse.created_at, SurveyResponse.participant, SurveyResponse.item_id).all())
         return [{"phase": r.phase, "participant": r.participant, "participant_type": r.participant_type,
-                 "item_id": r.item_id, "score": r.score, "scale": r.scale, "reason": r.reason} for r in rows]
+                 "item_id": r.item_id, "score": r.score, "scale": r.scale,
+                 "scale_min": r.scale_min if r.scale_min is not None else 1, "choices": r.choices,
+                 "correct": r.correct, "source": r.source, "reason": r.reason} for r in rows]
 
 
 def export_bundle(discussion_id: str) -> Dict[str, Any]:

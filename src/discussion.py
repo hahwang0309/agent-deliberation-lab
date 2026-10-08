@@ -8,7 +8,7 @@ from src.core.agent import DiscussionAgent
 from src.core.experiment import ExperimentConfig, ParticipantCondition, engine_settings
 from src.core.moderator import DiscussionModerator
 from src.core.natural_discussion import NaturalDiscussion
-from src.services.survey import SurveyConfig
+from src.services.survey import SurveyConfig, initial_position_text
 from src.models.personas import LLMProvider, Persona
 from src.utils.llm_provider import LLMBundle, LLMFactory
 
@@ -57,6 +57,9 @@ def create_discussion(participants: List[ParticipantSpec],
             materials=materials,
         ))
         temperatures.append(temperature)
+        if condition.seed and survey is not None:
+            agents[-1].seed = dict(condition.seed)
+            agents[-1].initial_position = initial_position_text(survey, condition.seed)
 
     lead = participants[0] if participants else ParticipantSpec(None, LLMFactory.default_provider())
     moderator = (DiscussionModerator(llm=bundle.get(lead.provider, lead.model, settings.moderator_temperature))

@@ -35,11 +35,14 @@ class DiscussionAgent:
                  provider: Optional[LLMProvider] = None,
                  enable_web_search: bool = False, enable_belief_reasoning: bool = False,
                  aux_llm: Optional[BaseChatModel] = None, config: Optional[DiscussionConfig] = None,
-                 stubbornness: Optional[float] = None, materials: Optional[str] = None):
+                 stubbornness: Optional[float] = None, materials: Optional[str] = None,
+                 seed: Optional[dict] = None, initial_position: str = ""):
         self.persona = persona
         self.config = config or get_config()  # 토론별 설정 (실험 조건 반영)
         self.stubbornness_override = stubbornness
         self.materials = materials  # 모든 참가자에게 같은 배경 자료집 (인간 숙의의 자료집에 대응)
+        self.seed = seed or {}  # 심은 사전 설문 응답 {문항 id: 값} (사전 설문은 묻지 않고 이 값으로 기록)
+        self.initial_position = initial_position  # 심은 응답을 시스템 프롬프트에 넣을 문장
         self.provider = provider or LLMFactory.default_provider()
         self.language = "auto"
         self.statement_count = 0
@@ -86,7 +89,8 @@ class DiscussionAgent:
         length_instruction = prompts.get_agent_length_instruction(min_sentences=3, max_sentences=8)
         language_instruction = prompts.get(f"language.instruction.{self.language}", "")
         materials = prompts.render("agent.materials_block", materials=self.materials) if self.materials else ""
-        return base_prompt + belief_emphasis + materials + length_instruction + language_instruction
+        return (base_prompt + belief_emphasis + self.initial_position + materials
+                + length_instruction + language_instruction)
 
     async def _prepare_response(self, prompt: str, context: List[Message] = None):
         """응답 준비 - CoT, RAG, 프롬프트 생성 공통 로직"""

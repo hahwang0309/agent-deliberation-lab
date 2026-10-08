@@ -62,6 +62,9 @@
 - `propositions`(선택, 최대 5개, 각 300자 이하): 고정 명제입니다. 지정하면 모더레이터가 명제를 만들지 않고 이 명제들을 차례로 다룹니다. 참가자 N명, 발언 S개일 때 명제마다 전원 발언 + 상호 응답 1회(N+1발언)가 들어가야 하므로, 다룰 수 있는 개수를 넘으면 400 `TOO_MANY_PROPOSITIONS`입니다. 모더레이터를 끈 토론에도 쓸 수 있습니다.
 - `materials`(선택, 20,000자 이하): 모든 참가자의 시스템 프롬프트에 같은 배경 자료집으로 들어갑니다. 매 발언 호출에 포함되므로 입력 토큰이 그만큼 늘어납니다.
 - `survey`(선택): 사전·사후 설문 `{"items": [{"id": "abolish", "text": "사형제도는 폐지해야 한다"}], "scale": 7}`. 문항은 최대 20개, id는 영문·숫자·밑줄이며 중복 불가(422). AI 참가자는 토론 시작 전과 종료 후(종결 라운드 다음)에 발언과 별개의 호출로 점수(1~scale)와 이유 한 문장을 답합니다. 사후 설문에는 토론 기록(끝에서 15,000자)이 들어갑니다. 형식 오류는 한 번 다시 묻고, 끝까지 답하지 않은 문항은 `score: null`로 남습니다. 중지된 토론은 사후 설문을 하지 않고, 재개한 토론은 사전 설문을 다시 하지 않습니다.
+  - 척도: `scale`(최댓값, 기본 7)과 `scale_min`(0 또는 1, 기본 1). 0~10 척도는 `{"scale": 10, "scale_min": 0}`.
+  - 선택형 문항: `{"id": "cards", "type": "choice", "text": "...", "options": ["E", "K", "4", "7"], "multi": true, "correct": ["E", "7"]}`. 보기는 2개 이상이고 중복 불가, `correct`는 보기의 부분집합(단일 선택이면 1개). 정답은 참가자에게 보이지 않고 응답의 `correct`(true/false)로 채점됩니다. 보기 이름은 대소문자를 무시하고 맞춥니다.
+  - 초기값 심기: `experiment.participants.{이름}.seed`에 `{문항 id: 점수 또는 보기 목록}`. 그 문항은 사전 설문에서 묻지 않고 지정값을 `source: "seeded"`로 기록하며, 같은 값을 참가자 시스템 프롬프트에 "토론 전 내 응답"으로 넣습니다. survey 없이 seed를 주면 400 `SEED_WITHOUT_SURVEY`, 없는 문항·범위 밖 값이면 422 `INVALID_SEED`.
 - `experiment`(선택): 이 토론에만 적용되는 실험 조건입니다. 일반 사용자는 지정할 수 없습니다(403 `FEATURE_RESTRICTED`). 조건의 참가자 이름이 페르소나에 없으면 400 `UNKNOWN_PARTICIPANT`, 알 수 없는 키나 범위 밖 값은 422입니다. 저장된 조건은 상세 응답의 `config.experiment`에서 볼 수 있습니다. 항목은 [configuration.md](configuration.md#실험-조건-토론별)를 참고하세요.
 
 ```json
@@ -81,7 +84,7 @@
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/discussions/{id}/messages?after_seq=&limit=` | 완성된 발언 목록 |
-| GET | `/discussions/{id}/survey` | 설문 문항과 응답 `{survey, responses: [{phase, participant, participant_type, item_id, score, scale, reason}]}` |
+| GET | `/discussions/{id}/survey` | 설문 문항과 응답 `{survey, responses: [{phase, participant, participant_type, item_id, score, scale, scale_min, choices, correct, source, reason}]}`. `source`는 answered / seeded / missing |
 | GET | `/discussions/{id}/dataset` | 분석용 표 `{discussions, utterances, stances, moves, concessions, attacks, surveys}` (행 목록). 여러 토론을 모을 때는 `scripts/export_dataset.py` |
 | GET | `/discussions/{id}/events?since=` | SSE. 재접속 시 브라우저가 보내는 `Last-Event-ID` 이후 메시지부터 다시 보냄 |
 

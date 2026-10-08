@@ -297,13 +297,15 @@ async def test_run_survey_retries_invalid_answers_and_never_fills_missing():
         [{"item_id": "q1", "score": 6, "reason": "  data shows gains "}, {"item_id": "q2", "score": 2}],
     ])
     answers = await run_survey(agent, survey, "pre")
-    assert answers == [{"item_id": "q1", "score": 6, "reason": "data shows gains", "scale": 7},
-                       {"item_id": "q2", "score": 2, "reason": "", "scale": 7}]
-    assert "outside 1..7" in agent.prompts[-1] and "unknown item id qX" in agent.prompts[-1]
+    common = {"choices": None, "correct": None, "scale": 7, "scale_min": 1}
+    assert answers == [{"item_id": "q1", "score": 6, "reason": "data shows gains", "source": "answered", **common},
+                       {"item_id": "q2", "score": 2, "reason": "", "source": "answered", **common}]
+    assert "integer in 1..7" in agent.prompts[-1] and "unknown item id qX" in agent.prompts[-1]
 
     stubborn = ScriptedSurveyAgent([[{"item_id": "q1", "score": 5}], [{"item_id": "q1", "score": 5}]])
     answers = await run_survey(stubborn, survey, "post", transcript="A: hello")
-    assert answers[1] == {"item_id": "q2", "score": None, "reason": "", "scale": 7}  # 끝까지 답 안 함 → None
+    assert answers[1] == {"item_id": "q2", "score": None, "choices": None, "correct": None, "reason": "",
+                          "scale": 7, "scale_min": 1, "source": "missing"}  # 끝까지 답 안 함 → 값 없음
     assert "A: hello" in stubborn.prompts[0]
 
 
@@ -675,3 +677,103 @@ async def test_agent_reads_only_text_blocks_from_thinking_responses():
                                       {"type": "text", "text": "Visible answer."}])
     agent = DiscussionAgent(Persona(name="A", **BASE), llm=Thinking())
     assert await agent.respond("hi") == "Visible answer."
+
+
+# ---------- 설문 확장: 선택형·0~10 척도·초기값 심기 ----------
+
+from src.services.survey import initial_position_text, validate_seed  # noqa: E402
+
+WASON = {"items": [{"id": "cards", "type": "choice", "multi": True, "options": ["E", "K", "4", "7"],
+                    "correct": ["E", "7"],
+                    "text": 'Which cards should you turn to test the rule: "All cards with vowels on one side '
+                            'have an even number on the other"?'}]}
+POLICY = {"items": [{"id": "Q5A", "text": "The Affordable Care Act should be repealed."}], "scale": 10, "scale_min": 0}
+
+
+@pytest.mark.parametrize("bad", [
+    {"items": [{"id": "c", "type": "choice", "options": ["A"]}]},                              # 보기 1개
+    {"items": [{"id": "c", "type": "choice", "options": ["A", "B"], "correct": ["C"]}]},       # 보기에 없는 정답
+    {"items": [{"id": "c", "type": "choice", "options": ["A", "B"], "correct": ["A", "B"]}]},  # 단일 선택인데 정답 2개
+    {"items": [{"id": "q", "text": "x", "options": ["A", "B"]}]},                               # likert에 보기
+    {"items": [{"id": "q", "text": "x"}], "scale": 2, "scale_min": 1},                          # 2점 척도
+])
+def test_survey_rejects_malformed_items(bad):
+    bad = {"items": [{"text": "t", **i} if "text" not in i else i for i in bad["items"]],
+           **{k: v for k, v in bad.items() if k != "items"}}
+    with pytest.raises(ValidationError):
+        SurveyConfig(**bad)
+
+
+@pytest.mark.asyncio
+async def test_choice_answers_are_matched_scored_and_retried():
+    survey = SurveyConfig(**WASON)
+    agent = ScriptedSurveyAgent([
+        [{"item_id": "cards", "choices": ["e", "Q"]}],            # 없는 보기 → 다시 묻기
+        [{"item_id": "cards", "choices": ["7", "e"], "reason": "falsify"}],  # 대소문자·순서 무관
+    ])
+    [row] = await run_survey(agent, survey, "post")
+    assert row["choices"] == ["E", "7"] and row["correct"] is True and row["score"] is None
+    assert "unknown options ['Q']" in agent.prompts[-1] and "Choose all that apply from: E, K, 4, 7" in agent.prompts[0]
+
+    wrong = ScriptedSurveyAgent([[{"item_id": "cards", "choices": ["E", "4"]}]])
+    [row] = await run_survey(wrong, survey, "post")
+    assert row["correct"] is False  # 확증 편향의 전형적 오답
+
+
+@pytest.mark.asyncio
+async def test_zero_to_ten_scale_accepts_zero_and_rejects_eleven():
+    survey = SurveyConfig(**POLICY)
+    agent = ScriptedSurveyAgent([[{"item_id": "Q5A", "score": 11}], [{"item_id": "Q5A", "score": 0}]])
+    [row] = await run_survey(agent, survey, "pre")
+    assert row["score"] == 0 and row["scale_min"] == 0 and row["scale"] == 10
+    assert "integer in 0..10" in agent.prompts[-1] and "from 0 (strongly disagree" in agent.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_seeded_items_are_recorded_without_asking():
+    survey = SurveyConfig(**WASON)
+    agent = ScriptedSurveyAgent([])  # 호출되면 pop에서 실패
+    [row] = await run_survey(agent, survey, "pre", seeded={"cards": ["E", "4"]})
+    assert row["source"] == "seeded" and row["choices"] == ["E", "4"] and row["correct"] is False
+    assert agent.prompts == []
+
+    assert validate_seed(survey, {"cards": ["E", "X"]}) and validate_seed(survey, {"other": 3})
+    assert validate_seed(SurveyConfig(**POLICY), {"Q5A": 11}) and not validate_seed(SurveyConfig(**POLICY), {"Q5A": 10})
+    text = initial_position_text(SurveyConfig(**POLICY), {"Q5A": 8})
+    assert "Your answer: 8 (on a scale from 0 to 10)" in text and "The Affordable Care Act" in text
+
+
+@pytest.mark.asyncio
+async def test_engine_uses_seed_for_pre_survey_and_system_prompt(monkeypatch):
+    bundle = FakeBundle()
+    exp = ExperimentConfig(participants={"A": {"seed": {"cards": ["E", "4"]}}})
+    engine = create_discussion(specs(), bundle=bundle, experiment=exp, survey=SurveyConfig(**WASON), max_statements=4)
+    a, b = engine.agents
+    assert "Your answer: E, 4." in a._build_system_prompt() and "Your answer" not in b._build_system_prompt()
+    events = [e async for e in engine.stream("Wason task", language="en") if e.kind == "survey"]
+    pre = {e.speaker: e.meta["answers"][0] for e in events if e.meta["phase"] == "pre"}
+    assert pre["A"]["source"] == "seeded" and pre["B"]["source"] in ("answered", "missing")
+    assert all(e.meta["answers"][0]["source"] != "seeded" for e in events if e.meta["phase"] == "post")
+
+
+@pytest.mark.asyncio
+async def test_api_validates_and_stores_seeded_choice_answers(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    admin = create_user(role="admin")
+    seed_exp = {"participants": {"Alice": {"seed": {"cards": ["E", "4"]}}}}
+    async with LoggedInClient(admin) as client:
+        r = await client.post("/api/v1/discussions", json={**BODY, "experiment": seed_exp})
+        assert r.status_code == 400 and r.json()["detail"]["error"]["code"] == "SEED_WITHOUT_SURVEY"
+        bad = {"participants": {"Alice": {"seed": {"cards": ["Z"]}}}}
+        r = await client.post("/api/v1/discussions", json={**BODY, "survey": WASON, "experiment": bad})
+        assert r.status_code == 422 and r.json()["detail"]["error"]["code"] == "INVALID_SEED"
+
+        r = await client.post("/api/v1/discussions", json={**BODY, "max_statements": 4, "survey": WASON,
+                                                         "experiment": seed_exp})
+        assert r.status_code == 201, r.text
+        discussion_id = r.json()["id"]
+        assert (await client.post(f"/api/v1/discussions/{discussion_id}/start")).status_code == 202
+        await asyncio.wait_for(registry.get(discussion_id).task, timeout=10)
+    rows = {(r["phase"], r["participant"]): r for r in persistence.list_survey(discussion_id)}
+    assert rows[("pre", "Alice")]["source"] == "seeded" and rows[("pre", "Alice")]["choices"] == ["E", "4"]
+    assert rows[("pre", "Alice")]["correct"] is False

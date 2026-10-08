@@ -403,7 +403,9 @@ class NaturalDiscussion:
 
     async def _run_surveys(self, phase: str, transcript: str = "") -> AsyncIterator[EngineEvent]:
         """참가자(AI) 전원에게 같은 설문을 독립 호출로 동시에 묻는다"""
-        results = await asyncio.gather(*(run_survey(a, self.survey, phase, transcript) for a in self.agents))
+        results = await asyncio.gather(*(
+            run_survey(a, self.survey, phase, transcript, seeded=a.seed if phase == PRE else None)
+            for a in self.agents))
         for agent, answers in zip(self.agents, results):
             yield EngineEvent(kind="survey", speaker=agent.persona.name, speaker_type="ai",
                               meta={"phase": phase, "answers": answers})

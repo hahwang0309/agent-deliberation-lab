@@ -69,3 +69,6 @@ api/**/__pycache__/
 .venv/
 .claude/settings.local.json
 data/
+
+# Research notes (private, not part of the app)
+docs/research/

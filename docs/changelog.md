@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 설문 확장과 초기값 심기 (2026-10)
+- 선택형 문항(`type: choice`, 단일·복수 선택)과 정답 채점(`correct`, 참가자에게 비공개)을 추가했습니다. 정답이 있는 과제(Wason 선택 과제 등)의 정확도를 설문으로 잽니다.
+- 리커트 최솟값 `scale_min`(0 또는 1)을 추가했습니다. 0~10 척도를 쓸 수 있습니다.
+- 참가자별 초기 응답 `experiment.participants.{이름}.seed`: 사전 설문 대신 지정값을 기록(`source: seeded`)하고 시스템 프롬프트에 "토론 전 내 응답"으로 넣습니다.
+- 설문 응답에 `scale_min`, `choices`, `correct`, `source` 열 추가 (Alembic `22b0fc511561`). 기존 행의 `scale_min`은 1로 읽습니다.
+
 ## 최신 Claude 모델 호환 (2026-10)
 다른 모델로 실측하다가 발견한 문제를 고쳤습니다.
 - `claude-sonnet-5-5`, `claude-fable-5*`: 기본값 외 temperature를 거부해 토론이 바로 실패했습니다. 이제 temperature 없이 호출하고, 실행 기록에는 `null`(모델 기본값)로 남깁니다.

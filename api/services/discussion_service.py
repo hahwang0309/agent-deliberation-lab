@@ -19,6 +19,7 @@ from api.runtime import registry
 from api.runtime.registry import AlreadyRunningError, CapacityError
 from api.schemas.discussion import CreateDiscussionRequest
 from src.core.natural_discussion import plan_debate
+from src.services.survey import validate_seed
 from src.utils.llm_provider import LLMFactory
 from src.models.personas import LLMProvider
 
@@ -64,6 +65,12 @@ class DiscussionService:
             if unknown:
                 raise _error(status.HTTP_400_BAD_REQUEST, "UNKNOWN_PARTICIPANT",
                              f"실험 조건의 참가자 이름이 페르소나에 없습니다: {', '.join(sorted(unknown))}")
+            seeds = {n: c.seed for n, c in request.experiment.participants.items() if c.seed}
+            if seeds and request.survey is None:
+                raise _error(status.HTTP_400_BAD_REQUEST, "SEED_WITHOUT_SURVEY", "초기 응답을 심으려면 설문(survey)이 필요합니다.")
+            problems = [f"{n}: {e}" for n, seed in seeds.items() for e in validate_seed(request.survey, seed)]
+            if problems:
+                raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "INVALID_SEED", "; ".join(problems))
 
         discussion = Discussion(
             topic=request.topic,

@@ -6,7 +6,7 @@
 알 수 없는 키는 거부한다(오타로 조건이 조용히 무시되지 않도록).
 """
 from dataclasses import replace
-from typing import Dict, Literal, Optional
+from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +26,8 @@ class ParticipantCondition(_Strict):
     """참가자(페르소나 이름)별 조건"""
     stubbornness: Optional[float] = Field(None, ge=0.0, le=1.0, description="비우면 성격 키워드로 정함")
     temperature: Optional[float] = Field(None, ge=0.0, le=1.5, description="발언 temperature")
+    seed: Optional[Dict[str, Union[int, List[str]]]] = Field(
+        None, description="심은 사전 설문 응답 {문항 id: 점수 또는 보기 목록}. 사전 설문을 묻지 않고 이 값으로 기록하고 프롬프트에 넣음")
 
 
 class ModelRef(_Strict):
