@@ -34,6 +34,8 @@ sys.path.insert(0, str(ROOT))
 
 RAW = ROOT / "data" / "raw"
 
+from src.models.personas import LLMProvider  # noqa: E402
+
 
 class _NoAliasDumper(yaml.SafeDumper):
     def ignore_aliases(self, data):
@@ -42,6 +44,10 @@ class _NoAliasDumper(yaml.SafeDumper):
 
 def plan_dict(name: str, topics: List[Dict[str, Any]], conditions: List[Dict[str, Any]],
               repetitions: int = 1) -> Dict[str, Any]:
+    """조건마다 config/cases.yaml의 측정 프로토콜을 넣는다 (조건이 직접 정한 값이 우선)"""
+    from src.cases import texts
+    protocol = texts()["protocol"]
+    conditions = [{**c, "experiment": {**protocol, **c.get("experiment", {})}} for c in conditions]
     return {"name": name, "repetitions": repetitions, "concurrency": 4, "retries": 1, "report": False,
             "limits": {"max_total_tokens": 5_000_000}, "topics": topics, "conditions": conditions}
 
@@ -69,7 +75,29 @@ def validate(plan: Dict[str, Any]) -> List[str]:
     return errors
 
 
-def write_plan(plan: Dict[str, Any], out: str, allow_invalid: bool) -> int:
+def apply_options(plan: Dict[str, Any], args) -> Dict[str, Any]:
+    """공통 옵션: 주제 고르기, 프로바이더 지정(모델은 config.yaml이 정함), 반복 수 덮어쓰기"""
+    if args.topics:
+        keys = set(args.topics)
+        missing = keys - {t["key"] for t in plan["topics"]}
+        if missing:
+            raise SystemExit(f"unknown topic keys: {sorted(missing)}")
+        plan["topics"] = [t for t in plan["topics"] if t["key"] in keys]
+    if args.provider:
+        for t in plan["topics"]:
+            for p in t["personas"]:
+                p["llm_provider"] = args.provider
+                p.pop("model", None)
+    if args.repetitions:
+        plan["repetitions"] = args.repetitions
+        for c in plan["conditions"]:
+            c.pop("repetitions", None)
+    return plan
+
+
+def write_plan(plan: Dict[str, Any], args) -> int:
+    plan = apply_options(plan, args)
+    out, allow_invalid = args.out, args.allow_invalid
     errors = validate(plan)
     for e in errors[:20]:
         print("invalid:", e, file=sys.stderr)
@@ -93,7 +121,7 @@ def cmd_wason(args) -> int:
     topics, excluded = wason.replica_topics(groups, size=args.size, max_statements=args.max_statements)
     print(f"DeliData groups with {args.size} members: {len(topics) + sum(excluded.values())}; "
           f"replicated {len(topics)}; excluded {excluded or 0}")
-    return write_plan(plan_dict(args.name, topics, wason.CONDITIONS), args.out, args.allow_invalid)
+    return write_plan(plan_dict(args.name, topics, wason.CONDITIONS), args)
 
 
 def cmd_wason_variants(args) -> int:
@@ -102,7 +130,7 @@ def cmd_wason_variants(args) -> int:
     topics = wason.variant_topics(args.n, dist, args.seed, size=args.size, max_statements=args.max_statements)
     conditions = [c for c in wason.CONDITIONS if c["label"] != "B-resolve"]  # 설계: A 두 모드 + C
     print("solo answer role distribution:", {"+".join(k): v for k, v in dist.most_common()})
-    return write_plan(plan_dict(args.name, topics, conditions), args.out, args.allow_invalid)
+    return write_plan(plan_dict(args.name, topics, conditions), args)
 
 
 def cmd_a1r_briefing(args) -> int:
@@ -195,14 +223,13 @@ def cmd_a1r(args) -> int:
     conditions = a1r.CONDITIONS if brief else [c for c in a1r.CONDITIONS if c.get("use_materials") is False]
     if not brief:
         print("no --briefing: only conditions without materials (C, D) are included")
-    return write_plan(plan_dict(args.name, topics, conditions), args.out, args.allow_invalid)
+    return write_plan(plan_dict(args.name, topics, conditions), args)
 
 
 def cmd_argq(args) -> int:
     from src.cases import argq
     topics, conditions = argq.topics_and_conditions(argq.load_arguments(args.data), args.seed)
-    return write_plan(plan_dict(args.name, topics, conditions, repetitions=args.repetitions), args.out,
-                      args.allow_invalid)
+    return write_plan(plan_dict(args.name, topics, conditions, repetitions=8), args)
 
 
 def main(argv=None) -> int:
@@ -213,6 +240,10 @@ def main(argv=None) -> int:
         p.add_argument("--out", required=True)
         p.add_argument("--name", default=name, help="배치 이름 (plan name)")
         p.add_argument("--allow-invalid", action="store_true")
+        p.add_argument("--topics", nargs="+", metavar="KEY", help="이 주제(key)만")
+        p.add_argument("--provider", choices=[x.value for x in LLMProvider],
+                       help="모든 참가자의 프로바이더 (모델은 config.yaml llm.default_models)")
+        p.add_argument("--repetitions", type=int, help="모든 조건의 반복 수 (조건별 반복 수를 덮어씀)")
 
     p = sub.add_parser("wason", help="DeliData 집단 복제")
     common(p, "wason-replica")
@@ -262,7 +293,6 @@ def main(argv=None) -> int:
     common(p, "argq")
     p.add_argument("--data", default=str(RAW / "argq"))
     p.add_argument("--seed", type=int, required=True)
-    p.add_argument("--repetitions", type=int, default=8)
     p.set_defaults(func=cmd_argq)
 
     args = parser.parse_args(argv)

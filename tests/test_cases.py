@@ -287,3 +287,13 @@ def test_debranding_edits_are_checked():
         a1r.debrand(text, {**spec, "edits": [["The ACA ensures", "The the law ensures"], ["the ACA by", "it by"]]})
     with pytest.raises(ValueError, match="lowercase"):
         a1r.debrand(text, {**spec, "edits": [["The ACA ensures", "the law ensures"], ["the ACA by", "it by"]]})
+
+
+def test_case_plans_carry_the_measurement_protocol():
+    from src.cases import texts
+    protocol = texts()["protocol"]
+    assert protocol == {"seed_format": "verbal", "post_survey": "neutral", "seed_wording": "neutral"}
+    plan = plan_dict("p", [], [{"label": "a", "experiment": {"mode": "baseline"}},
+                               {"label": "b", "experiment": {"post_survey": "standard"}}])
+    assert plan["conditions"][0]["experiment"] == {**protocol, "mode": "baseline"}
+    assert plan["conditions"][1]["experiment"]["post_survey"] == "standard"  # 조건이 직접 정한 값이 우선

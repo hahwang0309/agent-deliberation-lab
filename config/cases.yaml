@@ -1,6 +1,16 @@
 # 연구용 사례 생성 문구 (scripts/build_cases.py, src/cases/)
 # 과제 문구·페르소나·자료 머리말 등 참가자에게 보이는 문장은 모두 여기에 둔다.
 
+# 측정 프로토콜: 모든 연구 계획의 조건에 들어가는 실험 조건 (사람이 측정된 방식에 맞춤, 파일럿 진단 2026-10)
+# - seed_format verbal: 심은 리커트 응답을 말로 알려 줌 (사람은 사후에 자기 사전 점수를 보지 않으므로, 숫자를 베끼지 못하게)
+#   선택형(Wason)은 보기 목록 그대로라 영향 없음
+# - post_survey neutral: 사후 설문에서 "바뀌지 않았으면 유지" 지시를 빼고 같은 설문을 다시 물음
+# - seed_wording neutral: 초기 응답을 알리는 문장에서 "입장을 유지하라" 지시를 뺌
+protocol:
+  seed_format: verbal
+  post_survey: neutral
+  seed_wording: neutral
+
 # ---------- 연구 1-A: Wason 선택 과제 (DeliData와 같은 문구) ----------
 wason:
   topic: "Wason selection task: which cards must be turned?"
