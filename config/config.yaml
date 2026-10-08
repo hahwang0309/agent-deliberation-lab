@@ -149,7 +149,7 @@ experiment_runner:
 limits:
   max_global_running: 5     # 서버 전체 동시 실행 토론 수
   default_statements: 12    # 토론 생성 시 기본 AI 발언 수
-  max_statements: 60        # AI 발언 수 상한 (A1R 실제 소집단 복제: 16명 × 3)
+  max_statements: 80        # AI 발언 수 상한 (A1R 실제 소집단 복제: 16명 × 5)
   min_personas: 2
   max_personas: 16          # A1R 실제 소집단(8~16명) 복제용. 참가자가 많을수록 발언·설문 호출이 늘어남
   user_max_concurrent: 1    # 일반 사용자 동시 실행 토론 수 (관리자 무제한, 사용자별 override 가능)

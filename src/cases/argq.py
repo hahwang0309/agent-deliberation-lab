@@ -6,7 +6,10 @@
   강·약 세트의 총 토큰 수 차이가 작은 쪽의 10% 이내가 되도록 뽑는다(토큰 = 단어·문장부호 단위의 근사).
 - 사회적 지지: 다수 = 공모자 3명이 라운드마다 논거 1개씩, 소수 = 1명이 라운드마다 3개를 모두 말하고 2명은
   어느 편도 들지 않는 중립 발화만. 두 조건의 반대 논거 내용과 양은 같고 반대 목소리의 수만 다르다.
-- 발언 순서: 공모자 3명 × 라운드 수 (기준선 모드, 종결 라운드 없음). 표적은 듣기만 하고 끝에 사후 설문.
+- 발언 순서: 표적 → 공모자 3명 × 라운드 수 → 표적 (종결 라운드 없음), 그다음 표적만 사후 설문.
+  표적의 첫 발언이 지지 근거를 만들고(모래성 문턱 모델), 마지막 발언에서 상태 기반 엔진의 안내가 작용한다.
+  자기 발언에 의한 공약 효과는 모든 셀·모드에 같은 상수다.
+- 엔진: 기준선(선행 연구 방식) / 상태 기반(새 장치). 2(논증 질) × 2(지지자 수) × 2(엔진) + C(토론 없이 다시 답함).
 """
 import csv
 import random
@@ -67,12 +70,15 @@ def topics_and_conditions(rows: List[Dict[str, Any]], seed: int,
     target, conf = t["target"], t["confederates"]
     names = conf["names"]
     per_round, rounds = t["arguments_per_round"], t["rounds"]
-    order = names * rounds  # 표적은 발언하지 않음
-    base = {"mode": "baseline", "mechanisms": {"closing_round": False}, "turn_order": order}
-    conditions = [{"label": f"{q}-{s}", "experiment": dict(base)} for q in ("strong", "weak") for s in ("minority", "majority")]
+    order = [target["name"]] + names * rounds + [target["name"]]
+    cells = [(q, s, m) for q in ("strong", "weak") for s in ("minority", "majority") for m in ("baseline", "stateful")]
+    conditions = [{"label": f"{q}-{s}-{m}", "experiment": {"mode": m, "mechanisms": {"closing_round": False},
+                                                            "turn_order": order}} for q, s, m in cells]
     conditions.append({"label": "C-reanswer", "experiment": {"mode": "survey_only"}})
     if positive_control:
-        conditions.append({"label": "positive-control", "experiment": dict(base), "use_seeds": False})
+        conditions += [{"label": f"positive-control-{m}", "use_seeds": False,
+                        "experiment": {"mode": m, "mechanisms": {"closing_round": False}, "turn_order": order}}
+                       for m in ("baseline", "stateful")]
     topics = []
     for i, topic in enumerate(t["topics"]):
         for side in ("pro", "con"):
@@ -85,15 +91,18 @@ def topics_and_conditions(rows: List[Dict[str, Any]], seed: int,
                 chunks = [lines[r * per_round:(r + 1) * per_round] for r in range(rounds)]
                 meta[quality] = [{"argument": a["argument"], "wa": a["wa"], "tokens": tokens(a["argument"])} for a in args]
                 # 다수: 라운드마다 공모자 3명이 논거 1개씩 / 소수: 1명이 라운드마다 3개, 2명은 중립 발화만
-                by_condition[f"{quality}-majority"] = {"participants": {
-                    n: {"script": [chunk[j] for chunk in chunks]} for j, n in enumerate(names)}}
-                by_condition[f"{quality}-minority"] = {"participants": {
+                majority = {"participants": {n: {"script": [chunk[j] for chunk in chunks]} for j, n in enumerate(names)}}
+                minority = {"participants": {
                     names[0]: {"script": [t["joiner"].join(chunk) for chunk in chunks]},
                     **{n: {"script": [filler] * rounds} for n in names[1:]}}}
+                for mode in ("baseline", "stateful"):
+                    by_condition[f"{quality}-majority-{mode}"] = majority
+                    by_condition[f"{quality}-minority-{mode}"] = minority
             # C: 공모자는 말하지 않고 설문에서만 빠지도록 대본만 둔다
             by_condition["C-reanswer"] = {"participants": {n: {"script": [filler]} for n in names}}
             if positive_control:
-                by_condition["positive-control"] = by_condition["strong-majority"]
+                for mode in ("baseline", "stateful"):
+                    by_condition[f"positive-control-{mode}"] = by_condition["strong-majority-baseline"]
             persona = lambda n, p: {"name": n, "role": p["role"], "background": p["background"],
                                     "communication_style": p["communication_style"]}
             topics.append({

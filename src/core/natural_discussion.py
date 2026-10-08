@@ -546,6 +546,12 @@ class NaturalDiscussion:
             remaining = [a for a in self.agents if a.persona.name not in self.closing_done]
             return Turn(remaining[0], ActionType.CLOSING) if remaining else None
 
+        if self.turn_order:  # 고정 발언 순서 (공모자 대본 실험): 발언자는 순서대로, 발화 행위는 모드에 따라
+            agent = self._next_in_order()
+            if agent is None:
+                return None
+            return Turn(agent, ActionType.REPLY) if self.baseline else self._stateful_turn(agent)
+
         if self.baseline:
             return self._baseline_turn(last)
 
@@ -588,7 +594,20 @@ class NaturalDiscussion:
             return Turn(speaker, ActionType.DEVILS_ADVOCATE, self._latest_from_others(speaker.persona.name))
 
         # 7. 기본: 이 명제에서 덜 말한 참가자가 최근 다른 사람 발언에 입장 거리에 맞게 반응
-        speaker = self._least_spoken(others)
+        return self._default_turn(self._least_spoken(others))
+
+    def _stateful_turn(self, speaker: DiscussionAgent) -> Turn:
+        """정해진 발언자에게 상태 기반 발화 행위: 응답 의무 → 입장 표명 → 입장 거리에 따른 반응"""
+        name = speaker.persona.name
+        challenge = self.debate.open_challenge_for([name]) if self.config.use_reply_obligation else None
+        if challenge:
+            target = self._message_by_seq(challenge.seq) or self._latest_from_others(name)
+            return Turn(speaker, ActionType.RESPOND_CHALLENGE, target)
+        if self.spoken_in_subtopic[name] == 0:
+            return Turn(speaker, ActionType.POSITION, self._latest_from_others(name))
+        return self._default_turn(speaker)
+
+    def _default_turn(self, speaker: DiscussionAgent) -> Turn:
         target = self._latest_from_others(speaker.persona.name)
         own, theirs = self.debate.stance(speaker.persona.name), self.debate.stance(target.agent_name) if target else None
         self.alternation += 1
@@ -598,15 +617,17 @@ class NaturalDiscussion:
             action = ActionType.REBUT if self.alternation % 2 else ActionType.UNDERCUT
         return Turn(speaker, action, target)
 
+    def _next_in_order(self) -> Optional[DiscussionAgent]:
+        """turn_order에서 다음 발언자 (정해진 발언을 다 쓴 참가자는 건너뜀)"""
+        for _ in range(len(self.turn_order)):
+            agent = self._agent(self.turn_order[self.order_pos % len(self.turn_order)])
+            self.order_pos += 1
+            if agent.can_speak():
+                return agent
+        return None
+
     def _baseline_turn(self, last: Optional[str]) -> Optional[Turn]:
-        """기준선: 참가자 목록(또는 turn_order) 순서대로 돌아가며 발언. 정해진 발언을 다 쓴 참가자는 건너뜀"""
-        if self.turn_order:
-            for _ in range(len(self.turn_order)):
-                agent = self._agent(self.turn_order[self.order_pos % len(self.turn_order)])
-                self.order_pos += 1
-                if agent.can_speak():
-                    return Turn(agent, ActionType.REPLY)
-            return None
+        """기준선: 참가자 목록 순서대로 돌아가며 발언. 정해진 발언을 다 쓴 참가자는 건너뜀"""
         names = [a.persona.name for a in self.agents]
         start = (names.index(last) + 1) % len(names) if last in names else 0
         for i in range(len(names)):

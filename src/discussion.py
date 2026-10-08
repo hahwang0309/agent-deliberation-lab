@@ -86,6 +86,15 @@ def create_discussion(participants: List[ParticipantSpec],
         engine.turn_order = list(experiment.turn_order)
     if experiment is not None:
         engine.post_survey = experiment.post_survey
+    # 심은 리커트 응답을 엔진의 초기 입장(−1~1)으로: 발언 전에도 입장 동역학과 기준점(x0)이 작동하도록
+    if survey is not None:
+        likert = next((i for i in survey.items if i.type == "likert"), None)
+        for agent in agents:
+            if likert is not None and likert.id in agent.seed:
+                v = agent.seed[likert.id]
+                x = 2 * (v - survey.scale_min) / (survey.scale - survey.scale_min) - 1
+                state = engine.debate.ensure(agent.persona.name, "ai", agent.stubbornness)
+                state.x0 = state.x = round(x, 3)
     # 실행 기록용: 실제로 요청한 모델·temperature (model None은 프로바이더 기본 모델)
     engine.llm_spec = {
         "participants": {spec.persona.name: {"provider": spec.provider.value, "model": spec.model,

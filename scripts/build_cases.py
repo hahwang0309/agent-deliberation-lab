@@ -219,7 +219,7 @@ def cmd_a1r(args) -> int:
         print(f"small groups: {len(topics)} topics, sizes {dict(sorted(sizes.items()))}")
     else:
         topics = a1r.sampled_topics(delegates, items, ids, args.groups_per_item, args.seed, brief,
-                                    max_statements=args.max_statements or 15, debranded=args.debranded)
+                                    max_statements=args.max_statements or 25, debranded=args.debranded)
     conditions = a1r.CONDITIONS if brief else [c for c in a1r.CONDITIONS if c.get("use_materials") is False]
     if not brief:
         print("no --briefing: only conditions without materials (C, D) are included")
@@ -250,7 +250,7 @@ def main(argv=None) -> int:
     common(p, "wason-replica")
     p.add_argument("--data", default=str(RAW / "delidata"))
     p.add_argument("--size", type=int, default=3)
-    p.add_argument("--max-statements", type=int, default=9)
+    p.add_argument("--max-statements", type=int, default=15)
     p.set_defaults(func=cmd_wason)
 
     p = sub.add_parser("wason-variants", help="같은 구조의 새 변형 문항")
@@ -259,7 +259,7 @@ def main(argv=None) -> int:
     p.add_argument("--n", type=int, default=60)
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--size", type=int, default=3)
-    p.add_argument("--max-statements", type=int, default=9)
+    p.add_argument("--max-statements", type=int, default=15)
     p.set_defaults(func=cmd_wason_variants)
 
     p = sub.add_parser("a1r-briefing", help="자료집에서 자료 상자 초안 추출")

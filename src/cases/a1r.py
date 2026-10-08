@@ -149,7 +149,7 @@ def sample_groups(delegates: List[Respondent], item_id: str, count: int, rng: ra
 
 
 def sampled_topics(delegates: List[Respondent], items: Dict[str, str], item_ids: List[str], groups_per_item: int,
-                   seed: int, briefing: Optional[Dict[str, Any]] = None, max_statements: int = 15,
+                   seed: int, briefing: Optional[Dict[str, Any]] = None, max_statements: int = 25,
                    debranded: bool = False) -> List[Dict[str, Any]]:
     """반복 집단 주제. debranded=True면 cases.yaml의 이름 제거 문항만 그 문안·치환으로 만든다"""
     t = texts()["a1r"]
@@ -184,9 +184,9 @@ def small_group_topics(delegates: List[Respondent], items: Dict[str, str], item_
             members = by_group[group]
             if len(members) > len(t["names"]):
                 raise ValueError(f"group {group} has {len(members)} members; add names in cases.yaml")
-            # 발언 수를 비우면 1인당 3개 (입장 표명 + 응답 + 종결)
+            # 발언 수를 비우면 1인당 5개 (입장 표명 1 + 상호작용 3 + 종결 1, 5명 집단의 25발언과 같은 비율)
             topics.append(_topic(f"{item_id}-group{group}", item_id, items[item_id], members, t, briefing,
-                                 max_statements or 3 * len(members), rng))
+                                 max_statements or 5 * len(members), rng))
     return topics
 
 

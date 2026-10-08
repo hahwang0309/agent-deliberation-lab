@@ -877,8 +877,7 @@ SCRIPTED = {"mode": "baseline", "mechanisms": {"closing_round": False},
 
 
 @pytest.mark.parametrize("bad", [
-    {"turn_order": ["A"]},                                                      # stateful에는 고정 순서 없음
-    {"participants": {"A": {"script": ["x"]}}},                                 # stateful에는 정해진 발언 없음
+    {"mode": "survey_only", "turn_order": ["A"]},                               # 토론 없는 조건에는 발언 순서 없음
     {"mode": "baseline", "participants": {"A": {"script": [""]}}},              # 빈 줄
     {"mode": "baseline", "participants": {"A": {"script": ["x"], "seed": {"q1": 3}}}},  # 공모자에게 초기 응답
 ])
@@ -1057,3 +1056,17 @@ def test_seed_placement_memory_puts_seed_in_conversation_not_system_prompt():
     msgs = asyncio.run(a._prepare_response("Your turn.", []))
     assert [type(m).__name__ for m in msgs] == ["SystemMessage", "HumanMessage", "AIMessage", "HumanMessage"]
     assert engine.agents[1].seed_memory == []
+
+
+
+@pytest.mark.asyncio
+async def test_stateful_fixed_order_with_scripts_and_seed_sets_engine_stance():
+    exp = ExperimentConfig(mode="stateful", mechanisms={"closing_round": False}, turn_order=["T", "C1", "C2", "T"],
+                           participants={"C1": {"script": ["Arg one."]}, "C2": {"script": ["Arg two."]},
+                                         "T": {"seed": {"q1": 6}}})
+    engine = create_discussion(three_specs(), bundle=FakeBundle(), experiment=exp, survey=SurveyConfig(**SURVEY),
+                               max_statements=4)
+    assert engine.debate.participants["T"].x0 == round(2 * (6 - 1) / 6 - 1, 3)  # 심은 6/7 → +0.667
+    said = [(e.speaker, e.action) for e in await run(engine) if e.kind == "utterance" and e.speaker_type == "ai"]
+    assert [s for s, _ in said] == ["T", "C1", "C2", "T"]
+    assert said[0][1] == "position" and said[-1][1] != "reply"  # 상태 기반 발화 행위

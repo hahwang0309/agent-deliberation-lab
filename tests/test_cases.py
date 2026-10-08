@@ -157,13 +157,14 @@ def test_argq_matched_strong_weak_sets_and_support_scripts():
              "stance": stance} for topic in argq.texts()["argq"]["topics"] for stance in (1, -1) for i in range(40)]
     topics, conditions = argq.topics_and_conditions(rows, seed=2)
     assert len(topics) == 16 and [c["label"] for c in conditions] == [
-        "strong-minority", "strong-majority", "weak-minority", "weak-majority", "C-reanswer"]
+        f"{q}-{s}-{m}" for q in ("strong", "weak") for s in ("minority", "majority") for m in ("baseline", "stateful")
+    ] + ["C-reanswer"]
     t = topics[0]
     strong, weak = t["meta"]["arguments"]["strong"], t["meta"]["arguments"]["weak"]
     ts, tw = sum(a["tokens"] for a in strong), sum(a["tokens"] for a in weak)
     assert abs(ts - tw) <= 0.1 * min(ts, tw) and min(a["wa"] for a in strong) > max(a["wa"] for a in weak)
-    majority = t["by_condition"]["strong-majority"]["participants"]
-    minority = t["by_condition"]["strong-minority"]["participants"]
+    majority = t["by_condition"]["strong-majority-stateful"]["participants"]
+    minority = t["by_condition"]["strong-minority-baseline"]["participants"]
     assert [majority[n]["script"][0] for n in ("Riley", "Sam", "Tess")] == [a["argument"] for a in strong[:3]]
     assert minority["Riley"]["script"][0] == "\n".join(a["argument"] for a in strong[:3])
     assert minority["Sam"]["script"] == minority["Tess"]["script"] == ["I don't have anything to add on this point yet."] * 2
@@ -196,11 +197,11 @@ async def test_argq_case_runs_end_to_end_with_scripted_confederates(monkeypatch)
     topics, conditions = argq.topics_and_conditions(rows, seed=1)
     plan = ExperimentPlan(**plan_dict("argq-e2e", topics[:1], conditions))
     result = await run_batch(plan, on_progress=lambda _: None)
-    assert len(result.completed) == 5 and not result.failed
+    assert len(result.completed) == 9 and not result.failed
     done = existing_runs("argq-e2e")
-    did = done[("argq0-pro", "strong-minority", 0)]["id"]
+    did = done[("argq0-pro", "strong-minority-stateful", 0)]["id"]
     speakers = [m["speaker"] for m in persistence.list_messages_after(did) if m["speaker_type"] == "ai"]
-    assert speakers == ["Riley", "Sam", "Tess", "Riley", "Sam", "Tess"]  # 표적은 듣기만 함
+    assert speakers == ["Jordan", "Riley", "Sam", "Tess", "Riley", "Sam", "Tess", "Jordan"]  # 표적은 처음과 끝
     assert {r["participant"] for r in persistence.list_survey(did)} == {"Jordan"}
     alone = done[("argq0-pro", "C-reanswer", 0)]["id"]  # 공모자는 말하지 않고 설문에서도 빠짐
     assert not persistence.list_messages_after(alone)
@@ -309,14 +310,15 @@ def test_argq_two_rounds_reanswer_and_positive_control():
              "stance": stance} for topic in argq.texts()["argq"]["topics"] for stance in (1, -1) for i in range(60)]
     topics, conditions = argq.topics_and_conditions(rows, seed=2, positive_control=True)
     labels = [c["label"] for c in conditions]
-    assert labels[-2:] == ["C-reanswer", "positive-control"] and conditions[-1]["use_seeds"] is False
+    assert labels[-3:] == ["C-reanswer", "positive-control-baseline", "positive-control-stateful"]
+    assert conditions[-1]["use_seeds"] is False
     t = topics[0]
-    assert t["max_statements"] == 6 and t["survey"]["scale"] == 100 and t["seeds"]["Jordan"]["stance"] == 65
+    assert t["max_statements"] == 8 and t["survey"]["scale"] == 100 and t["seeds"]["Jordan"]["stance"] == 65
     strong = [a["argument"] for a in t["meta"]["arguments"]["strong"]]
-    maj = t["by_condition"]["strong-majority"]["participants"]
+    maj = t["by_condition"]["strong-majority-baseline"]["participants"]
     assert [maj[n]["script"] for n in ("Riley", "Sam", "Tess")] == [[strong[0], strong[3]], [strong[1], strong[4]],
                                                                    [strong[2], strong[5]]]
-    assert t["by_condition"]["strong-minority"]["participants"]["Riley"]["script"] == ["\n".join(strong[:3]),
+    assert t["by_condition"]["strong-minority-stateful"]["participants"]["Riley"]["script"] == ["\n".join(strong[:3]),
                                                                                        "\n".join(strong[3:])]
     assert not validate(plan_dict("q", topics[:2], conditions))
 

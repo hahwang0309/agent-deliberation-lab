@@ -109,7 +109,7 @@ def _topic(key: str, cards: List[str], correct: List[str], question: str, setup:
     }
 
 
-def replica_topics(groups: List[Group], size: int = 3, max_statements: int = 9) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+def replica_topics(groups: List[Group], size: int = 3, max_statements: int = 15) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """원 과제 복제 주제. (주제 목록, 제외 사유별 집단 수)"""
     t = texts()["wason"]
     topics, excluded = [], Counter()
@@ -131,7 +131,7 @@ def replica_topics(groups: List[Group], size: int = 3, max_statements: int = 9) 
 
 
 def variant_topics(n: int, distribution: Counter, seed: int, size: int = 3,
-                   max_statements: int = 9) -> List[Dict[str, Any]]:
+                   max_statements: int = 15) -> List[Dict[str, Any]]:
     """같은 논리 구조의 새 변형 n개. 면 이름은 cases.yaml의 차원 2개에서 무작위로 고른다"""
     t = texts()["wason"]
     rng = random.Random(seed)

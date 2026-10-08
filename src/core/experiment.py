@@ -125,11 +125,10 @@ class ExperimentConfig(_Strict):
     @model_validator(mode="after")
     def check_baseline_only(self):
         scripted = any(c.script for c in self.participants.values())
-        if self.turn_order and self.mode != "baseline":
-            raise ValueError("turn_order requires mode baseline")
+        # 고정 순서와 대본은 두 토론 모드 모두에서 쓸 수 있다 (상태 기반에서는 발화 행위와 안내가 상태에 따라 붙음).
         # survey_only에서는 대본 참가자가 말하지 않고 설문에서만 빠진다 (공모자가 있는 설계의 '토론 없이 다시 답함' 조건)
-        if scripted and self.mode not in ("baseline", "survey_only"):
-            raise ValueError("script requires mode baseline or survey_only")
+        if self.turn_order and self.mode == "survey_only":
+            raise ValueError("turn_order requires a discussion mode (baseline or stateful)")
         return self
 
 
