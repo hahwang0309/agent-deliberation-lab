@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 warnings.filterwarnings("ignore")
 
-ALPHA = 0.05
+ALPHA = 0.05  # --alpha로 바꾼다 (Holm 보정의 보수적 하한: 가족 검정 수 k에 대해 0.05/k)
 SCENARIOS = (0.5, 1.0, 2.0)
 
 
@@ -392,7 +392,7 @@ def h2h5(args):
             if args.target == "h2":
                 k = kappa_for(1.5, blocks, scen)
                 null = [fm.fr_pair(blocks, scen, [0.0])[0] for _ in range(args.sims)]
-                lo_c, hi_c = np.percentile(null, [2.5, 97.5])
+                lo_c, hi_c = np.percentile(null, [ALPHA / 2 * 100, 100 - ALPHA / 2 * 100])
                 alt = [fm.fr_pair(blocks, scen, [k])[0] for _ in range(args.sims)]
                 power = float(np.mean([(v < lo_c) or (v > hi_c) for v in alt]))
                 rows.append({"hypothesis": "H2", "ai_variance_x_human": scen, "items": len(items),
@@ -415,11 +415,11 @@ def h2h5(args):
                     a["sim"], b["sim"] = fm.gen(a, "blk", scen, kb_), fm.gen(b, "blk", scen, ks_)
                     return fm.dist(b, human, "sim") - fm.dist(a, human, "sim")
                 null = [delta(kb, kb) for _ in range(args.sims)]
-                crit = np.percentile(null, 2.5)
+                crit = np.percentile(null, ALPHA / 2 * 100)
                 power = float(np.mean([delta(kb, ks) < crit for _ in range(args.sims)]))
                 rows.append({"hypothesis": "H5", "ai_variance_x_human": scen, "items": len(items),
                              "groups_per_item": blocks, "kappa_base": round(kb, 3), "kappa_state": round(ks, 3),
-                             "null_2.5%": round(crit, 3), "power": power})
+                             "alpha": ALPHA, "null_crit": round(crit, 3), "power": power})
             print(rows[-1], flush=True)
     return rows
 
@@ -584,8 +584,11 @@ def main(argv=None) -> int:
                                                           str(ROOT / "data/pilot8/pilot8-gemini.db")])
     parser.add_argument("--scenarios", type=float, nargs="+", default=[0.5, 1.0], help="H2·H5: AI 집단 분산 / 인간")
     parser.add_argument("--calib", type=int, default=8, help="H2·H5: κ 보정 격자점당 반복")
+    parser.add_argument("--alpha", type=float, default=0.05, help="유의수준 (Holm 보수적 하한: 0.05/가족 검정 수)")
     parser.add_argument("--out", help="결과 CSV")
     args = parser.parse_args(argv)
+    global ALPHA
+    ALPHA = args.alpha
     if args.hypothesis in ("h2", "h5"):
         args.target = args.hypothesis
     rows = {"h1": h1, "h3": h3, "h2b": h2b, "h2": h2h5, "h5": h2h5,
