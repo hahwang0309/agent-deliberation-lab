@@ -47,3 +47,11 @@ def test_persuasion_weights_come_from_config():
                                                    * (1 - base.receptive_weight))
     assert persuasion(full, DynamicsParams.from_settings(get_config(), value_match_weight=0.0, credibility_weight=0.0,
                                                          receptive_weight=0.0)) == pytest.approx(1.0)
+
+
+def test_fixed_sampling_applies_to_any_provider_and_is_recorded_as_none():
+    from src.models.personas import LLMProvider
+    from src.utils.llm_provider import LLMFactory
+    assert LLMFactory.effective_temperature(LLMProvider.GEMINI, "gemini-3.5-flash-lite", 0.7) is None
+    assert LLMFactory.effective_temperature(LLMProvider.CLAUDE, "claude-sonnet-5-5", 0.0) is None
+    assert LLMFactory.effective_temperature(LLMProvider.MISTRAL, "mistral-small-2603", 0.7) == 0.7

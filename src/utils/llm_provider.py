@@ -39,7 +39,7 @@ class LLMFactory:
     def supports_temperature(cls, provider: Optional[LLMProvider], model: Optional[str]) -> bool:
         provider = provider or cls.default_provider()
         model = model or cls._get_default_model(provider) or ""
-        return not (provider == LLMProvider.CLAUDE and cls.fixed_sampling(model))
+        return not cls.fixed_sampling(model)
 
     @classmethod
     def effective_temperature(cls, provider: Optional[LLMProvider], model: Optional[str],
@@ -75,7 +75,7 @@ class LLMFactory:
                 raise ValueError("OpenAI API key is required")
             return ChatOpenAI(
                 model=model,
-                temperature=temperature,
+                temperature=temperature if cls.supports_temperature(provider, model) else None,
                 api_key=api_key,
                 base_url=base_url,
                 max_tokens=max_tokens,
@@ -91,7 +91,7 @@ class LLMFactory:
                 raise ValueError("Google API key is required")
             return ChatGoogleGenerativeAI(
                 model=model,
-                temperature=temperature,
+                temperature=temperature if cls.supports_temperature(provider, model) else None,
                 google_api_key=api_key,
                 max_output_tokens=max_tokens,
                 timeout=timeout,
@@ -119,7 +119,7 @@ class LLMFactory:
                 raise ValueError("Mistral API key is required")
             return ChatMistralAI(
                 model=model,
-                temperature=temperature,
+                temperature=temperature if cls.supports_temperature(provider, model) else None,
                 mistral_api_key=api_key,
                 max_tokens=max_tokens,
                 timeout=int(timeout),
@@ -190,7 +190,7 @@ def structured_output(llm: BaseChatModel, schema):
     (실측: Sonnet 5.5·Haiku 4.5 모두 json_schema 동작, 기존 검증된 모델은 기존 방식 유지).
     결과가 없으면(None) 조용히 넘기지 않고 EmptyStructuredOutput을 낸다"""
     model = getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
-    if isinstance(model, str) and LLMFactory.fixed_sampling(model):
+    if isinstance(model, str) and model.startswith(tuple(config_loader.get_llm_config().json_schema_prefixes)):
         runnable = llm.with_structured_output(schema, method="json_schema")
     else:
         runnable = llm.with_structured_output(schema)

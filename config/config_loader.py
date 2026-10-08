@@ -27,6 +27,7 @@ class LLMConfig:
     default_provider: str
     default_models: Dict[str, str]
     fixed_sampling_prefixes: List[str]
+    json_schema_prefixes: List[str]
     temperature: float
     task_temperatures: Dict[str, float]
     max_tokens: int

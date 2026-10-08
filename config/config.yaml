@@ -16,9 +16,12 @@ llm:
     mistral: "mistral-small-2603"         # Mistral Small (2026-03)
     openai: "gpt-6-luna"                  # GPT-6 Luna (2026-10 기준 OpenAI 최소 범용 모델, 날짜 고정 ID 없음; 미실측)
 
-  # temperature를 기본값 외로 받지 않고 적응형 사고가 기본인 모델 (이름 접두어).
-  # 이 모델은 temperature 없이 호출하고(실행 기록에는 null), 구조화 출력은 json_schema 방식을 쓴다
-  fixed_sampling_prefixes: ["claude-fable-5", "claude-sonnet-5-5"]
+  # temperature를 받지 않거나 무시하는 모델 (이름 접두어, 모든 프로바이더).
+  # 이 모델은 temperature 없이 호출하고 실행 기록에는 null(모델 기본값)로 남긴다.
+  # gemini-3.5-flash-lite: 라이브러리가 "fixed sampling defaults; temperature will be ignored" 경고 (2026-10 확인)
+  fixed_sampling_prefixes: ["claude-fable-5", "claude-sonnet-5-5", "gemini-3.5-flash-lite"]
+  # 구조화 출력을 강제 도구 호출 대신 json_schema 방식으로 해야 하는 모델 (적응형 사고가 기본인 Claude)
+  json_schema_prefixes: ["claude-fable-5", "claude-sonnet-5-5"]
 
   # temperature를 지정하지 않은 호출의 기본값
   temperature: 0.7
