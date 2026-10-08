@@ -8,11 +8,13 @@ llm:
   default_provider: "claude"
 
   # 프로바이더별 기본 모델 (모델을 지정하지 않은 모든 호출: 참가자, 모더레이터, 분석, 보고서, 페르소나 생성, RAG)
+  # 모델 간 비교가 가능하도록 같은 등급(각 회사의 가장 작은 범용 모델)으로 맞춘다. 바꿀 때도 4개를 같은 등급으로 고른다.
+  # 가능하면 날짜가 박힌 고정 ID를 쓴다 (별칭 *-latest는 가리키는 모델이 바뀌어 재현이 어려움).
   default_models:
-    openai: "gpt-4"
-    gemini: "gemini-3.5-flash-lite"
-    claude: "claude-haiku-4-5-20251001"
-    mistral: "mistral-large-latest"
+    claude: "claude-haiku-4-5-20251001"   # Claude Haiku 4.5 (2025-10)
+    gemini: "gemini-3.5-flash-lite"       # Gemini 3.5 Flash-Lite (2026-07, Google은 날짜 없는 ID만 제공)
+    mistral: "mistral-small-2603"         # Mistral Small (2026-03)
+    openai: "gpt-6-luna"                  # GPT-6 Luna (2026-10 기준 OpenAI 최소 범용 모델, 날짜 고정 ID 없음; 미실측)
 
   # temperature를 기본값 외로 받지 않고 적응형 사고가 기본인 모델 (이름 접두어).
   # 이 모델은 temperature 없이 호출하고(실행 기록에는 null), 구조화 출력은 json_schema 방식을 쓴다

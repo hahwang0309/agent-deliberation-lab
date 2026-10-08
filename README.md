@@ -12,7 +12,7 @@
 
 ## Quick Start
 
-요구사항: Python 3.12, Anthropic API 키 (기본 모델 Claude Haiku 4.5)
+요구사항: Python 3.12, Anthropic API 키 (기본 provider Claude, 모델 Haiku 4.5. 다른 provider는 [모델 설정](#모델-설정))
 
 ```bash
 python3 -m venv .venv
@@ -34,6 +34,22 @@ ADMIN_INITIAL_PASSWORD=첫-로그인용-임시-비밀번호
 ```
 
 http://localhost:8000 에 접속해 `ADMIN_EMAIL`과 임시 비밀번호로 로그인하면 비밀번호를 바꾼 뒤 바로 사용할 수 있습니다. Docker 실행은 [docs/deployment.md](docs/deployment.md)를 참고하세요.
+
+## 모델 설정
+
+모델은 `config/config.yaml`의 `llm.default_models` 한 곳에서만 정합니다(Claude, Gemini, Mistral, OpenAI 각 1개). 실험 계획과 페르소나에는 프로바이더만 적고, 모델은 이 설정을 따르게 하는 것을 권장합니다.
+
+**모델을 바꿀 때는 4개를 서로 비교 가능한 같은 등급으로 고르세요.** 한 모델만 상위·하위 등급이면 모델 간 결과 차이가 토론 방식 때문인지 모델 능력 때문인지 구분할 수 없습니다. 기본 설정은 각 회사의 가장 작은 범용 모델입니다.
+
+| 프로바이더 | 기본 모델 | 키 |
+|---|---|---|
+| Claude | `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
+| Gemini | `gemini-3.5-flash-lite` | `GOOGLE_API_KEY` |
+| Mistral | `mistral-small-2603` | `MISTRAL_API_KEY` |
+| OpenAI | `gpt-6-luna` | `OPENAI_API_KEY` |
+
+- 가능하면 날짜가 박힌 고정 ID를 쓰세요. `*-latest` 같은 별칭은 가리키는 모델이 바뀌어 결과를 재현하기 어렵습니다.
+- 같은 등급이어도 실제 능력은 다를 수 있으므로, 연구에 쓸 때는 같은 과제로 모델별 기초 성능을 먼저 재 보세요.
 
 ## 사용 예
 
