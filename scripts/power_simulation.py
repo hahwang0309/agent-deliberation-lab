@@ -36,10 +36,10 @@ def expit(x):
 # ---------------- H1: truth wins의 인간·AI 차이 (1-A) ----------------
 
 def human_wason_groups():
-    """DeliData 3명 집단: 초기 정답자 수 k(0/1/2+)와 토론 후 개인 정답"""
+    """DeliData 집단(2~6명, 복제 대상과 같음): 초기 정답자 수 k(0/1/2+)와 토론 후 개인 정답"""
     from src.cases import wason
     groups = [g for g in wason.load_delidata(str(ROOT / "data/raw/delidata"))
-              if len(g.solo) == 3 and all(v is not None for v in g.solo.values())]
+              if len(g.solo) >= 2 and all(v is not None for v in g.solo.values())]
     out = []
     for i, g in enumerate(groups):
         corr = set(wason.correct_cards(g.cards))
@@ -51,7 +51,7 @@ def human_wason_groups():
 def fit_human_h1(groups, rng, grid=np.linspace(0.5, 6.0, 23)):
     """집단 무작위 절편 로지스틱: 개인 정답률과 '전원 정답 또는 전원 오답' 비율을 맞추는 (a_k, s)"""
     obs_rate = {k: np.mean([y for _, kk, ys in groups if kk == k for y in ys]) for k in (0, 1, 2)}
-    obs_aon = np.mean([sum(ys) in (0, 3) for _, _, ys in groups])
+    obs_aon = np.mean([sum(ys) in (0, len(ys)) for _, _, ys in groups])
     best = None
     for s in grid:
         a = {}
@@ -63,10 +63,10 @@ def fit_human_h1(groups, rng, grid=np.linspace(0.5, 6.0, 23)):
                 lo, hi = (mid, hi) if expit(mid + z).mean() < obs_rate[k] else (lo, mid)
             a[k] = (lo + hi) / 2
         sim = []
-        for _, k, _ in groups:
+        for _, k, ys_obs in groups:
             p = expit(a[k] + rng.normal(0, s))
-            ys = rng.random(3) < p
-            sim.append(ys.sum() in (0, 3))
+            ys = rng.random(len(ys_obs)) < p
+            sim.append(ys.sum() in (0, len(ys_obs)))
         err = abs(np.mean(sim) - obs_aon)
         if best is None or err < best[0]:
             best = (err, s, a)
@@ -111,13 +111,14 @@ def h1(args):
             hits = 0
             for _ in range(args.sims):
                 data = []
-                for b, k, _ in groups:
+                for b, k, ys_obs in groups:
+                    n = len(ys_obs)
                     zh = rng.normal(0, s_h)
-                    data += [(b, k, 0, int(rng.random() < expit(a_h[k] + zh))) for _ in range(3)]
+                    data += [(b, k, 0, int(rng.random() < expit(a_h[k] + zh))) for _ in range(n)]
                     v = rng.normal(0, s_ai * np.sqrt(0.5))  # AI 블록 효과와 실행 효과를 반씩
                     for r in range(reps):
                         w = rng.normal(0, s_ai * np.sqrt(0.5))
-                        data += [(b, k, 1, int(rng.random() < expit(a_ai[k] + v + w))) for _ in range(3)]
+                        data += [(b, k, 1, int(rng.random() < expit(a_ai[k] + v + w))) for _ in range(n)]
                 df = pd.DataFrame(data, columns=["block", "k", "ai", "y"])
                 df["k"] = df["k"].astype("category")
                 # 근사: 로지스틱 혼합 모형 대신 블록 군집 GEE(교환 상관). 검정 대상은 k(1 vs 0) × agent 상호작용
@@ -286,125 +287,127 @@ def _w(a, b):
     return wasserstein_distance(a, b) / 10 if len(a) and len(b) else np.nan
 
 
-def h2h5(args):
-    """FR = Σw·W(AI, 인간) / Σw·E[W(인간 반분)], 반분 거리는 AI 셀 사례 수에 맞춘 부표본 (분석 계획 4-2).
+class FidelityModel:
+    """충실도 비율 FR (재설계, 2026-10-08).
 
-    AI 생성: 같은 셀(문항 × 정당 × 사전 구간) 인간의 사전→사후 이동을 뽑아 인간과 같은 전이를 만든 뒤,
-    문항의 인간 사후 평균 쪽으로 κ만큼 끌어당긴다(과잉 수렴: 분석 계획의 FR 가정 근거가 DEBATE의 수렴 차이).
-    κ는 목표 FR(H2 1.5, H5 기준선 1.5 / 상태 기반 1.3)에 맞춘다.
-    검정: 문항 안에서 AI 집단(블록) 단위 부트스트랩. H5는 두 조건이 같은 페르소나를 공유(복제)해 짝지어 재표집."""
-    from scipy.stats import wasserstein_distance
+    - 값: 사후 점수 − 문항의 인간 사후 평균 (문항 효과 제거)
+    - 셀: 정당 × 사전 구간을 문항에 걸쳐 합침 (문항 × 정당 × 구간 셀은 AI 사례가 2~3개라 표본 잡음이 지배)
+    - 분자: AI 표본과 인간 반쪽 B의 셀별 Wasserstein 거리, 인간 빈도 가중
+    - 분모: 인간 반쪽 A에서 AI와 같은 구조(문항마다 집단 수 × 민주2·공화2·무당1)로 비복원 추출한 유사 AI와 반쪽 B의 거리
+    - 반분은 소집단 단위, 여러 번 반복해 평균. 귀무(AI = 인간 생성 과정)에서 FR ≈ 1 (시뮬레이션으로 확인)
+    시뮬레이션: 인간 숙의 참가자 자료로 생성 모형(문항·정당·사전 + 소집단 효과)을 적합해 인간·AI를 함께 생성.
+    AI는 문항 인간 평균 쪽으로 κ만큼 끌어당긴다(과잉 수렴, FR 가정의 근거가 DEBATE의 수렴 차이)."""
+    MIX = (("1", 2), ("2", 2), ("3", 1))
+
+    def __init__(self, items, rng):
+        import statsmodels.formula.api as smf
+        self.rng = rng
+        df = a1r_delegates(items)
+        df["ig"] = df["item"] + "_" + df["group"]
+        m = smf.mixedlm("post ~ pre * C(item) + C(party)", df, groups="ig").fit()
+        self.tau, self.sig = float(np.sqrt(m.cov_re.iloc[0, 0])), float(np.sqrt(m.scale))
+        df["mu"] = m.predict(df)
+        self.df = df
+        self.center = df.groupby("item")["post"].mean().to_dict()
+
+    def gen(self, frame, groupcol, scen=1.0, kappa=0.0):
+        g = {k: self.rng.normal(0, self.tau * np.sqrt(scen)) for k in frame[groupcol].unique()}
+        y = frame["mu"].to_numpy() + frame[groupcol].map(g).to_numpy() + self.rng.normal(0, self.sig, len(frame))
+        y = (1 - kappa) * y + kappa * frame["item"].map(self.center).to_numpy()
+        return np.clip(np.round(y), 0, 10)
+
+    def blocks(self, frame, n_blocks, replace):
+        out = []
+        for q, fq in frame.groupby("item"):
+            pools = {p: fq[fq["party"] == p] for p, _ in self.MIX}
+            used = set()
+            for b in range(n_blocks):
+                for party, n in self.MIX:
+                    pool = pools[party] if replace else pools[party][~pools[party].index.isin(used)]
+                    if len(pool) < n:
+                        return None
+                    pick = pool.sample(n, random_state=int(self.rng.integers(1e9)))
+                    used |= set(pick.index)
+                    out.append(pick.assign(blk=f"{q}_{b}"))
+        return pd.concat(out)
+
+    def dist(self, sample, ref, col):
+        from scipy.stats import wasserstein_distance
+        rv = ref[col] - ref["item"].map(self.center)
+        sv = sample[col] - sample["item"].map(self.center)
+        rc = {c: rv[g.index].to_numpy() for c, g in ref.groupby(["party", "bin"])}
+        num = wsum = 0.0
+        for c, g in sample.groupby(["party", "bin"]):
+            if c in rc:
+                w = len(rc[c])
+                num += w * wasserstein_distance(sv[g.index].to_numpy(), rc[c])
+                wsum += w
+        return num / wsum
+
+    def fr_pair(self, n_blocks, scen, kappas, nsplit=4):
+        """같은 인간 자료·반분·AI 페르소나에서 κ별 FR (H5는 두 조건이 같은 집단을 공유)"""
+        human = self.df.copy()
+        human["sim"] = self.gen(human, "ig")
+        personas = self.blocks(self.df, n_blocks, True)
+        ais = []
+        for k in kappas:
+            a = personas.copy()
+            a["sim"] = self.gen(a, "blk", scen, k)
+            ais.append(a)
+        groups = human["group"].unique()
+        nums, den = [[] for _ in kappas], []
+        for _ in range(nsplit):
+            side = dict(zip(groups, self.rng.random(len(groups)) < 0.5))
+            mask = human["group"].map(side)
+            a_half, b_half = human[mask], human[~mask]
+            pseudo = self.blocks(a_half, n_blocks, False)
+            if pseudo is None:
+                continue
+            den.append(self.dist(pseudo, b_half, "sim"))
+            for i, a in enumerate(ais):
+                nums[i].append(self.dist(a, b_half, "sim"))
+        return [np.mean(n) / np.mean(den) for n in nums]
+
+
+def h2h5(args):
+    """H2: FR = 1.5 (분석 계획 7절). H5: 기준선 FR 1.5 → 상태 기반 1.3 (ΔFR = −0.2, 같은 집단 복제).
+    검정: 귀무(κ 같음)에서 시뮬레이션한 분포의 임계값과 비교 (H2 양측 0.05, H5 지지는 ΔFR이 귀무 2.5% 분위수 미만)"""
     from src.cases import texts
     rng = np.random.default_rng(args.seed)
     t = texts()["a1r"]
     items = {"h2": t["development"] + t["locked"], "h5": t["locked"]}[args.target]
-    df = a1r_delegates(items)
-    cells = {c: g for c, g in df.groupby(["item", "party", "bin"])}
-    human = {c: g["post"].to_numpy() for c, g in cells.items()}
-    weights = {c: len(g) / len(df) for c, g in cells.items()}
-    shift = {c: (g["post"] - g["pre"]).to_numpy() for c, g in cells.items()}
-    center = df.groupby("item")["post"].mean().to_dict()
-    groups = df["group"].unique()
+    fm = FidelityModel(items, rng)
+    print(f"fitted human model: group SD {fm.tau:.2f}, residual SD {fm.sig:.2f}", flush=True)
 
-    # 분모 캐시: 셀별로 AI 사례 수 n일 때 인간 반분 거리의 기대값 (소집단 단위 반분 30회)
-    splits = [dict(zip(groups, rng.random(len(groups)) < 0.5)) for _ in range(30)]
-    den_cache = {}
-
-    def den(c, n):
-        key = (c, n)
-        if key not in den_cache:
-            g = cells[c]
-            vals = []
-            for side in splits:
-                m = g["group"].map(side).to_numpy()
-                h1, h2 = g["post"].to_numpy()[m], g["post"].to_numpy()[~m]
-                if len(h1) and len(h2):
-                    vals.append(wasserstein_distance(rng.choice(h1, min(n, len(h1)), replace=False), h2) / 10)
-            den_cache[key] = float(np.mean(vals)) if vals else np.nan
-        return den_cache[key]
-
-    def fr(records, kappa):
-        """records: [(cell, pre, draw)] → FR"""
-        by = {}
-        for c, pre, d in records:
-            post = (1 - kappa) * (pre + d) + kappa * center[c[0]]
-            by.setdefault(c, []).append(round(float(np.clip(post, 0, 10))))
-        num = dn = 0.0
-        for c, v in by.items():
-            w, d = weights[c], den(c, len(v))
-            if np.isnan(d):
-                continue
-            num += w * wasserstein_distance(v, human[c]) / 10
-            dn += w * d
-        return num / dn
-
-    pools = {(q, p): g for (q, p), g in df.groupby(["item", "party"])}
-
-    def draw(blocks):
-        """페르소나 표본: 문항마다 blocks개 집단 × (민주 2, 공화 2, 무당층 1). 블록별 레코드 목록"""
-        out = []
-        for q in items:
-            for b in range(blocks):
-                recs = []
-                for party, n in (("1", 2), ("2", 2), ("3", 1)):
-                    g = pools[(q, party)].sample(n, random_state=int(rng.integers(1e9)))
-                    for _, r in g.iterrows():
-                        c = (q, party, r["bin"])
-                        recs.append((c, r["pre"]))
-                out.append((q, recs))
-        return out
-
-    def responses(blocks_drawn):
-        return [(q, [(c, pre, float(rng.choice(shift[c]))) for c, pre in recs]) for q, recs in blocks_drawn]
-
-    def flat(resp):
-        return [x for _, recs in resp for x in recs]
-
-    def kappa_for(target, blocks):
-        lo, hi = 0.0, 1.0
-        for _ in range(14):
-            mid = (lo + hi) / 2
-            val = np.mean([fr(flat(responses(draw(blocks))), mid) for _ in range(6)])
-            lo, hi = (mid, hi) if val < target else (lo, mid)
-        return (lo + hi) / 2
-
-    def boot_idx(resp):
-        """문항 안에서 블록 재표집 인덱스"""
-        by_item = {}
-        for i, (q, _) in enumerate(resp):
-            by_item.setdefault(q, []).append(i)
-        return [j for idx in by_item.values() for j in rng.choice(idx, len(idx))]
+    def kappa_for(target, blocks, scen):
+        """FR(κ) 곡선을 격자에서 평균 내 보간해 목표 FR의 κ를 구한다 (이분 탐색은 표본 잡음에 흔들림)"""
+        grid = np.linspace(0.0, 0.5, 11)
+        curve = [np.mean([fm.fr_pair(blocks, scen, [k])[0] for _ in range(args.calib)]) for k in grid]
+        curve = np.maximum.accumulate(curve)  # 단조 증가로 정리
+        return float(np.interp(target, curve, grid))
 
     rows = []
-    for blocks in args.blocks:
-        if args.target == "h2":
-            k = kappa_for(1.5, blocks)  # 분석 계획 7절: FR = 1.5
-            hits = 0
-            for _ in range(args.sims):
-                resp = responses(draw(blocks))
-                boot = []
-                for _ in range(args.boot):
-                    idx = boot_idx(resp)
-                    boot.append(fr(flat([resp[j] for j in idx]), k))
-                lo_ci, hi_ci = np.nanpercentile(boot, [2.5, 97.5])
-                hits += not (lo_ci <= 1 <= hi_ci)
-            rows.append({"hypothesis": "H2", "items": len(items), "groups_per_item": blocks, "kappa": round(k, 3),
-                         "power": hits / args.sims})
-        else:
-            k_base, k_state = kappa_for(1.5, blocks), kappa_for(1.3, blocks)  # ΔFR = −0.2
-            hits = 0
-            for _ in range(args.sims):
-                personas = draw(blocks)  # 같은 집단을 두 조건에 복제
-                base, state = responses(personas), responses(personas)  # 응답은 조건마다 따로
-                boot = []
-                for _ in range(args.boot):
-                    idx = boot_idx(base)  # 같은 블록을 두 조건에서 함께 재표집
-                    boot.append(fr(flat([state[j] for j in idx]), k_state) - fr(flat([base[j] for j in idx]), k_base))
-                lo_ci, hi_ci = np.nanpercentile(boot, [2.5, 97.5])
-                hits += hi_ci < 0  # H5 지지: ΔFR < 0이고 신뢰구간이 0을 제외
-            rows.append({"hypothesis": "H5", "items": len(items), "groups_per_item": blocks,
-                         "kappa_base": round(k_base, 3), "kappa_state": round(k_state, 3), "power": hits / args.sims})
-        print(rows[-1], flush=True)
+    for scen in args.scenarios:
+        for blocks in args.blocks:
+            if args.target == "h2":
+                k = kappa_for(1.5, blocks, scen)
+                null = [fm.fr_pair(blocks, scen, [0.0])[0] for _ in range(args.sims)]
+                lo_c, hi_c = np.percentile(null, [2.5, 97.5])
+                alt = [fm.fr_pair(blocks, scen, [k])[0] for _ in range(args.sims)]
+                power = float(np.mean([(v < lo_c) or (v > hi_c) for v in alt]))
+                rows.append({"hypothesis": "H2", "ai_variance_x_human": scen, "items": len(items),
+                             "groups_per_item": blocks, "kappa": round(k, 3), "null_95": [round(lo_c, 3), round(hi_c, 3)],
+                             "power": power})
+            else:
+                kb, ks = kappa_for(1.5, blocks, scen), kappa_for(1.3, blocks, scen)
+                null = [np.subtract(*fm.fr_pair(blocks, scen, [kb, kb])[::-1]) for _ in range(args.sims)]
+                crit = np.percentile(null, 2.5)
+                alt = [np.subtract(*fm.fr_pair(blocks, scen, [kb, ks])[::-1]) for _ in range(args.sims)]
+                power = float(np.mean([v < crit for v in alt]))
+                rows.append({"hypothesis": "H5", "ai_variance_x_human": scen, "items": len(items),
+                             "groups_per_item": blocks, "kappa_base": round(kb, 3), "kappa_state": round(ks, 3),
+                             "null_2.5%": round(crit, 3), "power": power})
+            print(rows[-1], flush=True)
     return rows
 
 
@@ -418,7 +421,8 @@ def main(argv=None) -> int:
     parser.add_argument("--blocks", type=int, nargs="+", default=[4, 8, 12], help="H2b: 문항당 집단 수")
     parser.add_argument("--pilot-db", nargs="+", default=[str(ROOT / "data/pilot8/pilot8-claude.db"),
                                                           str(ROOT / "data/pilot8/pilot8-gemini.db")])
-    parser.add_argument("--boot", type=int, default=100, help="H2·H5: 부트스트랩 횟수")
+    parser.add_argument("--scenarios", type=float, nargs="+", default=[0.5, 1.0], help="H2·H5: AI 집단 분산 / 인간")
+    parser.add_argument("--calib", type=int, default=8, help="H2·H5: κ 보정 격자점당 반복")
     parser.add_argument("--out", help="결과 CSV")
     args = parser.parse_args(argv)
     if args.hypothesis in ("h2", "h5"):
