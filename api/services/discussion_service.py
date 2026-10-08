@@ -33,9 +33,10 @@ def _error(status_code: int, code: str, message: str) -> HTTPException:
 class DiscussionService:
 
     @staticmethod
-    def create(db: Session, request: CreateDiscussionRequest, user: User) -> Discussion:
+    def validate_request(request: CreateDiscussionRequest, is_admin: bool) -> None:
+        """생성 요청 검사 (DB 불필요). 문제가 있으면 HTTPException. 사례 생성 스크립트도 이 검사를 쓴다"""
         limits = config_loader.config.limits
-        if (not user.is_admin and not limits.user_expensive_features
+        if (not is_admin and not limits.user_expensive_features
                 and (request.enable_web_search or request.enable_belief_reasoning)):
             raise _error(status.HTTP_403_FORBIDDEN, "FEATURE_RESTRICTED",
                          "웹 검색·신념 추론은 관리자만 켤 수 있습니다.")
@@ -58,7 +59,7 @@ class DiscussionService:
                 raise _error(status.HTTP_400_BAD_REQUEST, "TOO_MANY_PROPOSITIONS",
                              f"참가자 {n}명, 발언 {request.max_statements}개로는 명제를 최대 {allowed}개까지 다룰 수 있습니다.")
         if request.experiment is not None:
-            if not user.is_admin and not limits.user_expensive_features:
+            if not is_admin and not limits.user_expensive_features:
                 # 분석 모델 지정 등으로 비용이 크게 달라질 수 있어 웹 검색과 같은 정책을 따른다
                 raise _error(status.HTTP_403_FORBIDDEN, "FEATURE_RESTRICTED", "실험 조건은 관리자만 지정할 수 있습니다.")
             unknown = (set(request.experiment.participants) | set(request.experiment.turn_order or [])) - set(names)
@@ -74,6 +75,10 @@ class DiscussionService:
             if problems:
                 raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "INVALID_SEED", "; ".join(problems))
 
+
+    @staticmethod
+    def create(db: Session, request: CreateDiscussionRequest, user: User) -> Discussion:
+        DiscussionService.validate_request(request, user.is_admin)
         discussion = Discussion(
             topic=request.topic,
             description=request.description,

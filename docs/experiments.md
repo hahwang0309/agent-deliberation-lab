@@ -37,7 +37,9 @@ API 키와 `SECRET_KEY`는 `.env`에서 읽습니다. `--db`는 필수이며, �
 | `limits.max_total_tokens` | 입력+출력 누적 토큰 상한. 다음 실행이 상한을 넘을 것 같으면 새 실행을 시작하지 않습니다 |
 | `limits.max_cost_usd` + `prices` | 비용 상한. 단가(`input_per_mtok`, `output_per_mtok`)는 사용자가 확인한 값을 넣습니다. 코드에는 단가를 두지 않습니다 |
 | `topics[]` | `key`, `topic`, `language`, `max_statements`, `use_moderator`, `personas`(dict 또는 `persona_templates.yaml`의 템플릿 id), `propositions`(고정 명제), `materials` 또는 `materials_file`(배경 자료, 계획 파일 기준 상대 경로), `survey`(사전·사후 설문), `seeds`(참가자 이름 → 심을 사전 응답 `{문항 id: 점수 또는 보기 목록}`) |
-| `conditions[]` | `label`, `experiment`(실험 조건, 항목은 [configuration.md](configuration.md#실험-조건-토론별)), `use_seeds`(주제의 seeds를 심을지, 기본 true), `use_materials`(주제 자료를 넣을지, 기본 true) |
+| `conditions[]` | `label`, `experiment`(실험 조건, 항목은 [configuration.md](configuration.md#실험-조건-토론별)), `use_seeds`(주제의 seeds를 심을지, 기본 true), `use_materials`(주제 자료를 넣을지, 기본 true), `repetitions`(이 조건만의 반복 수) |
+| `topics[].by_condition` | 조건 label → 이 주제에서만 덧붙일 실험 조건 (예: 조건별 공모자 대본). `participants`는 이름별로 합칩니다 |
+| `topics[].meta` | 분석용 메모 (원자료 식별자 등). 실행에는 쓰지 않습니다 |
 
 **집단 복제(블록):** 주제 1개가 집단 1개입니다. 같은 주제의 페르소나·초기 응답·자료가 모든 조건에 그대로 복제되므로, 조건 간 차이는 조건 설정에서만 생깁니다. 예: `discuss`(토론), `alone`(`mode: survey_only`, 초기 응답을 받은 채 혼자 다시 답함), `prior`(`survey_only` + `use_seeds: false`, 모델의 사전 답).
 
@@ -85,6 +87,24 @@ python scripts/coding_agreement.py --coded coder1.csv --second coder2.csv
 ```
 
 **논거 반복 지표:** `utterances.repeat_score`는 같은 화자의 이전 주장과의 문자 2-gram 유사도(0~1)이고, `discussions.repeat_rate`는 그 값이 0.4 이상인 AI 발언의 비율입니다. 표현을 바꿔 같은 논거를 되풀이하면 잘 잡지 못하는 **대리 지표**입니다(실측에서 바꿔 말한 반복이 0.37~0.55). 사람 코딩(`code_repeats_own_argument`)과 비교해 기준을 보정한 뒤 쓰세요.
+
+## 사례 생성 (연구 1)
+
+`scripts/build_cases.py`가 공개 데이터에서 실험 계획을 만듭니다. 원자료는 `data/raw/`에 두며 저장소에 포함하지 않습니다. 문구(과제, 페르소나, 자료 머리말, 공모자 동의 표현)는 `config/cases.yaml`에 있습니다. 만든 계획은 쓰기 전에 모든 (주제, 조건)을 웹과 같은 생성 검사로 확인하고, 실패하면 파일을 쓰지 않습니다(`--allow-invalid`로 강제).
+
+| 명령 | 원자료 | 만드는 것 |
+|---|---|---|
+| `wason` | `data/raw/delidata/*.tsv` (DeliData, CC-BY 4.0) | 3명 집단 복제: 같은 카드, 인간의 혼자 답을 심음. 조건 A-기준선·A-상태(각 2회), B(혼자 다시 풀기), C(초기 답 없음) |
+| `wason-variants --n 60 --seed S` | 같음 | 같은 논리 구조의 새 변형. 초기 답은 DeliData 혼자 답의 역할 유형 분포에서 뽑음. 조건 A 두 모드 + C |
+| `a1r-briefing` | `data/raw/a1r/briefing.pdf` (`pdftotext` 필요) | 정책안별 자료 상자(찬반 논거)와 영역 배경의 **초안**. 문항 문구와의 유사도를 적으므로 원문과 대조해 고친 뒤 `reviewed: true`로 확정 |
+| `a1r --set development\|locked\|all --seed S --briefing <확정본>` | `data/raw/a1r/{dataset,codebook}.tab` (A1R, CC0) | 문항마다 민주 2·공화 2·무당층 1 층화 집단. 실제 프로필 페르소나, 사전 점수 심기, 0~10 설문. 조건 A-기준선·A-상태·B(자료만)·C(재응답)·D(심지 않음) |
+| `a1r --debranded` | 같음 | `cases.yaml`의 이름 제거 문항(Q5A, Q3A, Q6F): 문안 교체와 자료 치환 |
+| `a1r --small-groups Q5A Q3A` | 같음 | A1R 실제 소집단(GROUP) 전원 복제 |
+| `argq --seed S` | `data/raw/argq/*.csv` (IBM ArgQ 30k, CC-BY 3.0) | 8주제 × 표적 입장 2. 반대 논거 강(WA 상위 25%)·약(하위 25%) 3개씩, 총 토큰 ±10%. 조건 강·약 × 소수(1명이 3개)·다수(3명이 1개씩), 공모자 대본과 고정 순서 |
+
+- `--allow-draft`: 검토 전 자료 상자 초안으로 만들기(파일럿용). 확정본이 아니면 기본으로 거부합니다.
+- 제약: 실제 소집단은 8~16명이라 현재 참가자 상한(`limits.max_personas` 5)과 발언 수 상한(`limits.max_statements` 30)에 걸려 검사를 통과하지 못합니다.
+- DeliData의 혼자 답 일부는 `["N", "/", "A"]`(기록 없음)입니다. 무효로 보고, 그런 참가자가 있는 집단은 복제에서 뺍니다.
 
 ## 주의
 

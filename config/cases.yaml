@@ -1,0 +1,95 @@
+# 연구용 사례 생성 문구 (scripts/build_cases.py, src/cases/)
+# 과제 문구·페르소나·자료 머리말 등 참가자에게 보이는 문장은 모두 여기에 둔다.
+
+# ---------- 연구 1-A: Wason 선택 과제 (DeliData와 같은 문구) ----------
+wason:
+  topic: "Wason selection task: which cards must be turned?"
+  question: 'Which cards should you turn to test the rule: "All cards with vowels on one side have an even number on the other"?'
+  setup: "Four cards are on the table, showing: {cards}. Each card has a letter on one side and a number on the other side."
+  proposition: "Which cards must be turned over to test the rule, and why?"
+  persona:
+    role: "Participant in a group reasoning task"
+    background: "You are solving a logic puzzle together with other participants."
+    communication_style: "Plain and conversational, like a chat with other participants"
+  # 새 변형: 같은 논리 구조(P, not-P, Q, not-Q)에 표면 내용만 바꾼다
+  variant:
+    question: 'Which cards should you turn to test the rule: "If a card has {p} on one side, then it has {q} on the other side"?'
+    setup: "Four cards are on the table, showing: {cards}. Each card has {side_a} on one side and {side_b} on the other side."
+  dimensions:
+    - side: "a shape"
+      values: [{face: circle, phrase: "a circle"}, {face: square, phrase: "a square"}, {face: triangle, phrase: "a triangle"}, {face: star, phrase: "a star"}, {face: hexagon, phrase: "a hexagon"}]
+    - side: "a color"
+      values: [{face: red, phrase: "red"}, {face: blue, phrase: "blue"}, {face: green, phrase: "green"}, {face: yellow, phrase: "yellow"}, {face: purple, phrase: "purple"}]
+    - side: "an animal"
+      values: [{face: cat, phrase: "a cat"}, {face: horse, phrase: "a horse"}, {face: owl, phrase: "an owl"}, {face: fox, phrase: "a fox"}, {face: whale, phrase: "a whale"}]
+    - side: "a city"
+      values: [{face: Oslo, phrase: "Oslo"}, {face: Lima, phrase: "Lima"}, {face: Cairo, phrase: "Cairo"}, {face: Hanoi, phrase: "Hanoi"}, {face: Quito, phrase: "Quito"}]
+    - side: "a fruit"
+      values: [{face: apple, phrase: "an apple"}, {face: mango, phrase: "a mango"}, {face: pear, phrase: "a pear"}, {face: plum, phrase: "a plum"}, {face: lemon, phrase: "a lemon"}]
+    - side: "a weekday"
+      values: [{face: Monday, phrase: "Monday"}, {face: Tuesday, phrase: "Tuesday"}, {face: Thursday, phrase: "Thursday"}, {face: Friday, phrase: "Friday"}, {face: Sunday, phrase: "Sunday"}]
+  variant_names: [Ash, Birch, Cedar, Elm, Fern, Hazel, Juniper, Maple, Oak, Pine, Rowan, Willow]
+
+# ---------- 연구 1-B: America in One Room ----------
+a1r:
+  # 숙의 전 정당 간 격차 2.5점 이상인 30개 (docs/research 설계 6-1)
+  development: [Q5A, Q3A, Q4G, Q6F, Q2I, Q4I, Q2A, Q3D]
+  locked: [Q4H, Q6G, Q4B, Q3B, Q5C, Q2H, Q5H, Q3C, Q2C, Q3H, Q5D, Q5B, Q4F, Q3F, Q4J, Q3E, Q6B, Q6A, Q4D, Q2E, Q3G, Q5F]
+  domains: {"2": Immigration, "3": Environment, "4": Economy, "5": Health, "6": Foreign}
+  survey_text: "Proposal: {proposal}"
+  topic: "America in One Room: {domain} policy"
+  time_instruction: "It is September 2019."
+  materials_header: "Briefing materials (America in One Room, September 2019). Base your judgment only on the briefing materials provided."
+  materials_issue: "Background on {domain}:\n{issue}"
+  materials_box: "Proposal: {proposal}\nArguments for: {arguments_for}\nArguments against: {arguments_against}"
+  persona:
+    role: "Registered voter taking part in a national deliberative poll"
+    background: "{time_instruction} You are a {age} {gender} ({race}), education: {education}. Party identification: {party}. Political ideology: {ideology}."
+    communication_style: "Speaks as an ordinary citizen, from personal experience and values"
+  labels:
+    gender: {"1": man, "2": woman, "0": person}
+    age: {"1": 18-29 year old, "2": 30-44 year old, "3": 45-59 year old, "4": 60 or older}
+    race: {"1": "White, non-Hispanic", "2": "Black, non-Hispanic", "3": "other race, non-Hispanic", "4": Hispanic, "5": "two or more races, non-Hispanic", "6": "Asian, non-Hispanic"}
+    education: {"1": no high school diploma, "2": high school graduate, "3": some college, "4": bachelor's degree or above}
+    party: {"1": Democrat, "2": Republican, "3": Independent}
+    ideology: {"1": extremely liberal, "2": liberal, "3": slightly liberal, "4": "moderate, middle of the road", "5": slightly conservative, "6": conservative, "7": extremely conservative, "8": has not thought much about it}
+  names: [Alex, Blake, Casey, Drew, Emery, Finley, Gray, Harper, Jamie, Kendall, Logan, Morgan, Noel, Parker, Quinn, Reese, Sage, Taylor]
+  # 이름 제거 강건성 (설계 6-2): 정책 고유명사를 지운 문안과 자료 치환. 연구자가 확인한 뒤 쓴다
+  debranded:
+    Q5A:
+      proposal: "The 2010 federal health care law that expanded insurance coverage through regulated marketplaces and Medicaid should be repealed."
+      replace: {"Affordable Care Act": "the 2010 federal health care law", "“Obamacare”": "the 2010 law", "Obamacare": "the 2010 law", "ACA": "the 2010 law"}
+    Q3A:
+      proposal: "The US should commit to the multilateral climate agreement adopted by nearly 200 countries in 2015 to combat climate change."
+      replace: {"Paris Agreement": "2015 multilateral climate agreement", "Paris Climate Agreement": "2015 multilateral climate agreement"}
+    Q6F:
+      proposal: "The US should recommit to a 2015 multilateral agreement that limits a country's nuclear program in exchange for sanctions relief."
+      replace: {"Iran Nuclear Agreement": "2015 multilateral nuclear agreement", "Joint Comprehensive Plan of Action": "2015 multilateral nuclear agreement", "JCPOA": "the agreement", "Iranian": "the country's", "Iran": "the country"}
+
+# ---------- 연구 1-C: 논증의 질 × 사회적 지지 (IBM ArgQ 30k) ----------
+argq:
+  topics:
+    - We should legalize cannabis
+    - We should abolish capital punishment
+    - We should end affirmative action
+    - We should abolish the three-strikes laws
+    - We should legalize prostitution
+    - Payday loans should be banned
+    - We should close Guantanamo Bay detention camp
+    - We should end mandatory retirement
+  scale: 7
+  target_seed: {pro: 5, con: 3}  # 7점 척도의 중간 강도 입장
+  target:
+    name: Jordan
+    role: "Member of the public discussing a policy question"
+    background: "An ordinary citizen with a moderate opinion on this question."
+    communication_style: "Plain and conversational"
+  confederates:
+    names: [Riley, Sam, Tess]
+    role: "Member of the public discussing a policy question"
+    background: "An ordinary citizen."
+    communication_style: "Plain and conversational"
+  # 소수 조건에서 나머지 2명이 하는 내용 없는 동의 표현 (길이 고정)
+  agree_line: "I'm with {target} on this one. I {side} it."
+  side_words: {pro: support, con: oppose}
+  joiner: "\n"  # 소수 조건에서 한 사람이 논거 3개를 말할 때 구분 (논거 원문은 바꾸지 않음)

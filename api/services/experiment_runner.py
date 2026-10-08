@@ -57,6 +57,9 @@ class TopicPlan(_Strict):
     survey: Optional[SurveyConfig] = None
     seeds: Dict[str, Dict[str, SeedValue]] = Field(
         default_factory=dict, description="참가자 이름 → 심은 사전 설문 응답 (조건의 use_seeds가 켜졌을 때 씀)")
+    meta: Dict[str, Any] = Field(default_factory=dict, description="분석용 메모 (원자료 식별자 등, 실행에는 쓰지 않음)")
+    by_condition: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict, description="조건 label → 이 주제에서만 덧붙일 실험 조건 (예: 조건별 대본). participants는 이름별로 합침")
 
 
 class ConditionPlan(_Strict):
@@ -64,6 +67,7 @@ class ConditionPlan(_Strict):
     experiment: Dict[str, Any] = Field(default_factory=dict)
     use_seeds: bool = Field(True, description="주제의 seeds를 참가자 초기 응답으로 심음")
     use_materials: bool = Field(True, description="주제의 배경 자료를 넣음")
+    repetitions: Optional[int] = Field(None, ge=1, le=1000, description="이 조건만의 반복 수 (비우면 계획의 repetitions)")
 
 
 class Limits(_Strict):
@@ -95,6 +99,11 @@ class ExperimentPlan(_Strict):
         for kind, keys in (("topic key", [t.key for t in self.topics]), ("condition label", [c.label for c in self.conditions])):
             if len(set(keys)) != len(keys):
                 raise ValueError(f"duplicate {kind}")
+        labels = {c.label for c in self.conditions}
+        for t in self.topics:
+            unknown = set(t.by_condition) - labels
+            if unknown:
+                raise ValueError(f"topic {t.key}: by_condition has unknown condition labels {sorted(unknown)}")
         return self
 
 
@@ -152,14 +161,18 @@ def _personas(topic: TopicPlan) -> List[PersonaInput]:
 
 def build_request(plan: ExperimentPlan, run: Run) -> CreateDiscussionRequest:
     t, c = run.topic, run.condition
-    experiment = {**c.experiment, "label": c.label, "batch": plan.name,
-                  "topic_key": t.key, "replicate": run.replicate}
+    override = t.by_condition.get(c.label, {})
+    experiment = {**c.experiment, **{k: v for k, v in override.items() if k != "participants"},
+                  "label": c.label, "batch": plan.name, "topic_key": t.key, "replicate": run.replicate}
     if not plan.report:
         experiment.setdefault("report", False)
-    if c.use_seeds and t.seeds:
-        participants = {name: dict(cond) for name, cond in (c.experiment.get("participants") or {}).items()}
+    participants = {name: dict(cond) for name, cond in (c.experiment.get("participants") or {}).items()}
+    for name, cond in (override.get("participants") or {}).items():
+        participants.setdefault(name, {}).update(cond)
+    if c.use_seeds:
         for name, seed in t.seeds.items():
             participants.setdefault(name, {})["seed"] = seed
+    if participants:
         experiment["participants"] = participants
     return CreateDiscussionRequest(
         topic=t.topic, description=t.description, language=t.language, personas=_personas(t),
@@ -173,8 +186,10 @@ def _rough_statements(run: Run) -> int:
 
 
 def plan_runs(plan: ExperimentPlan) -> List[Run]:
-    """반복 → 주제 → 조건 순서 (조건이 시간대에 몰리지 않도록 교차)"""
-    return [Run(t, c, r) for r in range(plan.repetitions) for t in plan.topics for c in plan.conditions]
+    """반복 → 주제 → 조건 순서 (조건이 시간대에 몰리지 않도록 교차). 조건별 반복 수가 있으면 그만큼만"""
+    most = max([plan.repetitions] + [c.repetitions or 0 for c in plan.conditions])
+    return [Run(t, c, r) for r in range(most) for t in plan.topics for c in plan.conditions
+            if r < (c.repetitions or plan.repetitions)]
 
 
 def existing_runs(batch: str) -> Dict[tuple, Dict[str, Any]]:

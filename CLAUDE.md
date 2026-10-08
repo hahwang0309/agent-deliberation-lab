@@ -23,6 +23,7 @@ pytest tests/test_runtime.py::test_stop_cancels_running_discussion   # 단일 �
 # 연구용 배치 실험 (전용 DB 필수, docs/experiments.md)
 python scripts/run_experiment.py config/experiments/example.yaml --db data/experiments.db --dry-run
 python scripts/export_dataset.py --db data/experiments.db --batch <plan name> --out data/<폴더>
+python scripts/build_cases.py wason --out data/cases/wason.yaml   # 연구 1 사례 생성 (원자료 data/raw/, docs/experiments.md)
 ```
 
 DB 스키마는 Alembic으로 관리한다. 앱 시작 시 `init_db()`(`api/database.py`)가 `upgrade head`를 실행하며, Alembic 이력 없는 기존(create_all) DB는 기준 리비전으로 자동 stamp한다. 모델 변경 시:

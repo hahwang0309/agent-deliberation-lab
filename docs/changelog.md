@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 연구 1 사례 생성 (2026-10)
+- `scripts/build_cases.py`와 `src/cases/`: DeliData 복제·새 변형(Wason), A1R 층화 집단·자료 상자 초안·이름 제거·실제 소집단, ArgQ 강·약 논거와 공모자 대본으로 실험 계획을 만듭니다. 문구는 `config/cases.yaml`.
+- 실험 계획: 조건별 `repetitions`, 주제별 `by_condition`(조건별 덧붙임), `meta`(분석용 메모).
+- 토론 생성 검사를 `DiscussionService.validate_request`로 분리해 사례 생성 스크립트도 같은 검사를 씁니다.
+
 ## 보고서 끄기, 실행 기록 보강, OpenAI 호환 서버 (2026-10)
 - 실험 조건 `report: false`와 실험 계획 `report: false`: 끝난 뒤 종합보고서를 만들지 않습니다.
 - 실행 기록에 `llm_params`(max_tokens, structured_max_tokens, top_p = null(미지정), 타임아웃, 재시도, OpenAI 호환 서버 주소)와 참가자별 시스템 프롬프트 해시(`llm.system_prompts`)를 추가했습니다. 해시가 실제 프롬프트와 같도록 언어를 실행 기록 전에 확정합니다.
