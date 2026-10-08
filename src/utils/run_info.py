@@ -5,6 +5,7 @@
 주요 패키지 버전을 모은다. git이 없는 환경(Docker 등)에서는 커밋 정보가 null이다.
 """
 import hashlib
+import os
 import platform
 import subprocess
 from dataclasses import asdict
@@ -41,6 +42,15 @@ def _version(package: str) -> Optional[str]:
         return None
 
 
+def llm_params() -> Dict[str, Any]:
+    """모든 호출에 공통으로 들어가는 생성 파라미터. top_p는 지정하지 않아 프로바이더 기본값(None으로 기록)"""
+    from config.config_loader import config_loader
+    llm = config_loader.get_llm_config()
+    return {"max_tokens": llm.max_tokens, "structured_max_tokens": getattr(llm, "structured_max_tokens", None),
+            "top_p": None, "timeout_seconds": llm.timeout_seconds, "max_retries": llm.max_retries,
+            "openai_base_url": os.getenv("OPENAI_BASE_URL") or None}
+
+
 def collect_run_info(settings: Any, llm_spec: Dict[str, Any], resumed: bool = False) -> Dict[str, Any]:
     status = _git("status", "--porcelain")
     return {
@@ -51,6 +61,7 @@ def collect_run_info(settings: Any, llm_spec: Dict[str, Any], resumed: bool = Fa
         "prompt_hashes": {f: _sha256(ROOT / f) for f in PROMPT_FILES},
         "settings": asdict(settings),
         "llm": llm_spec,
+        "llm_params": llm_params(),
         "python": platform.python_version(),
         "packages": {p: _version(p) for p in PACKAGES if _version(p)},
     }

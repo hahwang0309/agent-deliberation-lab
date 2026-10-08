@@ -929,3 +929,46 @@ async def test_api_rejects_turn_order_with_unknown_names():
         r = await client.post("/api/v1/discussions", json={**BODY, "experiment": {"mode": "baseline",
                                                                                "turn_order": ["Alice", "Zed"]}})
         assert r.status_code == 400 and r.json()["detail"]["error"]["code"] == "UNKNOWN_PARTICIPANT"
+
+
+# ---------- 보고서 끄기, 실행 기록 보강, OpenAI 호환 서버 ----------
+
+@pytest.mark.asyncio
+async def test_report_off_skips_report_and_run_info_has_params_and_prompt_hashes(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    admin = create_user(role="admin")
+    async with LoggedInClient(admin) as client:
+        ids = {}
+        for report in (False, True):
+            r = await client.post("/api/v1/discussions", json={**BODY, "materials": "Brief.",
+                                                             "experiment": {"report": report}})
+            ids[report] = r.json()["id"]
+            assert (await client.post(f"/api/v1/discussions/{ids[report]}/start")).status_code == 202
+            await asyncio.wait_for(registry.get(ids[report]).task, timeout=10)
+        assert (await client.get(f"/api/v1/discussions/{ids[False]}/report")).status_code == 404
+        assert (await client.get(f"/api/v1/discussions/{ids[True]}/report")).status_code == 200
+        detail = (await client.get(f"/api/v1/discussions/{ids[False]}")).json()
+    assert detail["status"] == "completed"
+    info = detail["run_info"][0]
+    assert info["llm_params"]["max_tokens"] == 1500 and info["llm_params"]["top_p"] is None
+    hashes = info["llm"]["system_prompts"]
+    assert set(hashes) == {"Alice", "Bob"} and all(len(h) == 16 for h in hashes.values())
+
+
+def test_plan_level_report_off_and_condition_override():
+    plan = ExperimentPlan(**{**PLAN, "report": False,
+                             "conditions": [{"label": "a"}, {"label": "b", "experiment": {"report": True}}]})
+    a, b = (build_request(plan, r).experiment for r in plan_runs(plan)[:2])
+    assert a.report is False and b.report is True
+
+
+def test_openai_base_url_allows_local_server_without_key(monkeypatch):
+    from src.utils.llm_provider import LLMFactory
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:8080/v1")
+    llm = LLMFactory.create_llm(LLMProvider.OPENAI, model="mistral-7b-instruct-v0.3", temperature=0.7)
+    assert str(llm.openai_api_base).startswith("http://127.0.0.1:8080") and llm.model_name == "mistral-7b-instruct-v0.3"
+    assert LLMFactory.get_available_providers()[LLMProvider.OPENAI]
+    monkeypatch.delenv("OPENAI_BASE_URL")
+    with pytest.raises(ValueError):
+        LLMFactory.create_llm(LLMProvider.OPENAI, model="x")

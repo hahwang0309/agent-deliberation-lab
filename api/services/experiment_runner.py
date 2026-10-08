@@ -82,6 +82,7 @@ class ExperimentPlan(_Strict):
     repetitions: int = Field(1, ge=1, le=1000)
     concurrency: int = Field(2, ge=1, le=20)
     retries: int = Field(1, ge=0, le=5)
+    report: bool = Field(True, description="false면 모든 실행에서 종합보고서를 만들지 않음 (조건의 experiment.report가 우선)")
     topics: List[TopicPlan] = Field(..., min_length=1)
     conditions: List[ConditionPlan] = Field(..., min_length=1)
     limits: Limits = Field(default_factory=Limits)
@@ -153,6 +154,8 @@ def build_request(plan: ExperimentPlan, run: Run) -> CreateDiscussionRequest:
     t, c = run.topic, run.condition
     experiment = {**c.experiment, "label": c.label, "batch": plan.name,
                   "topic_key": t.key, "replicate": run.replicate}
+    if not plan.report:
+        experiment.setdefault("report", False)
     if c.use_seeds and t.seeds:
         participants = {name: dict(cond) for name, cond in (c.experiment.get("participants") or {}).items()}
         for name, seed in t.seeds.items():

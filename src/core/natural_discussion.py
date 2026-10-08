@@ -12,6 +12,7 @@
 stream()은 진행을 EngineEvent로 yield한다. 저장·전송은 호출 측(API 런타임)의 책임이다.
 """
 import asyncio
+import hashlib
 import logging
 import random
 from collections import Counter
@@ -357,16 +358,25 @@ class NaturalDiscussion:
 
     # ---------- 실행 ----------
 
-    async def stream(self, topic: str, language: Optional[str] = None,
-                     gate: Optional[InterventionGate] = None, start_seq: Optional[int] = None) -> AsyncIterator[EngineEvent]:
-        """토론 실행. gate가 있으면 발화가 끝날 때마다 사람 개입을 받는다. start_seq: 다음 메시지 순번."""
-        if start_seq is not None:
-            self.next_seq = start_seq
+    def set_language(self, topic: str, language: Optional[str] = None) -> None:
+        """토론 언어를 정해 참가자·모더레이터에 적용 (지정이 없으면 주제로 감지)"""
         self.language = language = language or LanguageDetector.detect_language(topic)
         for agent in self.agents:
             agent.language = language
         if self.moderator:
             self.moderator.language = language
+
+    def system_prompt_hashes(self) -> Dict[str, str]:
+        """참가자별 시스템 프롬프트(페르소나·심은 응답·자료·언어 지시 포함)의 SHA-256 앞 16자리 (실행 기록용)"""
+        return {a.persona.name: hashlib.sha256(a._build_system_prompt().encode("utf-8")).hexdigest()[:16]
+                for a in self.agents}
+
+    async def stream(self, topic: str, language: Optional[str] = None,
+                     gate: Optional[InterventionGate] = None, start_seq: Optional[int] = None) -> AsyncIterator[EngineEvent]:
+        """토론 실행. gate가 있으면 발화가 끝날 때마다 사람 개입을 받는다. start_seq: 다음 메시지 순번."""
+        if start_seq is not None:
+            self.next_seq = start_seq
+        self.set_language(topic, language)
 
         if self.survey and not self.restored:  # 재개한 토론은 사전 설문을 이미 받았음
             async for event in self._run_surveys(PRE):

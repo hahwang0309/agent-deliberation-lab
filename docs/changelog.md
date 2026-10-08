@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 보고서 끄기, 실행 기록 보강, OpenAI 호환 서버 (2026-10)
+- 실험 조건 `report: false`와 실험 계획 `report: false`: 끝난 뒤 종합보고서를 만들지 않습니다.
+- 실행 기록에 `llm_params`(max_tokens, structured_max_tokens, top_p = null(미지정), 타임아웃, 재시도, OpenAI 호환 서버 주소)와 참가자별 시스템 프롬프트 해시(`llm.system_prompts`)를 추가했습니다. 해시가 실제 프롬프트와 같도록 언어를 실행 기록 전에 확정합니다.
+- `OPENAI_BASE_URL`: provider `openai`를 OpenAI 호환 서버(로컬 Mistral 등)로 보냅니다. 키 없이 쓸 수 있습니다. 클라이언트 구성만 테스트했고, 실제 로컬 서버로는 확인하지 않았습니다.
+- Gemini(`gemini-2.5-flash-lite`): 클라이언트와 구조화 출력 구성은 확인했지만, 키가 예시 값이라 실제 호출은 확인하지 못했습니다.
+
 ## 정해진 발언과 고정 발언 순서 (2026-10)
 - 참가자 조건 `script`: 실험 공모자가 차례마다 정해진 줄을 LLM 호출 없이 말합니다(`meta.scripted`, 추출 `utterances.scripted`). 대본을 다 쓰면 이후 차례·종결 라운드에서 빠지고, 설문 대상에서 제외됩니다.
 - 실험 조건 `turn_order`: baseline 발언 순서를 고정합니다(이름 반복 가능). 재개 시 저장된 발언으로 순서 위치와 대본 위치를 복원합니다.

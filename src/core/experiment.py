@@ -84,6 +84,7 @@ class ExperimentConfig(_Strict):
         "stateful", description="baseline: 순서대로 앞 발언에 답하는 단순 토론 (비교 기준선). "
                                 "survey_only: 토론 없이 사전 설문 후 혼자 다시 답함 (설문 필요)")
     record_prompts: bool = Field(True, description="발언마다 최종 지시 프롬프트를 meta.prompt에 저장")
+    report: bool = Field(True, description="끝난 뒤 종합보고서를 자동으로 만듦 (끄면 보고서 LLM 호출 없음, 나중에 수동 생성 가능)")
     mechanisms: Mechanisms = Field(default_factory=Mechanisms)
     dynamics: Dynamics = Field(default_factory=Dynamics)
     stalemate_exchanges: Optional[int] = Field(None, ge=1, le=10)

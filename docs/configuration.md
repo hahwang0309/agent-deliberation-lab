@@ -14,6 +14,7 @@
 |---|---|---|
 | `ANTHROPIC_API_KEY` | ✓ (기본 provider) | Claude API 키 |
 | `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `MISTRAL_API_KEY` | | 해당 provider를 참가자 LLM으로 쓸 때만 |
+| `OPENAI_BASE_URL` | | provider `openai`의 요청을 OpenAI 호환 서버(로컬 vLLM·llama.cpp·Ollama 등)로 보냄. 설정하면 `OPENAI_API_KEY` 없이도 쓸 수 있고, 모델명은 그 서버의 이름(예: `mistral-7b-instruct-v0.3`). 모든 `openai` 호출에 적용되므로 OpenAI와 로컬 서버를 한 토론에 섞을 수는 없음 |
 | `SECRET_KEY` | ✓ | JWT 서명 키, 32자 이상 무작위 값. 비었거나 예시값이면 서버가 시작되지 않음 |
 | `ADMIN_EMAIL`, `ADMIN_INITIAL_PASSWORD` | 최초 1회 | 관리자가 한 명도 없을 때 시작 시 관리자 생성 (첫 로그인 후 비밀번호 변경 강제) |
 | `DATABASE_URL` | | 기본 `sqlite:///./discussion_api.db`. 운영은 PostgreSQL 권장 |
@@ -113,6 +114,7 @@
 | `agent_temperature` / `moderator_temperature` | 참가자 기본 / 모더레이터 temperature (기본 0.7 / 0.5). 발언 분석은 항상 0 |
 | `analyzer` | 발언 분석 모델 `{provider, model}`. 비우면 첫 참가자의 모델 (판정자와 참가자 모델을 분리할 때 사용) |
 | `record_prompts` | 발언마다 최종 지시 프롬프트를 메시지 `meta.prompt`에 저장 (실험 조건이 있으면 기본 켬) |
+| `report` | `false`면 끝난 뒤 종합보고서를 자동으로 만들지 않음 (보고서 LLM 비용 절약, 기본 `true`). 필요하면 나중에 수동 생성 |
 | `participants.{이름}` | 참가자별 `stubbornness`(0~1, 비우면 성격 키워드로 정함), `temperature`, `seed`(설문 문항별 초기 응답. 사전 설문 대신 기록되고 시스템 프롬프트에 들어감, [api-reference](api-reference.md) 설문 참고), `script`(정해진 발언 목록, 실험 공모자: `mode: baseline`에서만. 차례마다 LLM 없이 다음 줄을 말하고, 다 쓰면 이후 차례와 종결 라운드에서 빠짐. 설문 대상이 아니고 `seed`를 줄 수 없음. 발언 `meta.scripted = true`) |
 | `turn_order` | `mode: baseline`의 발언 순서(참가자 이름 목록, 같은 이름 반복 가능). 이 순서를 되풀이하며 대본을 다 쓴 참가자는 건너뜀. 재개 시 저장된 발언으로 위치를 복원 |
 

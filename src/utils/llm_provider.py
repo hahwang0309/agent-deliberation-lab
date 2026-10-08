@@ -70,13 +70,16 @@ class LLMFactory:
         callbacks = kwargs.get('callbacks')
         
         if provider == LLMProvider.OPENAI:
-            api_key = kwargs.get("api_key") or os.getenv("OPENAI_API_KEY")
+            # OPENAI_BASE_URL: OpenAI 호환 서버(로컬 vLLM·llama.cpp·Ollama 등). 로컬 서버는 키가 없어도 된다
+            base_url = os.getenv("OPENAI_BASE_URL") or None
+            api_key = kwargs.get("api_key") or os.getenv("OPENAI_API_KEY") or ("not-needed" if base_url else None)
             if not api_key:
                 raise ValueError("OpenAI API key is required")
             return ChatOpenAI(
                 model=model,
                 temperature=temperature,
                 api_key=api_key,
+                base_url=base_url,
                 max_tokens=max_tokens,
                 stream_usage=True,  # 스트리밍 시에도 토큰 사용량 수집
                 timeout=timeout,
@@ -133,7 +136,7 @@ class LLMFactory:
     def get_available_providers(cls) -> Dict[LLMProvider, bool]:
         """환경변수에서 사용 가능한 프로바이더 확인"""
         return {
-            LLMProvider.OPENAI: bool(os.getenv("OPENAI_API_KEY")),
+            LLMProvider.OPENAI: bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_BASE_URL")),
             LLMProvider.GEMINI: bool(os.getenv("GOOGLE_API_KEY")),
             LLMProvider.CLAUDE: bool(os.getenv("ANTHROPIC_API_KEY")),
             LLMProvider.MISTRAL: bool(os.getenv("MISTRAL_API_KEY"))

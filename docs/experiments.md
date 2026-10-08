@@ -33,6 +33,7 @@ API 키와 `SECRET_KEY`는 `.env`에서 읽습니다. `--db`는 필수이며, �
 | `repetitions` | 주제 × 조건마다 반복할 횟수 |
 | `concurrency` | 동시 실행 수 (기본 2). 웹의 사용자·서버 제한과 무관합니다 |
 | `retries` | 실패한 실행을 다시 시도할 횟수 (기본 1) |
+| `report` | `false`면 모든 실행에서 종합보고서를 만들지 않습니다(조건의 `experiment.report`가 우선) |
 | `limits.max_total_tokens` | 입력+출력 누적 토큰 상한. 다음 실행이 상한을 넘을 것 같으면 새 실행을 시작하지 않습니다 |
 | `limits.max_cost_usd` + `prices` | 비용 상한. 단가(`input_per_mtok`, `output_per_mtok`)는 사용자가 확인한 값을 넣습니다. 코드에는 단가를 두지 않습니다 |
 | `topics[]` | `key`, `topic`, `language`, `max_statements`, `use_moderator`, `personas`(dict 또는 `persona_templates.yaml`의 템플릿 id), `propositions`(고정 명제), `materials` 또는 `materials_file`(배경 자료, 계획 파일 기준 상대 경로), `survey`(사전·사후 설문), `seeds`(참가자 이름 → 심을 사전 응답 `{문항 id: 점수 또는 보기 목록}`) |
@@ -67,7 +68,7 @@ API 키와 `SECRET_KEY`는 `.env`에서 읽습니다. `--db`는 필수이며, �
 | 양보, 반박 | 발언 분석 | `concessions`, `attacks` |
 | 합의 점수 | 종합보고서(종합, AI간, 인간간, AI-인간간) | `discussions` |
 | 비용 | LLM 호출 수, 토큰 | `discussions` |
-| 재현성 | 코드 커밋, 프롬프트 해시, 적용 설정, 모델 | `discussions`(요약), 토론 상세의 `run_info`(전체) |
+| 재현성 | 코드 커밋, 프롬프트 해시, 적용 설정, 모델, 생성 파라미터(`llm_params`: max_tokens, top_p, OpenAI 호환 서버 주소), 참가자별 시스템 프롬프트 해시(`llm.system_prompts`) | `discussions`(요약), 토론 상세의 `run_info`(전체) |
 
 **사람 코딩:** `--coding-sample N`을 주면 파일 두 개가 만들어집니다.
 - `coding_blind.csv`: 코더에게 주는 파일. 발언, 직전 발언, 대상 발언, 같은 화자의 이전 발언과 빈 코딩 칸(양보, 응답 여부, 자기 논거 반복, 정당화 수준, 존중 수준)이 들어 있습니다.

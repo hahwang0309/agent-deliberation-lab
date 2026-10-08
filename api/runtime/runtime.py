@@ -67,6 +67,7 @@ class DiscussionRuntime:
             self.last_seq = data["last_seq"]
             self._participant_ids = {p["name"]: p["id"] for p in data["participants"]}
             config = data["config"]
+            self.report_enabled = (config.get("experiment") or {}).get("report", True)
 
             engine = create_discussion(
                 [ParticipantSpec(persona=Persona(**p["persona"]), provider=LLMProvider(p["provider"]),
@@ -83,14 +84,16 @@ class DiscussionRuntime:
                 survey=SurveyConfig(**config["survey"]) if config.get("survey") else None,
             )
 
+            topic = data["topic"] if not data["description"] else f"{data['topic']}\n\n{data['description']}"
+            engine.set_language(topic, data["language"])  # 시스템 프롬프트(언어 지시 포함)를 실행 기록 전에 확정
+            spec = {**engine.llm_spec, "system_prompts": engine.system_prompt_hashes()}
             await asyncio.to_thread(persistence.append_run_info, self.discussion_id,
-                                    collect_run_info(engine.config, engine.llm_spec, resumed=self.resume))
+                                    collect_run_info(engine.config, spec, resumed=self.resume))
             if self.resume:
                 await self._restore(engine, data)
                 await self.set_status(DiscussionStatus.RUNNING, error=None)
             else:
                 await self.set_status(DiscussionStatus.RUNNING, started_at=persistence.utcnow(), error=None)
-            topic = data["topic"] if not data["description"] else f"{data['topic']}\n\n{data['description']}"
             async for event in engine.stream(topic, language=data["language"], gate=self.desk,
                                              start_seq=self.last_seq + 1):
                 await self._handle(event)
@@ -144,7 +147,8 @@ class DiscussionRuntime:
             self.schedule_report(self.discussion_id)
 
     def _report_eligible(self) -> bool:
-        return self.ai_messages >= config_loader.config.report.min_ai_messages
+        return (getattr(self, "report_enabled", True)
+                and self.ai_messages >= config_loader.config.report.min_ai_messages)
 
     def _abort_utterance(self) -> None:
         if self.current_utterance:
