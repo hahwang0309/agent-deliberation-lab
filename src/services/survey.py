@@ -56,7 +56,7 @@ class SurveyConfig(BaseModel):
     """설문 문항 (토론 생성 요청의 survey)"""
     model_config = ConfigDict(extra="forbid")
     items: List[SurveyItem] = Field(..., min_length=1, max_length=20)
-    scale: int = Field(7, ge=2, le=11, description="리커트 최댓값 (매우 동의)")
+    scale: int = Field(7, ge=2, le=100, description="리커트 최댓값 (매우 동의). 0~100 척도는 scale_min 0, scale 100")
     scale_min: Literal[0, 1] = Field(1, description="리커트 최솟값 (전혀 동의 안 함). 0~10 척도는 scale_min 0, scale 10")
 
     @field_validator("items")

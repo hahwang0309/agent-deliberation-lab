@@ -157,17 +157,17 @@ def test_argq_matched_strong_weak_sets_and_support_scripts():
              "stance": stance} for topic in argq.texts()["argq"]["topics"] for stance in (1, -1) for i in range(40)]
     topics, conditions = argq.topics_and_conditions(rows, seed=2)
     assert len(topics) == 16 and [c["label"] for c in conditions] == [
-        "strong-minority", "strong-majority", "weak-minority", "weak-majority"]
+        "strong-minority", "strong-majority", "weak-minority", "weak-majority", "C-reanswer"]
     t = topics[0]
     strong, weak = t["meta"]["arguments"]["strong"], t["meta"]["arguments"]["weak"]
     ts, tw = sum(a["tokens"] for a in strong), sum(a["tokens"] for a in weak)
     assert abs(ts - tw) <= 0.1 * min(ts, tw) and min(a["wa"] for a in strong) > max(a["wa"] for a in weak)
     majority = t["by_condition"]["strong-majority"]["participants"]
     minority = t["by_condition"]["strong-minority"]["participants"]
-    assert [majority[n]["script"][0] for n in ("Riley", "Sam", "Tess")] == [a["argument"] for a in strong]
-    assert minority["Riley"]["script"][0] == "\n".join(a["argument"] for a in strong)
-    assert minority["Sam"]["script"] == minority["Tess"]["script"] == ["I'm with Jordan on this one. I support it."]
-    assert t["seeds"] == {"Jordan": {"stance": 5}} and topics[1]["seeds"] == {"Jordan": {"stance": 3}}
+    assert [majority[n]["script"][0] for n in ("Riley", "Sam", "Tess")] == [a["argument"] for a in strong[:3]]
+    assert minority["Riley"]["script"][0] == "\n".join(a["argument"] for a in strong[:3])
+    assert minority["Sam"]["script"] == minority["Tess"]["script"] == ["I'm with Jordan on this one. I support it."] * 2
+    assert t["seeds"] == {"Jordan": {"stance": 65}} and topics[1]["seeds"] == {"Jordan": {"stance": 35}}
     assert not validate(plan_dict("q", topics, conditions))
 
 
@@ -196,12 +196,15 @@ async def test_argq_case_runs_end_to_end_with_scripted_confederates(monkeypatch)
     topics, conditions = argq.topics_and_conditions(rows, seed=1)
     plan = ExperimentPlan(**plan_dict("argq-e2e", topics[:1], conditions))
     result = await run_batch(plan, on_progress=lambda _: None)
-    assert len(result.completed) == 4 and not result.failed
+    assert len(result.completed) == 5 and not result.failed
     done = existing_runs("argq-e2e")
     did = done[("argq0-pro", "strong-minority", 0)]["id"]
     speakers = [m["speaker"] for m in persistence.list_messages_after(did) if m["speaker_type"] == "ai"]
-    assert speakers == ["Jordan", "Riley", "Sam", "Tess", "Jordan"]
+    assert speakers == ["Jordan", "Riley", "Sam", "Tess", "Jordan", "Riley", "Sam", "Tess", "Jordan"]
     assert {r["participant"] for r in persistence.list_survey(did)} == {"Jordan"}
+    alone = done[("argq0-pro", "C-reanswer", 0)]["id"]  # 공모자는 말하지 않고 설문에서도 빠짐
+    assert not persistence.list_messages_after(alone)
+    assert {r["participant"] for r in persistence.list_survey(alone)} == {"Jordan"}
 
 
 
@@ -297,3 +300,31 @@ def test_case_plans_carry_the_measurement_protocol():
                                {"label": "b", "experiment": {"post_survey": "standard"}}])
     assert plan["conditions"][0]["experiment"] == {**protocol, "mode": "baseline"}
     assert plan["conditions"][1]["experiment"]["post_survey"] == "standard"  # 조건이 직접 정한 값이 우선
+
+
+def test_argq_two_rounds_reanswer_and_positive_control():
+    rng = random.Random(0)
+    rows = [{"argument": " ".join(["word"] * rng.randint(8, 14)) + f" {i}.", "topic": topic, "wa": rng.random(),
+             "stance": stance} for topic in argq.texts()["argq"]["topics"] for stance in (1, -1) for i in range(60)]
+    topics, conditions = argq.topics_and_conditions(rows, seed=2, positive_control=True)
+    labels = [c["label"] for c in conditions]
+    assert labels[-2:] == ["C-reanswer", "positive-control"] and conditions[-1]["use_seeds"] is False
+    t = topics[0]
+    assert t["max_statements"] == 9 and t["survey"]["scale"] == 100 and t["seeds"]["Jordan"]["stance"] == 65
+    strong = [a["argument"] for a in t["meta"]["arguments"]["strong"]]
+    maj = t["by_condition"]["strong-majority"]["participants"]
+    assert [maj[n]["script"] for n in ("Riley", "Sam", "Tess")] == [[strong[0], strong[3]], [strong[1], strong[4]],
+                                                                   [strong[2], strong[5]]]
+    assert t["by_condition"]["strong-minority"]["participants"]["Riley"]["script"] == ["\n".join(strong[:3]),
+                                                                                       "\n".join(strong[3:])]
+    assert not validate(plan_dict("q", topics[:2], conditions))
+
+
+def test_rating_summary():
+    from scripts.rate_arguments import summarize
+    rows = [{"topic_key": "a", "quality": "strong", "wa": 0.9, "rating": 0.8},
+            {"topic_key": "a", "quality": "weak", "wa": 0.2, "rating": 0.4},
+            {"topic_key": "b", "quality": "strong", "wa": 0.8, "rating": 0.5},
+            {"topic_key": "b", "quality": "weak", "wa": 0.3, "rating": None}]
+    s = summarize(rows)
+    assert s["failed"] == 1 and s["sets_strong_gt_weak"] == "1/1" and s["mean_set_diff"] == 0.4

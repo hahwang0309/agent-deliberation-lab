@@ -56,29 +56,44 @@ def matched_sets(strong: List[dict], weak: List[dict], rng: random.Random, k: in
     raise ValueError("could not match strong and weak sets within the token tolerance")
 
 
-def topics_and_conditions(rows: List[Dict[str, Any]], seed: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def topics_and_conditions(rows: List[Dict[str, Any]], seed: int,
+                          positive_control: bool = False) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """주제 × 표적 입장마다 강·약 논거 세트(라운드 수 × 라운드당 논거 수)와 조건별 공모자 대본.
+
+    조건: 2×2(강·약 × 소수·다수) + C(토론 없이 다시 답함, 측정 잡음). positive_control이면 입장을 심지 않은
+    표적에 강한 논거·다수를 들려주는 양성 대조를 더한다(모델이 움직일 수 있는지 확인, 파일럿용)."""
     t = texts()["argq"]
     rng = random.Random(seed)
     target, conf = t["target"], t["confederates"]
     names = conf["names"]
-    order = [target["name"], *names, target["name"]]
+    per_round, rounds = t["arguments_per_round"], t["rounds"]
+    order = [target["name"]] + (names + [target["name"]]) * rounds
     base = {"mode": "baseline", "mechanisms": {"closing_round": False}, "turn_order": order}
-    conditions = [{"label": f"{q}-{s}", "experiment": base} for q in ("strong", "weak") for s in ("minority", "majority")]
+    conditions = [{"label": f"{q}-{s}", "experiment": dict(base)} for q in ("strong", "weak") for s in ("minority", "majority")]
+    conditions.append({"label": "C-reanswer", "experiment": {"mode": "survey_only"}})
+    if positive_control:
+        conditions.append({"label": "positive-control", "experiment": dict(base), "use_seeds": False})
     topics = []
     for i, topic in enumerate(t["topics"]):
         for side in ("pro", "con"):
             opposing = -1 if side == "pro" else 1
-            strong, weak = matched_sets(*quartile_pools(rows, topic, opposing), rng)
+            strong, weak = matched_sets(*quartile_pools(rows, topic, opposing), rng, k=per_round * rounds)
             agree = t["agree_line"].format(target=target["name"], side=t["side_words"][side])
             by_condition, meta = {}, {}
             for quality, args in (("strong", strong), ("weak", weak)):
                 lines = [a["argument"] for a in args]
+                chunks = [lines[r * per_round:(r + 1) * per_round] for r in range(rounds)]
                 meta[quality] = [{"argument": a["argument"], "wa": a["wa"], "tokens": tokens(a["argument"])} for a in args]
+                # 다수: 라운드마다 공모자 3명이 논거 1개씩 / 소수: 1명이 라운드마다 3개, 2명은 동의 표현만
                 by_condition[f"{quality}-majority"] = {"participants": {
-                    n: {"script": [line]} for n, line in zip(names, lines)}}
+                    n: {"script": [chunk[j] for chunk in chunks]} for j, n in enumerate(names)}}
                 by_condition[f"{quality}-minority"] = {"participants": {
-                    names[0]: {"script": [t["joiner"].join(lines)]},
-                    names[1]: {"script": [agree]}, names[2]: {"script": [agree]}}}
+                    names[0]: {"script": [t["joiner"].join(chunk) for chunk in chunks]},
+                    **{n: {"script": [agree] * rounds} for n in names[1:]}}}
+            # C: 공모자는 말하지 않고 설문에서만 빠지도록 대본만 둔다
+            by_condition["C-reanswer"] = {"participants": {n: {"script": [agree]} for n in names}}
+            if positive_control:
+                by_condition["positive-control"] = by_condition["strong-majority"]
             persona = lambda n, p: {"name": n, "role": p["role"], "background": p["background"],
                                     "communication_style": p["communication_style"]}
             topics.append({
@@ -89,7 +104,7 @@ def topics_and_conditions(rows: List[Dict[str, Any]], seed: int) -> Tuple[List[D
                 "use_moderator": False,
                 "propositions": [topic],
                 "personas": [persona(target["name"], target)] + [persona(n, conf) for n in names],
-                "survey": {"scale": t["scale"], "items": [{"id": "stance", "text": topic}]},
+                "survey": {"scale": t["scale"], "scale_min": 0, "items": [{"id": "stance", "text": topic}]},
                 "seeds": {target["name"]: {"stance": t["target_seed"][side]}},
                 "by_condition": by_condition,
                 "meta": {"target_side": side, "arguments": meta},

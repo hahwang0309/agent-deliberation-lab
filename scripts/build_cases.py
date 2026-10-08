@@ -228,7 +228,8 @@ def cmd_a1r(args) -> int:
 
 def cmd_argq(args) -> int:
     from src.cases import argq
-    topics, conditions = argq.topics_and_conditions(argq.load_arguments(args.data), args.seed)
+    topics, conditions = argq.topics_and_conditions(argq.load_arguments(args.data), args.seed,
+                                                    positive_control=args.positive_control)
     return write_plan(plan_dict(args.name, topics, conditions, repetitions=8), args)
 
 
@@ -293,6 +294,7 @@ def main(argv=None) -> int:
     common(p, "argq")
     p.add_argument("--data", default=str(RAW / "argq"))
     p.add_argument("--seed", type=int, required=True)
+    p.add_argument("--positive-control", action="store_true", help="입장 없는 표적 + 강한 논거·다수 셀 추가 (파일럿용)")
     p.set_defaults(func=cmd_argq)
 
     args = parser.parse_args(argv)

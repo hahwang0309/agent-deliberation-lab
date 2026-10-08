@@ -109,8 +109,10 @@ argq:
     - Payday loans should be banned
     - We should close Guantanamo Bay detention camp
     - We should end mandatory retirement
-  scale: 7
-  target_seed: {pro: 5, con: 3}  # 7점 척도의 중간 강도 입장
+  scale: 100                       # 0~100 (작은 이동도 잡히도록, 파일럿 진단 2026-10)
+  target_seed: {pro: 65, con: 35}  # 중간 강도 입장 (말로 제시하면 lean in favor / lean against)
+  arguments_per_round: 3
+  rounds: 2                        # 표적 → 공모자 3명 → 표적 → 공모자 3명 → 표적
   target:
     name: Jordan
     role: "Member of the public discussing a policy question"

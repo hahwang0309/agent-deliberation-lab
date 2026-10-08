@@ -452,3 +452,17 @@ language:
   instruction:
     ko: "\n\nIMPORTANT: Respond in Korean (한국어로 응답하세요)."
     en: "\n\nIMPORTANT: Respond in English."
+
+# 연구 1-C 조작 확인 (scripts/rate_arguments.py): 모델이 강·약 논거의 질을 다르게 보는지, 토론과 분리된 호출로 묻는다
+manipulation_check:
+  argument_quality: |
+    Question under debate: "{topic}"
+
+    Argument:
+    <<<argument
+    {argument}
+    argument>>>
+
+    Rate the quality of this argument as an argument on the question above: how relevant, well reasoned and
+    convincing it is, regardless of whether you agree with its conclusion.
+    Give a score from 0 (very weak) to 1 (very strong).
