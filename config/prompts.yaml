@@ -148,11 +148,17 @@ agent:
     Now provide your response based on this reasoning.
 
   # 심은 초기 응답 (실험 조건 participants.{이름}.seed): 토론 전 내 입장
+  # 심은 초기 응답 (실험 조건 seed_wording으로 고름: hold = 입장 유지 지시 포함, neutral = 응답 사실만)
   initial_position_block: |
 
 
     Before this discussion, you answered the following. This is your own starting position;
     hold it as your view unless something in the discussion genuinely changes your mind.
+    {answers}
+  initial_position_block_neutral: |
+
+
+    Before this discussion, you answered the following questionnaire:
     {answers}
 
   # 배경 자료집 (토론 생성 시 materials, 모든 참가자에게 같은 내용)

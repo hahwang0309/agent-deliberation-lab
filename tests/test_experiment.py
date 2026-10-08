@@ -300,7 +300,7 @@ async def test_run_survey_retries_invalid_answers_and_never_fills_missing():
     common = {"choices": None, "correct": None, "scale": 7, "scale_min": 1}
     assert answers == [{"item_id": "q1", "score": 6, "reason": "data shows gains", "source": "answered", **common},
                        {"item_id": "q2", "score": 2, "reason": "", "source": "answered", **common}]
-    assert "integer in 1..7" in agent.prompts[-1] and "unknown item id qX" in agent.prompts[-1]
+    assert "integer in 1..7" in agent.prompts[-1] and "unknown item id 'qX' (valid ids: q1, q2)" in agent.prompts[-1]
 
     stubborn = ScriptedSurveyAgent([[{"item_id": "q1", "score": 5}], [{"item_id": "q1", "score": 5}]])
     answers = await run_survey(stubborn, survey, "post", transcript="A: hello")
@@ -998,3 +998,25 @@ async def test_survey_with_no_answers_at_all_fails_the_run(monkeypatch):
                                survey=SurveyConfig(**SURVEY), max_statements=4)
     with pytest.raises(engine_module.SurveyFailed):
         await run(engine)
+
+
+def test_seed_wording_neutral_has_no_hold_instruction():
+    hold = create_discussion(specs(), bundle=FakeBundle(), survey=SurveyConfig(**SURVEY),
+                             experiment=ExperimentConfig(participants={"A": {"seed": {"q1": 6}}}))
+    neutral = create_discussion(specs(), bundle=FakeBundle(), survey=SurveyConfig(**SURVEY),
+                                experiment=ExperimentConfig(seed_wording="neutral", participants={"A": {"seed": {"q1": 6}}}))
+    assert "hold it as your view" in hold.agents[0].initial_position
+    assert "hold it as your view" not in neutral.agents[0].initial_position
+    assert "Your answer: 6" in neutral.agents[0].initial_position
+
+
+@pytest.mark.asyncio
+async def test_survey_accepts_bracketed_item_id_and_lists_valid_ids_on_retry():
+    survey = SurveyConfig(**SURVEY)
+    agent = ScriptedSurveyAgent([
+        [{"item_id": "[q1] Remote work raises productivity", "score": 5}, {"item_id": "q2_costs", "score": 3}],
+        [{"item_id": "q2", "score": 3}],
+    ])
+    rows = {r["item_id"]: r for r in await run_survey(agent, survey, "pre")}
+    assert rows["q1"]["score"] == 5 and rows["q2"]["score"] == 3
+    assert "unknown item id 'q2_costs' (valid ids: q1, q2)" in agent.prompts[-1]

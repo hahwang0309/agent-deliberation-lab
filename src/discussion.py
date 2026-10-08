@@ -61,7 +61,8 @@ def create_discussion(participants: List[ParticipantSpec],
             agents[-1].script = list(condition.script)
         if condition.seed and survey is not None:
             agents[-1].seed = dict(condition.seed)
-            agents[-1].initial_position = initial_position_text(survey, condition.seed)
+            agents[-1].initial_position = initial_position_text(
+                survey, condition.seed, experiment.seed_wording if experiment else "hold")
 
     lead = participants[0] if participants else ParticipantSpec(None, LLMFactory.default_provider())
     moderator = (DiscussionModerator(llm=bundle.get(lead.provider, lead.model, settings.moderator_temperature))

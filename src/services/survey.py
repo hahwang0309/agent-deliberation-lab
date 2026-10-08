@@ -12,6 +12,7 @@
 같은 값을 참가자의 시스템 프롬프트에 "토론 전 내 응답"으로 넣는다(initial_position_text).
 """
 import logging
+import re
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -145,6 +146,13 @@ def _record(item: SurveyItem, survey: SurveyConfig, value: Any, reason: str, sou
     return row
 
 
+def _item_id(raw: str, valid: set) -> str:
+    """문항 id 표기 차이 흡수: 프롬프트의 '[id] 문항 문구'를 그대로 옮긴 경우 → id (그 외는 그대로)"""
+    raw = str(raw).strip()
+    m = re.match(r"^\[([A-Za-z0-9_]+)\]", raw)
+    return m.group(1) if m and m.group(1) in valid else raw
+
+
 def _format_item(item: SurveyItem, survey: SurveyConfig) -> str:
     prompts = config_loader.prompts
     if item.type == "likert":
@@ -155,7 +163,10 @@ def _format_item(item: SurveyItem, survey: SurveyConfig) -> str:
     return f"[{item.id}] {item.text}\n    {how}"
 
 
-def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue]) -> str:
+SEED_WORDING_KEYS = {"hold": "agent.initial_position_block", "neutral": "agent.initial_position_block_neutral"}
+
+
+def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue], wording: str = "hold") -> str:
     """시스템 프롬프트에 넣을 '토론 전 내 응답' (심은 초기값)"""
     prompts = config_loader.prompts
     lines = []
@@ -168,7 +179,7 @@ def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue]) -> s
         else:
             answer = prompts.render("survey.seed_choice", choices=", ".join(_match_options(value, item.options)))
         lines.append(f"- {item.text}\n  {answer}")
-    return prompts.render("agent.initial_position_block", answers="\n".join(lines)) if lines else ""
+    return prompts.render(SEED_WORDING_KEYS[wording], answers="\n".join(lines)) if lines else ""
 
 
 async def run_survey(agent, survey: SurveyConfig, phase: str, transcript: str = "",
@@ -196,9 +207,10 @@ async def run_survey(agent, survey: SurveyConfig, phase: str, transcript: str = 
                 continue
             errors = []
             for a in result.answers:
+                a.item_id = _item_id(a.item_id, asked_ids)
                 item = survey.item(a.item_id)
                 if item is None or a.item_id not in asked_ids:
-                    errors.append(f"unknown item id {a.item_id}")
+                    errors.append(f"unknown item id {a.item_id!r} (valid ids: {', '.join(sorted(asked_ids))})")
                     continue
                 value = a.score if item.type == "likert" else a.choices
                 problem = value_problem(item, survey, value)
@@ -209,6 +221,8 @@ async def run_survey(agent, survey: SurveyConfig, phase: str, transcript: str = 
             errors += [f"missing answer for {i}" for i in sorted(asked_ids - valid.keys())]
             if not errors:
                 break
+            logger.warning("Survey %s answer rejected for %s (attempt %d): %s",
+                           phase, agent.persona.name, attempt + 1, "; ".join(errors)[:500])
             messages = messages + [HumanMessage(content=prompts.render("survey.retry", errors="; ".join(errors)))]
 
     rows = []
