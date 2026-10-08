@@ -6,10 +6,14 @@
 #   선택형(Wason)은 보기 목록 그대로라 영향 없음
 # - post_survey neutral: 사후 설문에서 "바뀌지 않았으면 유지" 지시를 빼고 같은 설문을 다시 물음
 # - seed_wording neutral: 초기 응답을 알리는 문장에서 "입장을 유지하라" 지시를 뺌
+# - seed_placement memory: 초기 응답을 시스템 프롬프트(정체성 지시)가 아니라 대화 앞부분의 지난 주고받음으로 제시.
+#   처치 없는 조건 C의 재응답 잡음을 A1R 통제집단과 비교해 미리 정한 규칙으로 골랐다 (data/pilot5/RULE.md, 2026-10-08):
+#   평균 |이동| 비율 Claude 1.02(system 0.54), Gemini 0.37(system 0.38)
 protocol:
   seed_format: verbal
   post_survey: neutral
   seed_wording: neutral
+  seed_placement: memory
 
 # ---------- 연구 1-A: Wason 선택 과제 (DeliData와 같은 문구) ----------
 wason:
@@ -112,7 +116,7 @@ argq:
   scale: 100                       # 0~100 (작은 이동도 잡히도록, 파일럿 진단 2026-10)
   target_seed: {pro: 65, con: 35}  # 중간 강도 입장 (말로 제시하면 lean in favor / lean against)
   arguments_per_round: 3
-  rounds: 2                        # 표적 → 공모자 3명 → 표적 → 공모자 3명 → 표적
+  rounds: 2                        # 공모자 3명 → 공모자 3명 → 표적 사후 설문 (표적은 듣기만 함: 자기 발언에 의한 공약 효과 배제)
   target:
     name: Jordan
     role: "Member of the public discussing a policy question"
@@ -123,7 +127,7 @@ argq:
     role: "Member of the public discussing a policy question"
     background: "An ordinary citizen."
     communication_style: "Plain and conversational"
-  # 소수 조건에서 나머지 2명이 하는 내용 없는 동의 표현 (길이 고정)
-  agree_line: "I'm with {target} on this one. I {side} it."
-  side_words: {pro: support, con: oppose}
+  # 소수 조건에서 논거를 말하지 않는 2명의 발화: 어느 편도 들지 않는 내용 없는 문장 (길이 고정).
+  # 표적 쪽에 동의하게 하면 소수 셀이 '반대 1명 대 지지 2명'이 되어 지지자 수와 반대자 수가 섞인다 (Asch의 동조 상쇄 효과)
+  filler_line: "I don't have anything to add on this point yet."
   joiner: "\n"  # 소수 조건에서 한 사람이 논거 3개를 말할 때 구분 (논거 원문은 바꾸지 않음)

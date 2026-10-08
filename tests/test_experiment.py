@@ -1045,3 +1045,15 @@ async def test_verbal_seed_and_neutral_post_survey(monkeypatch):
                               experiment=ExperimentConfig(mode="survey_only", post_survey="neutral"))
     calls.clear(); await run(alone)
     assert ("post", "post_alone_neutral") in calls
+
+
+def test_seed_placement_memory_puts_seed_in_conversation_not_system_prompt():
+    exp = ExperimentConfig(seed_placement="memory", seed_format="verbal", participants={"A": {"seed": {"q1": 6}}})
+    engine = create_discussion(specs(), bundle=FakeBundle(), experiment=exp, survey=SurveyConfig(**SURVEY))
+    a = engine.agents[0]
+    assert a.initial_position == "" and "lean in favor" not in a._build_system_prompt()
+    assert [type(m).__name__ for m in a.seed_memory] == ["HumanMessage", "AIMessage"]
+    assert "lean in favor of this" in a.seed_memory[1].content
+    msgs = asyncio.run(a._prepare_response("Your turn.", []))
+    assert [type(m).__name__ for m in msgs] == ["SystemMessage", "HumanMessage", "AIMessage", "HumanMessage"]
+    assert engine.agents[1].seed_memory == []

@@ -177,7 +177,12 @@ def verbal_position(value: int, survey: SurveyConfig) -> str:
 
 def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue], wording: str = "hold",
                           fmt: str = "number") -> str:
-    """시스템 프롬프트에 넣을 '토론 전 내 응답' (심은 초기값)"""
+    """시스템 프롬프트에 넣을 '토론 전 내 응답' (심은 초기값, seed_placement: system)"""
+    lines = _seed_lines(survey, seed, fmt)
+    return config_loader.prompts.render(SEED_WORDING_KEYS[wording], answers="\n".join(lines)) if lines else ""
+
+
+def _seed_lines(survey: SurveyConfig, seed: Dict[str, SeedValue], fmt: str) -> List[str]:
     prompts = config_loader.prompts
     lines = []
     for item in survey.items:
@@ -191,7 +196,18 @@ def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue], word
         else:
             answer = prompts.render("survey.seed_choice", choices=", ".join(_match_options(value, item.options)))
         lines.append(f"- {item.text}\n  {answer}")
-    return prompts.render(SEED_WORDING_KEYS[wording], answers="\n".join(lines)) if lines else ""
+    return lines
+
+
+def seed_memory_messages(survey: SurveyConfig, seed: Dict[str, SeedValue], fmt: str = "number") -> List[Any]:
+    """심은 응답을 지난 대화(질문 → 본인 답)로 제시 (seed_placement: memory). 시스템 프롬프트에는 넣지 않는다"""
+    from langchain_core.messages import AIMessage
+    prompts = config_loader.prompts
+    lines = _seed_lines(survey, seed, fmt)
+    if not lines:
+        return []
+    return [HumanMessage(content=prompts.render("agent.seed_memory_question")),
+            AIMessage(content=prompts.render("agent.seed_memory_answer", answers="\n".join(lines)).strip())]
 
 
 async def run_survey(agent, survey: SurveyConfig, phase: str, transcript: str = "",
@@ -209,7 +225,8 @@ async def run_survey(agent, survey: SurveyConfig, phase: str, transcript: str = 
         items = "\n".join(_format_item(i, survey) for i in asked)
         user = prompts.render(f"survey.{prompt_key or phase}", items=items,
                               transcript=transcript[-settings.transcript_chars:] or "(none)")
-        messages: List[Any] = [SystemMessage(content=agent._build_system_prompt()), HumanMessage(content=user)]
+        messages: List[Any] = [SystemMessage(content=agent._build_system_prompt()),
+                               *getattr(agent, "seed_memory", []), HumanMessage(content=user)]
         asked_ids = {i.id for i in asked}
         for attempt in range(max_attempts):
             try:

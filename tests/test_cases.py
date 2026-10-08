@@ -166,7 +166,7 @@ def test_argq_matched_strong_weak_sets_and_support_scripts():
     minority = t["by_condition"]["strong-minority"]["participants"]
     assert [majority[n]["script"][0] for n in ("Riley", "Sam", "Tess")] == [a["argument"] for a in strong[:3]]
     assert minority["Riley"]["script"][0] == "\n".join(a["argument"] for a in strong[:3])
-    assert minority["Sam"]["script"] == minority["Tess"]["script"] == ["I'm with Jordan on this one. I support it."] * 2
+    assert minority["Sam"]["script"] == minority["Tess"]["script"] == ["I don't have anything to add on this point yet."] * 2
     assert t["seeds"] == {"Jordan": {"stance": 65}} and topics[1]["seeds"] == {"Jordan": {"stance": 35}}
     assert not validate(plan_dict("q", topics, conditions))
 
@@ -200,7 +200,7 @@ async def test_argq_case_runs_end_to_end_with_scripted_confederates(monkeypatch)
     done = existing_runs("argq-e2e")
     did = done[("argq0-pro", "strong-minority", 0)]["id"]
     speakers = [m["speaker"] for m in persistence.list_messages_after(did) if m["speaker_type"] == "ai"]
-    assert speakers == ["Jordan", "Riley", "Sam", "Tess", "Jordan", "Riley", "Sam", "Tess", "Jordan"]
+    assert speakers == ["Riley", "Sam", "Tess", "Riley", "Sam", "Tess"]  # 표적은 듣기만 함
     assert {r["participant"] for r in persistence.list_survey(did)} == {"Jordan"}
     alone = done[("argq0-pro", "C-reanswer", 0)]["id"]  # 공모자는 말하지 않고 설문에서도 빠짐
     assert not persistence.list_messages_after(alone)
@@ -295,7 +295,8 @@ def test_debranding_edits_are_checked():
 def test_case_plans_carry_the_measurement_protocol():
     from src.cases import texts
     protocol = texts()["protocol"]
-    assert protocol == {"seed_format": "verbal", "post_survey": "neutral", "seed_wording": "neutral"}
+    assert protocol == {"seed_format": "verbal", "post_survey": "neutral", "seed_wording": "neutral",
+                        "seed_placement": "memory"}
     plan = plan_dict("p", [], [{"label": "a", "experiment": {"mode": "baseline"}},
                                {"label": "b", "experiment": {"post_survey": "standard"}}])
     assert plan["conditions"][0]["experiment"] == {**protocol, "mode": "baseline"}
@@ -310,7 +311,7 @@ def test_argq_two_rounds_reanswer_and_positive_control():
     labels = [c["label"] for c in conditions]
     assert labels[-2:] == ["C-reanswer", "positive-control"] and conditions[-1]["use_seeds"] is False
     t = topics[0]
-    assert t["max_statements"] == 9 and t["survey"]["scale"] == 100 and t["seeds"]["Jordan"]["stance"] == 65
+    assert t["max_statements"] == 6 and t["survey"]["scale"] == 100 and t["seeds"]["Jordan"]["stance"] == 65
     strong = [a["argument"] for a in t["meta"]["arguments"]["strong"]]
     maj = t["by_condition"]["strong-majority"]["participants"]
     assert [maj[n]["script"] for n in ("Riley", "Sam", "Tess")] == [[strong[0], strong[3]], [strong[1], strong[4]],

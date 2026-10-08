@@ -42,7 +42,8 @@ class DiscussionAgent:
         self.stubbornness_override = stubbornness
         self.materials = materials  # 모든 참가자에게 같은 배경 자료집 (인간 숙의의 자료집에 대응)
         self.seed = seed or {}  # 심은 사전 설문 응답 {문항 id: 값} (사전 설문은 묻지 않고 이 값으로 기록)
-        self.initial_position = initial_position  # 심은 응답을 시스템 프롬프트에 넣을 문장
+        self.initial_position = initial_position  # 심은 응답을 시스템 프롬프트에 넣을 문장 (seed_placement: system)
+        self.seed_memory: List = []  # 심은 응답을 대화 앞부분의 지난 주고받음으로 (seed_placement: memory)
         self.script: Optional[List[str]] = None  # 정해진 발언 (실험 공모자). 있으면 LLM 대신 차례마다 다음 줄을 말함
         self.script_pos = 0
         self.provider = provider or LLMFactory.default_provider()
@@ -129,7 +130,7 @@ class DiscussionAgent:
         if evidence_summary:
             system_prompt += prompts.render("agent.evidence_block", evidence=evidence_summary)
 
-        messages = [SystemMessage(content=system_prompt)]
+        messages = [SystemMessage(content=system_prompt), *self.seed_memory]
 
         # 최근 발언을 충분히 길게 전달 (짧게 자르면 상대 논지의 근거·결론을 볼 수 없음)
         if context:
