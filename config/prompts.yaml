@@ -274,6 +274,11 @@ turn_actions:
   stance_unknown: "You have not stated a position on this proposition yet."
   stance_current: "Your current position on the proposition: {label} ({value:+.2f} on a -1..+1 scale)."
   stance_moved: " Since your last turn you moved {delta:+.2f} after hearing {by}; let this show in what you say."
+  # 모래성 문턱 모델: 지지 근거 상태 안내 (상태 기반 진행에서만)
+  grounds_status: " Your supporting grounds on this proposition: {standing} of {total} still stand{weakened}."
+  grounds_weakened: "; weakened or collapsed: {claims}"
+  grounds_defend: " Defend your position with the grounds that still stand, or reinterpret the points that were challenged."
+  grounds_switched: " So many of your grounds have collapsed that your position has shifted to {label}. Say plainly that you have changed your mind and name the points that changed it."
   stance_labels:
     strong_agree: "strongly agree"
     agree: "leaning agree"
@@ -307,10 +312,18 @@ debate_analysis:
       credibility (the speaker's role/expertise is relevant to this point), receptive (acknowledges that
       listener's arguments), threat (attacks that listener's identity, motives or character rather than
       their arguments). Rate what the utterance does, not whether the listener would agree.
+    - undermined: supporting grounds (from the list given, by exact id) that this utterance weakens, each with
+      severity 0..1. A ground is weakened when the utterance gives a good reason that it is false, irrelevant or
+      outweighed (severity reflects how strong that reason is), or when the ground's OWNER here concedes a point
+      that contradicts their own ground (then the speaker is the owner). Do not list grounds that are merely
+      disagreed with without a reason. Empty if none.
   user: |
     Proposition: {proposition}
     Participants and current stances (-1..+1, null = unknown):
     {participants}
+
+    Supporting grounds so far (id: claim [strength 0..1]):
+    {grounds}
 
     Recent context:
     {context}

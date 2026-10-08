@@ -377,3 +377,110 @@ def test_analysis_normalizes_relation_synonyms_and_drops_unknown():
                                                {"seq": 2, "speaker": "B", "relation": "weird"},
                                                {"seq": 3, "speaker": "C", "relation": "Rebut"}])
     assert [(t.seq, t.relation) for t in a.targets] == [(1, "support"), (3, "attack")] and a.stance == 0.2
+
+
+# ---------- 모래성 문턱 모델 ----------
+
+def _state(s_a=0.6, s_b=0.6, **overrides):
+    state = DebateState(DynamicsParams.from_settings(get_config(), **overrides), grounds_max=4, threshold_switch=True)
+    state.ensure("A", "ai", s_a)
+    state.ensure("B", "ai", s_b)
+    state.apply(1, "A", "ai", {"claims": ["a1", "a2", "a3", "a4"], "stance": 0.8})
+    state.apply(2, "B", "ai", {"claims": ["b1"], "stance": -0.8})
+    return state
+
+
+def _undermine(state, seq, speaker, ids, severity=1.0):
+    return state.apply(seq, speaker, "ai", {"claims": [], "undermined": [{"ground": g, "severity": severity} for g in ids]})
+
+
+def test_grounds_are_recorded_per_proposition_with_ids():
+    state = _state()
+    a = state.participants["A"]
+    assert [g["id"] for g in a.grounds] == ["A#1", "A#2", "A#3", "A#4"] and a.pressure() == 0.0
+    state.apply(3, "A", "ai", {"claims": ["a5"], "stance": 0.8})
+    assert len(a.grounds) == 4  # 상한
+    state.reset_subtopic()
+    assert a.grounds == [] and not a.switched
+
+
+def test_high_involvement_bolsters_before_threshold_then_switches_once():
+    state = _state(s_a=0.6)  # θ = 0.3 + 0.4 × 0.6 = 0.54
+    a = state.participants["A"]
+    moves = _undermine(state, 3, "B", ["A#1"])  # 다른 참가자의 반박: 0.3 약화 → D = 0.075
+    assert moves[0]["kind"] == "pressure" and a.x > 0.8  # 문턱 전 보강 (상대와 반대 방향)
+    for seq, gid in ((4, "A#2"), (5, "A#3")):
+        _undermine(state, seq, "A", [gid])  # 스스로 인정: 0.6 약화
+    assert a.pressure() < state.theta(a) and not a.switched
+    moves = _undermine(state, 6, "A", ["A#4", "A#1"])
+    switch = [m for m in moves if m["kind"] == "switch"]
+    assert switch and a.switched and a.x < 0 and a.x0 == a.x  # 상대 쪽으로 급변, 새 기준점
+    before = a.x
+    assert not [m for m in _undermine(state, 7, "A", ["A#2"]) if m["kind"] == "switch"] and a.x == before  # 한 번만
+
+
+def test_low_involvement_moves_continuously_without_threshold():
+    state = _state(s_a=0.2)
+    a = state.participants["A"]
+    xs = []
+    for seq, gid in ((3, "A#1"), (4, "A#2"), (5, "A#3")):
+        _undermine(state, seq, "A", [gid])
+        xs.append(a.x)
+    assert xs[0] < 0.8 and xs[1] < xs[0] and xs[2] < xs[1] and not a.switched
+
+
+def test_unanswered_attack_weakens_strongest_ground_at_end_of_proposition():
+    state = _state()
+    state.apply(3, "B", "ai", {"claims": ["b2"], "targets": [{"seq": 1, "speaker": "A", "relation": "attack"}], "stance": -0.8})
+    moves = state.close_proposition()
+    a = state.participants["A"]
+    assert min(g["w"] for g in a.grounds) == 0.75 and "unanswered" in a.grounds[0]["why"]
+    assert moves and moves[0]["listener"] == "A" and not [c for c in state.challenges if c.kind == "attack"]
+
+
+def test_threshold_switch_off_records_grounds_but_does_not_move():
+    state = DebateState(DynamicsParams.from_settings(get_config()), grounds_max=4, threshold_switch=False)
+    state.ensure("A", "ai", 0.6); state.ensure("B", "ai", 0.6)
+    state.apply(1, "A", "ai", {"claims": ["a1"], "stance": 0.8})
+    state.apply(2, "B", "ai", {"claims": ["b1"], "stance": -0.8})
+    _undermine(state, 3, "A", ["A#1"])
+    a = state.participants["A"]
+    assert a.grounds[0]["w"] == 0.4 and a.x == 0.8
+
+
+def test_humans_are_not_simulated_and_snapshot_keeps_grounds():
+    state = DebateState(DynamicsParams.from_settings(get_config()), grounds_max=4, threshold_switch=True)
+    state.ensure("H", "human"); state.ensure("B", "ai")
+    state.apply(1, "H", "human", {"claims": ["h1"], "stance": 0.5})
+    state.apply(2, "B", "ai", {"claims": ["b1"], "stance": -0.5})
+    _undermine(state, 3, "H", ["H#1"])
+    assert state.participants["H"].x == 0.5
+    restored = DebateState.from_snapshot(state.snapshot())
+    assert restored.participants["H"].grounds[0]["w"] == 0.4
+    legacy = state.snapshot()
+    for p in legacy["participants"].values():
+        for k in ("grounds", "pressure_applied", "switched"):
+            p.pop(k)
+    assert DebateState.from_snapshot(legacy).participants["H"].grounds == []  # 이전 스냅숏 호환
+
+
+def test_engine_shows_grounds_and_switch_notes_and_records_end_of_proposition_moves():
+    from src.core.natural_discussion import NaturalDiscussion
+    from src.core.agent import DiscussionAgent
+    from src.models.personas import Persona
+    from tests.test_runtime import FakeBundle
+    bundle = FakeBundle()
+    agents = [DiscussionAgent(Persona(name=n, **BASE), llm=bundle.agent) for n in ("A", "B")]
+    engine = NaturalDiscussion(agents, max_statements=6, analyzer=bundle.analyzer)
+    st = engine.debate
+    st.participants["A"].stubbornness = 0.6
+    st.apply(1, "A", "ai", {"claims": ["a1", "a2"], "stance": 0.8})
+    st.apply(2, "B", "ai", {"claims": ["b1"], "stance": -0.8})
+    engine.recent_moves["A"] = _undermine(st, 3, "B", ["A#1"])
+    note = engine._stance_note("A")
+    assert "2 of 2 still stand" in note and "weakened or collapsed: a1" in note and "Defend your position" in note and "after hearing" not in note
+    engine.recent_moves["A"] = _undermine(st, 4, "A", ["A#2", "A#1"])
+    assert st.participants["A"].switched and "changed your mind" in engine._stance_note("A")
+    st.apply(5, "A", "ai", {"claims": [], "targets": [{"seq": 2, "speaker": "B", "relation": "attack"}], "stance": -0.3})
+    engine._close_proposition()  # B가 답하지 않은 채 명제가 끝남
+    assert engine.pending_moves and engine.pending_moves[0]["listener"] == "B"

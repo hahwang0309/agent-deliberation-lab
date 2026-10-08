@@ -92,6 +92,21 @@ engine:
   value_match_weight: 0.5       # a
   credibility_weight: 0.5       # b
   receptive_weight: 0.3         # c
+  # 모래성 문턱 모델 (Redlawsk et al. 2010 감정적 티핑 포인트, van der Maas et al. 2003 파국 모델,
+  # Friedkin et al. 2016, Chinn & Brewer 1993): 주변 근거가 무너진 비율(방어 압력 D)이 문턱을 넘으면 핵심 입장이 급변.
+  # 수치는 실증값이 아닌 설정값이며 개발 세트에서만 보정한다
+  grounds_max: 4                # 참가자·명제별로 기록하는 지지 근거 수
+  undermine_self: 0.6           # 자기 근거와 충돌하는 주장을 스스로 인정할 때 약화 (× 심각도)
+  undermine_other: 0.3          # 다른 참가자의 반박으로 약화 (× 심각도, 심각도에 논증의 질이 반영됨)
+  undermine_unanswered: 0.25    # 명제가 끝날 때까지 답하지 않은 반박이 있으면 가장 강한 근거 약화
+  switch_theta_min: 0.3         # 문턱 θ = min + (max − min) × 고집도
+  switch_theta_max: 0.7
+  low_involvement: 0.4          # 고집도가 이보다 낮으면 문턱 없이 D에 비례해 연속 이동
+  continuous_gain: 0.5          # 저관여 연속 이동: D 증가분 × gain만큼 상대 쪽으로
+  bolster_step: 0.05            # 고관여 문턱 전: D 증가분 × step만큼 자기 쪽으로 보강
+  switch_base: 0.5              # 전환 폭 = (상대 쪽까지 거리) × min(1, base + gain × 고집도)
+  switch_gain: 0.4
+  use_threshold_switch: true    # 모래성 문턱 모델 on/off (실험 조건 mechanisms.threshold_switch)
   # 고집도 (성격 키워드로 정함, 실험 조건으로 참가자별 지정 가능)
   stubbornness_default: 0.5
   stubbornness_open: 0.3        # 성격에 개방적·유연 등이 있으면

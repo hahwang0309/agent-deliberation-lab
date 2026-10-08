@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 모래성 문턱 모델 (2026-10)
+- 선행연구 2차 검토(Part B)에서 설계한 장치를 구현했습니다. 지지 근거 기록, 분석의 근거 약화 판정(`undermined`), 방어 압력, 관여도별 문턱 전환(저관여 연속 / 고관여 보강 후 급변, 히스테리시스), 명제 끝의 답하지 않은 반박 반영, 발언 프롬프트의 근거 상태·전환 안내.
+- 설정 `engine.grounds_max`, `undermine_*`, `switch_*`, `low_involvement`, `continuous_gain`, `bolster_step`, `use_threshold_switch`. 실험 조건 `mechanisms.threshold_switch`와 `dynamics`로 바꿀 수 있습니다. 상태 스냅숏에 근거가 들어가며 이전 스냅숏도 복원됩니다.
+
 ## Gemini temperature 기록 수정 (2026-10)
 - `gemini-3.5-flash-lite`는 temperature를 무시합니다(라이브러리 경고로 확인). 그동안 실행 기록에는 요청한 값(참가자 0.7, 분석 0)이 남았지만 실제로는 모델 기본값이었습니다. 이제 temperature 없이 호출하고 `null`로 기록합니다. 이전 Gemini 실행 기록의 temperature는 실제 값이 아닙니다.
 - `llm.fixed_sampling_prefixes`(temperature를 받지 않는 모델)를 모든 프로바이더에 적용하고, 구조화 출력 방식을 정하는 목록은 `llm.json_schema_prefixes`로 나눴습니다.

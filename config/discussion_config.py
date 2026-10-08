@@ -51,6 +51,18 @@ class DiscussionConfig:
     value_match_weight: float         # 설득력 = 질 × 새로움 × (1−w + w×가치 일치) × ...
     credibility_weight: float
     receptive_weight: float
+    grounds_max: int
+    undermine_self: float
+    undermine_other: float
+    undermine_unanswered: float
+    switch_theta_min: float
+    switch_theta_max: float
+    low_involvement: float
+    continuous_gain: float
+    bolster_step: float
+    switch_base: float
+    switch_gain: float
+    use_threshold_switch: bool
     stubbornness_default: float
     stubbornness_open: float
     stubbornness_firm: float

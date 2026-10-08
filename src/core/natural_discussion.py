@@ -136,6 +136,16 @@ class Concession(BaseModel):
     claim: str   # 인정한 상대 주장 (짧게)
 
 
+class Undermined(BaseModel):
+    ground: str        # 약화된 근거 id (예: "Bee#2")
+    severity: float = 0.0
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def clamp_unit(cls, value):
+        return 0.0 if value is None else max(0.0, min(1.0, float(value)))
+
+
 class UtteranceAnalysis(BaseModel):
     claims: List[str] = Field(default_factory=list)
     move: str = "position"
@@ -144,6 +154,7 @@ class UtteranceAnalysis(BaseModel):
     concessions: List[Concession] = Field(default_factory=list)
     stance: float = Field(0.0, ge=-1.0, le=1.0)
     influence: List[ListenerInfluence] = Field(default_factory=list)
+    undermined: List[Undermined] = Field(default_factory=list)
 
     @field_validator("targets", mode="before")
     @classmethod
@@ -213,7 +224,9 @@ class NaturalDiscussion:
         self.llm_spec: Dict[str, Any] = {}  # 실행 기록용 모델·temperature (create_discussion이 채움)
         self.messages: List[Message] = []
 
-        self.debate = DebateState(DynamicsParams.from_settings(self.config), self.config.commitments_kept)
+        self.debate = DebateState(DynamicsParams.from_settings(self.config), self.config.commitments_kept,
+                                  self.config.grounds_max, self.config.use_threshold_switch)
+        self.pending_moves: List[Dict[str, Any]] = []  # 명제가 끝날 때 생긴 이동 (다음 분석 기록에 붙임)
         for agent in agents:
             self.debate.ensure(agent.persona.name, "ai", agent.stubbornness)
 
@@ -284,7 +297,8 @@ class NaturalDiscussion:
             self.devils_advocate_used = snapshot.get("devils_advocate_used", False)
             if snapshot.get("state"):
                 self.debate = DebateState.from_snapshot(snapshot["state"], self.debate.params,
-                                                        self.config.commitments_kept)
+                                                        self.config.commitments_kept, self.config.grounds_max,
+                                                        self.config.use_threshold_switch)
             if snapshot_seq is not None:
                 self._replay_after_snapshot(snapshot_seq)
             if self.moderator:
@@ -469,6 +483,7 @@ class NaturalDiscussion:
             return None, len(self.closing_done) >= len(self.agents)
         if self.statements_on_subtopic < self._current_budget():
             return None, False
+        self._close_proposition()
         if self.subtopic_idx + 1 < len(self.propositions):
             self.subtopic_idx += 1
             self.statements_on_subtopic = 0
@@ -484,6 +499,12 @@ class NaturalDiscussion:
                 return self._moderator_event(self.moderator.closing_announcement(), "closing_announce"), False
             return None, False
         return None, True
+
+    def _close_proposition(self) -> None:
+        """명제 끝: 답하지 않은 반박을 근거 약화로 반영 (모래성 문턱 모델). 이동은 다음 분석 기록에 붙인다"""
+        for move in self.debate.close_proposition():
+            self.recent_moves.setdefault(move["listener"], []).append(move)
+            self.pending_moves.append(move)
 
     # ---------- 발언자·발화 행위 선택 ----------
 
@@ -606,12 +627,29 @@ class NaturalDiscussion:
         label = (labels["strong_agree"] if x >= strong else labels["agree"] if x >= lean else
                  labels["undecided"] if x > -lean else labels["disagree"] if x > -strong else labels["strong_disagree"])
         note = prompts.render("turn_actions.stance_current", label=label, value=x)
-        moves = self.recent_moves.get(name, [])
+        all_moves = self.recent_moves.get(name, [])
+        moves = [m for m in all_moves if m.get("kind") not in ("pressure", "switch")]  # 근거 압력은 아래에서 따로 안내
         total = sum(m["delta"] for m in moves)
         if abs(total) >= self.config.stance_note_min_shift:
             by = ", ".join(dict.fromkeys(m["by"] for m in moves))
             note += prompts.render("turn_actions.stance_moved", delta=total, by=by)
-        return note
+        return note + self._grounds_note(name, label, any(m.get("kind") == "switch" for m in all_moves))
+
+    def _grounds_note(self, name: str, label: str, just_switched: bool) -> str:
+        """모래성 문턱 모델: 지지 근거 상태, 전환 직후에는 전환을 밝히게 함"""
+        prompts = config_loader.prompts
+        p = self.debate.participants.get(name)
+        if p is None or not p.grounds or not self.config.use_threshold_switch:
+            return ""
+        if just_switched:
+            return prompts.render("turn_actions.grounds_switched", label=label)
+        hurt = [g for g in p.grounds if g["w"] < 1.0]
+        if not hurt:
+            return ""
+        standing = sum(1 for g in p.grounds if g["w"] >= 0.5)
+        weakened = prompts.render("turn_actions.grounds_weakened", claims="; ".join(g["claim"] for g in hurt))
+        note = prompts.render("turn_actions.grounds_status", standing=standing, total=len(p.grounds), weakened=weakened)
+        return note + ("" if p.switched else prompts.render("turn_actions.grounds_defend"))
 
     def _build_prompt(self, topic: str, turn: Turn) -> str:
         prompts = config_loader.prompts
@@ -786,6 +824,7 @@ class NaturalDiscussion:
                 SystemMessage(content=prompts.render("debate_analysis.system")),
                 HumanMessage(content=prompts.render(
                     "debate_analysis.user", proposition=proposition, participants=participants,
+                    grounds=self.debate.grounds_text(),
                     context=context or "(none)", seq=seq, speaker=speaker, utterance=text)),
             ])
         except Exception:
@@ -804,6 +843,7 @@ class NaturalDiscussion:
         moves = self.debate.apply(seq, speaker, kind, analysis)
         for move in moves:
             self.recent_moves.setdefault(move["listener"], []).append(move)
+        moves, self.pending_moves = self.pending_moves + moves, []
         return EngineEvent(kind="analysis", speaker=speaker, meta={
             "seq": seq, "subtopic_idx": self.subtopic_idx, "analysis": analysis, "moves": moves,
             "stances": self.debate.stances(), "debate": self.snapshot(),

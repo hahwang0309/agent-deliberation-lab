@@ -56,6 +56,7 @@ class Mechanisms(_Strict):
     closing_round: bool = True        # 종결 라운드
     latitude: bool = True             # 수용·거부 범위 (끄면 거리와 무관하게 수용, 반발 없음)
     concession_shift: bool = True     # 양보에 따른 입장 이동 (끄면 기록만 함)
+    threshold_switch: bool = True     # 모래성 문턱 모델 (끄면 근거 약화는 기록만 하고 입장은 움직이지 않음)
 
 
 class Dynamics(_Strict):
@@ -75,6 +76,16 @@ class Dynamics(_Strict):
     value_match_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
     credibility_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
     receptive_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
+    undermine_self: Optional[float] = Field(None, ge=0.0, le=1.0)
+    undermine_other: Optional[float] = Field(None, ge=0.0, le=1.0)
+    undermine_unanswered: Optional[float] = Field(None, ge=0.0, le=1.0)
+    switch_theta_min: Optional[float] = Field(None, ge=0.0, le=1.0)
+    switch_theta_max: Optional[float] = Field(None, ge=0.0, le=1.0)
+    low_involvement: Optional[float] = Field(None, ge=0.0, le=1.0)
+    continuous_gain: Optional[float] = Field(None, ge=0.0, le=2.0)
+    bolster_step: Optional[float] = Field(None, ge=0.0, le=1.0)
+    switch_base: Optional[float] = Field(None, ge=0.0, le=1.0)
+    switch_gain: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 class ExperimentConfig(_Strict):
@@ -137,7 +148,8 @@ def engine_settings(experiment: Optional[ExperimentConfig] = None) -> Discussion
     overrides["record_prompts"] = experiment.record_prompts
     m = experiment.mechanisms
     overrides.update(use_reply_obligation=m.reply_obligation, use_stalemate_mediation=m.stalemate_mediation,
-                     use_devils_advocate=m.devils_advocate, use_closing_round=m.closing_round)
+                     use_devils_advocate=m.devils_advocate, use_closing_round=m.closing_round,
+                     use_threshold_switch=m.threshold_switch)
     if not m.latitude:
         overrides.update(accept_wide=FULL_LATITUDE, accept_narrow=FULL_LATITUDE)
     if not m.concession_shift:
