@@ -204,3 +204,72 @@ async def test_argq_case_runs_end_to_end_with_scripted_confederates(monkeypatch)
     assert speakers == ["Jordan", "Riley", "Sam", "Tess", "Jordan"]
     assert {r["participant"] for r in persistence.list_survey(did)} == {"Jordan"}
 
+
+
+RAW_TEXT = """Executive Summary
+HEALTH CARE The Issue
+Most people have insurance. Some want more.
+Below are examples of policy proposals from the full-length document on this issue:
+\f
+The US should impose a wealth
+tax on the richest taxpayers.
+
+This tax would directly affect only
+the very rich and would combat the deficit.
+
+Measuring wealth can be complex
+and costly.
+
+The US should repeal the
+estate tax, which currently
+taxes large fortunes.
+
+People were already taxed when they
+earned the money.
+
+Repeal would reduce revenue and
+increase inequality.
+
+It is double taxation.
+"""
+
+
+def test_briefing_verification_against_default_mode_text():
+    rows = briefing.parse_tables(LAYOUT)
+    boxes = {"issues": {"Health": "Most people have insurance. Some want more."},
+             "items": {"Q4B": rows[0], "Q4C": rows[1]}}
+    report = briefing.verify(boxes, RAW_TEXT, min_page=2)
+    assert report["issues"]["Health"]["status"] == "exact"
+    fields = {(q, k): f["status"] for q, v in report["items"].items() for k, f in v["fields"].items()}
+    assert fields[("Q4B", "proposal")] == "exact" and fields[("Q4B", "arguments_for")] == "exact"
+    assert fields[("Q4C", "arguments_for")] in ("joined", "sentences")  # 쪽이 넘어가 두 단락으로 나뉜 칸
+
+    broken = {"issues": {}, "items": {"X": {**rows[0], "arguments_against": "Measuring wealth can be complex and costly. Continued on next page"},
+                                      "Y": {**rows[0], "arguments_for": "This tax would directly affect only the rich."}}}
+    report = briefing.verify(broken, RAW_TEXT, min_page=2)
+    assert report["items"]["X"]["fields"]["arguments_against"]["status"] == "navigation_text"
+    assert report["items"]["Y"]["fields"]["arguments_for"]["status"] == "mismatch"
+
+
+def test_briefing_parser_drops_section_titles_navigation_and_merges_continued_rows():
+    layout = """ PROPOSALS                        ARGUMENTS FOR                                 ARGUMENTS AGAINST
+
+
+ Continue the program for         It helps young people.                        It rewards illegal entry.
+ children.                        It is fair.
+                                                                                                    Continued on next page
+                      Next Section Title
+                       PROPOSALS                        ARGUMENTS FOR                                ARGUMENTS AGAINST
+
+
+                       Continue the program for         Recipients contribute to the economy.        Congress never approved it.
+                       children. (continued)
+
+                       Raise prices over- or            Over- or under-pay is common.                No.
+                       under-pay.
+"""
+    rows = briefing.parse_tables(layout)
+    assert [r["proposal"] for r in rows] == ["Continue the program for children.", "Raise prices over- or under-pay."]
+    assert rows[0]["arguments_for"] == "It helps young people. It is fair. Recipients contribute to the economy."
+    assert rows[0]["arguments_against"] == "It rewards illegal entry. Congress never approved it."
+    assert "Title" not in rows[0]["arguments_for"] + rows[0]["proposal"]

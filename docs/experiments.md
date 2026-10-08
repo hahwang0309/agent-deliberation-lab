@@ -96,7 +96,8 @@ python scripts/coding_agreement.py --coded coder1.csv --second coder2.csv
 |---|---|---|
 | `wason` | `data/raw/delidata/*.tsv` (DeliData, CC-BY 4.0) | 3명 집단 복제: 같은 카드, 인간의 혼자 답을 심음. 조건 A-기준선·A-상태(각 2회), B(혼자 다시 풀기), C(초기 답 없음) |
 | `wason-variants --n 60 --seed S` | 같음 | 같은 논리 구조의 새 변형. 초기 답은 DeliData 혼자 답의 역할 유형 분포에서 뽑음. 조건 A 두 모드 + C |
-| `a1r-briefing` | `data/raw/a1r/briefing.pdf` (`pdftotext` 필요) | 정책안별 자료 상자(찬반 논거)와 영역 배경의 **초안**. 문항 문구와의 유사도를 적으므로 원문과 대조해 고친 뒤 `reviewed: true`로 확정 |
+| `a1r-briefing` | `data/raw/a1r/briefing.pdf` (`pdftotext` 필요) | 정책안별 자료 상자(찬반 논거)와 영역 배경의 **초안** (`pdftotext -layout`의 열 위치로 추출) |
+| `a1r-briefing-verify --briefing <초안> --report <결과> [--mark-verified]` | 같음 | 모든 칸을 다른 방식으로 읽은 PDF 원문(`pdftotext` 기본 모드, 칸이 한 단락으로 나옴)과 대조. 본편 쪽에서 단락 일치, 이어지는 단락 일치, 또는 문장 단위(모든 문장이 순서대로 있고 해당 단락에 빠진 문장 없음)로 통과. 쪽 안내 문구가 끼면 실패. 모두 통과하면 `verified` 기록. 설문 문구와 표 문구가 크게 다른 문항(유사도 낮음)은 같은 정책인지 사람이 확인 |
 | `a1r --set development\|locked\|all --seed S --briefing <확정본>` | `data/raw/a1r/{dataset,codebook}.tab` (A1R, CC0) | 문항마다 민주 2·공화 2·무당층 1 층화 집단. 실제 프로필 페르소나, 사전 점수 심기, 0~10 설문. 조건 A-기준선·A-상태·B(자료만)·C(재응답)·D(심지 않음) |
 | `a1r --debranded` | 같음 | `cases.yaml`의 이름 제거 문항(Q5A, Q3A, Q6F): 문안 교체와 자료 치환 |
 | `a1r --small-groups Q5A Q3A` | 같음 | A1R 실제 소집단(GROUP) 전원 복제 |

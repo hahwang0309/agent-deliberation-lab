@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 자료 상자 자동 검증 (2026-10)
+- `build_cases.py a1r-briefing-verify`: 추출한 자료 상자(30문항 × 3칸, 영역 배경 5개)를 다른 방식으로 읽은 PDF 원문(`pdftotext` 기본 모드)과 대조합니다. 결과 90칸과 배경 5개가 모두 통과했습니다(단락 일치 78, 이어지는 단락 9, 문장 단위 3).
+- 검증으로 찾아 고친 추출 오류: 다음 쪽으로 이어지는 행(`(continued)`)의 논거 누락(Q5H), 다음 표의 절 제목이 앞 행에 붙음(Q2H), 쪽 안내 'Continued on next page' 혼입(Q5C·Q5H·Q5F), 공유 하이픈 'over- or under-pay'가 'over-or'로 바뀜.
+- 확정 표시는 `reviewed` 대신 `verified`(검증 방법과 결과 포함)입니다.
+
 ## 기본 모델을 같은 등급으로 통일 (2026-10)
 - 4개 프로바이더의 기본 모델을 각 회사의 가장 작은 범용 모델로 맞췄습니다: `claude-haiku-4-5-20251001`, `gemini-3.5-flash-lite`, `mistral-small-2603`(이전 `mistral-large-latest`, 상위 등급 별칭), `gpt-6-luna`(이전 `gpt-4`).
 - `gpt-6-luna`는 OpenAI 문서(2026-10)로 확인했지만 키가 없어 실제 호출은 하지 않았습니다. 추론 모델이라 temperature를 받지 않을 수 있습니다.

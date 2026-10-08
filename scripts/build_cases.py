@@ -10,7 +10,8 @@
 사용 예:
   python scripts/build_cases.py wason --out data/cases/wason.yaml
   python scripts/build_cases.py wason-variants --n 60 --seed 1 --out data/cases/wason_variants.yaml
-  python scripts/build_cases.py a1r-briefing --out data/cases/a1r_briefing.yaml   # 초안 → 연구자가 원문과 대조해 확정
+  python scripts/build_cases.py a1r-briefing --out data/cases/a1r_briefing.yaml   # 초안 추출 (-layout)
+  python scripts/build_cases.py a1r-briefing-verify --briefing data/cases/a1r_briefing.yaml --report data/cases/a1r_briefing_check.yaml --mark-verified
   python scripts/build_cases.py a1r --set development --groups-per-item 8 --seed 1 --briefing data/cases/a1r_briefing.yaml --out data/cases/a1r_dev.yaml
   python scripts/build_cases.py a1r --debranded --seed 1 --briefing data/cases/a1r_briefing.yaml --out data/cases/a1r_debranded.yaml
   python scripts/build_cases.py a1r --small-groups Q5A Q3A --seed 1 --briefing data/cases/a1r_briefing.yaml --out data/cases/a1r_groups.yaml
@@ -115,9 +116,9 @@ def cmd_a1r_briefing(args) -> int:
     rows = briefing.parse_tables(text)
     matched = briefing.match_items(rows, wanted)
     issues = briefing.parse_issues(text, list(t["domains"].values()))
-    draft = {"_note": "DRAFT parsed from briefing.pdf. Check every item against the PDF (match_score, column bleed) "
-                      "before use; set reviewed: true when done.",
-             "reviewed": False, "issues": issues,
+    draft = {"_note": "DRAFT parsed from briefing.pdf (pdftotext -layout). Verify with a1r-briefing-verify, "
+                      "which compares every field with the PDF read in a different mode.",
+             "issues": issues,
              "items": {q: {"label": wanted[q], **matched[q]} for q in wanted if q in matched}}
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(yaml.dump(draft, Dumper=_NoAliasDumper, allow_unicode=True, sort_keys=False, width=120),
@@ -129,10 +130,43 @@ def cmd_a1r_briefing(args) -> int:
     return 0
 
 
-def _briefing(path: str, require_reviewed: bool) -> Dict[str, Any]:
+def cmd_a1r_briefing_verify(args) -> int:
+    """자료 상자를 PDF 기본 모드 텍스트(읽기 순서)와 대조. 모두 통과하고 --mark-verified면 verified: true로 기록"""
+    from src.cases import briefing
+    raw_path = Path(args.pdf).with_suffix(".raw.txt")
+    subprocess.run(["pdftotext", args.pdf, str(raw_path)], check=True, capture_output=True)
+    raw = raw_path.read_text(encoding="utf-8")
+    pages = raw.split("\f")
+    min_page = max(i for i, p in enumerate(pages, 1) if "Executive Summary" in p) + 1  # 요약편 다음 쪽부터 본편
+    data = yaml.safe_load(Path(args.briefing).read_text(encoding="utf-8"))
+    report = briefing.verify(data, raw, min_page)
+    ok_status = {"exact", "joined", "sentences"}
+    failures = [(q, k, f) for q, v in report["items"].items() for k, f in v["fields"].items() if f["status"] not in ok_status]
+    failures += [("issues", d, f) for d, f in report["issues"].items() if f["status"] != "exact"]
+    counts = Counter(f["status"] for v in report["items"].values() for f in v["fields"].values())
+    print(f"fields: {dict(counts)}; issues: {dict(Counter(f['status'] for f in report['issues'].values()))}")
+    for q, k, f in failures:
+        print(f"FAIL {q} {k}: {f['status']} (page {f.get('page')})")
+        for d in f.get("diff", [])[:5]:
+            print("   ", d[:200])
+    Path(args.report).write_text(yaml.dump(report, Dumper=_NoAliasDumper, allow_unicode=True, sort_keys=False, width=120),
+                                 encoding="utf-8")
+    print(f"wrote report {args.report}")
+    if failures:
+        return 1
+    if args.mark_verified:
+        data["verified"] = {"method": "pdftotext default-mode text, full-text pages", "fields": dict(counts)}
+        data.pop("reviewed", None)
+        Path(args.briefing).write_text(yaml.dump(data, Dumper=_NoAliasDumper, allow_unicode=True, sort_keys=False,
+                                                 width=120), encoding="utf-8")
+        print(f"marked {args.briefing} as verified")
+    return 0
+
+
+def _briefing(path: str, require_verified: bool) -> Dict[str, Any]:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    if require_reviewed and not data.get("reviewed"):
-        raise SystemExit(f"{path} is an unreviewed draft (reviewed: false). Check it and set reviewed: true, "
+    if require_verified and not data.get("verified"):
+        raise SystemExit(f"{path} is an unverified draft. Run `a1r-briefing-verify --mark-verified`, "
                          "or pass --allow-draft for a pilot")
     return data
 
@@ -203,12 +237,19 @@ def main(argv=None) -> int:
     p.add_argument("--out", required=True)
     p.set_defaults(func=cmd_a1r_briefing)
 
+    p = sub.add_parser("a1r-briefing-verify", help="자료 상자를 PDF 원문과 자동 대조")
+    p.add_argument("--pdf", default=str(RAW / "a1r" / "briefing.pdf"))
+    p.add_argument("--briefing", required=True)
+    p.add_argument("--report", required=True, help="대조 결과 YAML")
+    p.add_argument("--mark-verified", action="store_true", help="모두 통과하면 자료 상자 파일에 verified 기록")
+    p.set_defaults(func=cmd_a1r_briefing_verify)
+
     p = sub.add_parser("a1r", help="A1R 반복 집단·이름 제거·실제 소집단")
     common(p, "a1r")
     p.add_argument("--dataset", default=str(RAW / "a1r" / "dataset.tab"))
     p.add_argument("--codebook", default=str(RAW / "a1r" / "codebook.tab"))
     p.add_argument("--briefing", help="확정한 자료 상자 YAML (없으면 자료 없는 조건만)")
-    p.add_argument("--allow-draft", action="store_true", help="검토 전 초안 자료로 만들기 (파일럿용)")
+    p.add_argument("--allow-draft", action="store_true", help="검증 전 초안 자료로 만들기 (파일럿용)")
     p.add_argument("--set", choices=("development", "locked", "all"), default="development")
     p.add_argument("--groups-per-item", type=int, default=8)
     p.add_argument("--debranded", action="store_true", help="이름 제거 문항(cases.yaml a1r.debranded)만")
