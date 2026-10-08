@@ -113,6 +113,17 @@ argq:
     - Payday loans should be banned
     - We should close Guantanamo Bay detention camp
     - We should end mandatory retirement
+    # 추가 8개 (2026-10-08, 검정력: 세트 간 효과 이질성 때문에 세트 32개 필요). 선정 기준: 찬반 비율 약 50%,
+    # 논거 380개 이상, 공중이 실제로 다투는 구체적 공공정책. 추상·기이한 주제, 과학적 정답이 있는 주제,
+    # 도덕적 합의가 강한 주제는 제외
+    - We should introduce compulsory voting
+    - We should subsidize embryonic stem cell research
+    - We should legalize organ trade
+    - We should ban factory farming
+    - We should limit executive compensation
+    - We should adopt a zero-tolerance policy in schools
+    - We should ban private military companies
+    - We should abolish the right to keep and bear arms
   scale: 100                       # 0~100 (작은 이동도 잡히도록, 파일럿 진단 2026-10)
   target_seed: {pro: 65, con: 35}  # 중간 강도 입장 (말로 제시하면 lean in favor / lean against)
   arguments_per_round: 3

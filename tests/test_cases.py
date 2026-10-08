@@ -38,9 +38,12 @@ def delidata(tmp_path):
 def test_wason_replicas_seed_human_solo_answers_and_drop_na(delidata):
     groups = wason.load_delidata(str(delidata))
     assert {g.group_id: g.solo.get("Owl", "x") for g in groups}["bbbbbbbb-2"] is None  # N/A 기록은 무효
-    topics, excluded = wason.replica_topics(groups)
-    assert len(topics) == 1 and excluded == {"a member has no valid solo answer (e.g. N/A)": 1}
-    t = topics[0]
+    topics, excluded = wason.replica_topics(groups)  # 모든 크기 (3명 1개 + 2명 1개, N/A 집단 제외)
+    assert sorted(len(tp["personas"]) for tp in topics) == [2, 3]
+    assert excluded == {"a member has no valid solo answer (e.g. N/A)": 1}
+    assert [tp["max_statements"] for tp in sorted(topics, key=lambda x: len(x["personas"]))] == [10, 15]
+    assert len(wason.replica_topics(groups, size=3)[0]) == 1
+    t = next(tp for tp in topics if len(tp["personas"]) == 3)
     item = t["survey"]["items"][0]
     assert item["options"] == ["2", "7", "V", "A"] and item["correct"] == ["7", "A"]
     assert t["seeds"] == {"Cat": {"cards": ["2", "A"]}, "Kiwi": {"cards": ["A"]}, "Dog": {"cards": ["7", "A"]}}
@@ -156,7 +159,7 @@ def test_argq_matched_strong_weak_sets_and_support_scripts():
     rows = [{"argument": " ".join(["word"] * rng.randint(8, 14)) + f" {i}.", "topic": topic, "wa": rng.random(),
              "stance": stance} for topic in argq.texts()["argq"]["topics"] for stance in (1, -1) for i in range(40)]
     topics, conditions = argq.topics_and_conditions(rows, seed=2)
-    assert len(topics) == 16 and [c["label"] for c in conditions] == [
+    assert len(topics) == 2 * len(argq.texts()["argq"]["topics"]) == 32 and [c["label"] for c in conditions] == [
         f"{q}-{s}-{m}" for q in ("strong", "weak") for s in ("minority", "majority") for m in ("baseline", "stateful")
     ] + ["C-reanswer"]
     t = topics[0]

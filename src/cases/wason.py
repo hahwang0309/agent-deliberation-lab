@@ -109,12 +109,14 @@ def _topic(key: str, cards: List[str], correct: List[str], question: str, setup:
     }
 
 
-def replica_topics(groups: List[Group], size: int = 3, max_statements: int = 15) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
-    """원 과제 복제 주제. (주제 목록, 제외 사유별 집단 수)"""
+def replica_topics(groups: List[Group], size: Optional[int] = None,
+                   per_member: int = 5) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """원 과제 복제 주제. size를 비우면 모든 크기(2명 이상)의 집단을 복제한다.
+    발언 수 = 1인당 per_member (3명이면 15: 입장 표명 3 + 상호작용 9 + 종결 3). (주제 목록, 제외 사유별 집단 수)"""
     t = texts()["wason"]
     topics, excluded = [], Counter()
     for g in groups:
-        if len(g.solo) != size:
+        if (size is not None and len(g.solo) != size) or len(g.solo) < 2:
             continue
         if len(g.cards) != 4 or sorted(card_role(c) for c in g.cards) != sorted(ROLES):
             excluded["card set is not one P / not-P / Q / not-Q"] += 1
@@ -125,7 +127,7 @@ def replica_topics(groups: List[Group], size: int = 3, max_statements: int = 15)
         members = list(g.solo)
         topics.append(_topic(f"deli-{g.group_id[:8]}", g.cards, correct_cards(g.cards), t["question"],
                              t["setup"].format(cards=", ".join(g.cards)), members,
-                             {m: g.solo[m] for m in members}, max_statements, t,
+                             {m: g.solo[m] for m in members}, per_member * len(members), t,
                              {"group_id": g.group_id, "human_final": {m: g.final[m] for m in members}}))
     return topics, dict(excluded)
 

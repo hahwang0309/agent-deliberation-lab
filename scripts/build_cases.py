@@ -118,9 +118,11 @@ def write_plan(plan: Dict[str, Any], args) -> int:
 def cmd_wason(args) -> int:
     from src.cases import wason
     groups = wason.load_delidata(args.data)
-    topics, excluded = wason.replica_topics(groups, size=args.size, max_statements=args.max_statements)
-    print(f"DeliData groups with {args.size} members: {len(topics) + sum(excluded.values())}; "
-          f"replicated {len(topics)}; excluded {excluded or 0}")
+    topics, excluded = wason.replica_topics(groups, size=args.size, per_member=args.per_member)
+    sizes = Counter(len(tp["personas"]) for tp in topics)
+    print(f"DeliData groups ({'size ' + str(args.size) if args.size else 'all sizes'}): "
+          f"{len(topics) + sum(excluded.values())}; replicated {len(topics)} {dict(sorted(sizes.items()))}; "
+          f"excluded {excluded or 0}")
     return write_plan(plan_dict(args.name, topics, wason.CONDITIONS), args)
 
 
@@ -249,8 +251,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("wason", help="DeliData 집단 복제")
     common(p, "wason-replica")
     p.add_argument("--data", default=str(RAW / "delidata"))
-    p.add_argument("--size", type=int, default=3)
-    p.add_argument("--max-statements", type=int, default=15)
+    p.add_argument("--size", type=int, help="이 크기의 집단만 (비우면 모든 크기: H1 검정력 확보)")
+    p.add_argument("--per-member", type=int, default=5, help="1인당 발언 수 (3명이면 15발언)")
     p.set_defaults(func=cmd_wason)
 
     p = sub.add_parser("wason-variants", help="같은 구조의 새 변형 문항")
