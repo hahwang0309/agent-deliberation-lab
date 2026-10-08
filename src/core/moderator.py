@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from config.config_loader import config_loader
+from config.discussion_config import get_config
 from src.utils.language_detector import LanguageDetector
 from src.utils.llm_provider import LLMFactory, structured_output
 
@@ -21,7 +22,7 @@ class Subtopics(BaseModel):
 
 class DiscussionModerator:
     def __init__(self, llm: Optional[BaseChatModel] = None, language: str = "auto"):
-        self.llm = llm or LLMFactory.create_llm(None, temperature=0.5)
+        self.llm = llm or LLMFactory.create_llm(None, temperature=get_config().moderator_temperature)
         self.language = language
         self.subtopics: List[str] = []
         self.current_subtopic_idx = 0

@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from api.database import Base
+from config.config_loader import config_loader
 
 
 class CustomPersona(Base):
@@ -28,8 +29,10 @@ class CustomPersona(Base):
     communication_style = Column(String(200), nullable=False)
     
     # LLM 설정
-    llm_provider = Column(String(50), nullable=False, default="openai")
-    model = Column(String(100), nullable=False, default="gpt-4")
+    # 기본값은 config.yaml (llm.default_provider와 그 프로바이더의 기본 모델)
+    llm_provider = Column(String(50), nullable=False, default=lambda: config_loader.get_llm_config().default_provider)
+    model = Column(String(100), nullable=False, default=lambda: config_loader.get_llm_config().default_models[
+        config_loader.get_llm_config().default_provider])
     
     # 초기 개방성
     initial_openness = Column(Float, nullable=False, default=0.5)

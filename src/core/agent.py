@@ -49,7 +49,7 @@ class DiscussionAgent:
         self.language = "auto"
         self.statement_count = 0
 
-        self.llm = llm or LLMFactory.create_llm(self.provider, temperature=0.7)
+        self.llm = llm or LLMFactory.create_llm(self.provider, temperature=self.config.agent_temperature)
         aux_llm = aux_llm or self.llm
 
         # 신념 추론 서비스 (선택)
@@ -96,7 +96,8 @@ class DiscussionAgent:
         })
         beliefs_text = '\n'.join([f"- {belief}" for belief in persona.beliefs[:3]])
         belief_emphasis = prompts.render("agent.belief_emphasis", beliefs=beliefs_text)
-        length_instruction = prompts.get_agent_length_instruction(min_sentences=3, max_sentences=8)
+        length_instruction = prompts.get_agent_length_instruction(
+            min_sentences=self.config.min_response_sentences, max_sentences=self.config.max_response_sentences)
         language_instruction = prompts.get(f"language.instruction.{self.language}", "")
         materials = prompts.render("agent.materials_block", materials=self.materials) if self.materials else ""
         return (base_prompt + belief_emphasis + self.initial_position + materials

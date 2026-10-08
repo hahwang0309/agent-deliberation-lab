@@ -22,26 +22,24 @@ class LLMFactory:
 
     @classmethod
     def _get_default_model(cls, provider: LLMProvider) -> str:
-        """설정 파일에서 기본 모델 가져오기"""
-        llm_config = config_loader.get_llm_config()
-        provider_key = provider.value.lower()
-        return llm_config.default_models.get(provider_key, {
-            LLMProvider.OPENAI: "gpt-4",
-            LLMProvider.GEMINI: "gemini-3.5-flash-lite",
-            LLMProvider.CLAUDE: "claude-haiku-4-5-20251001",
-            LLMProvider.MISTRAL: "mistral-large-latest"
-        }.get(provider))
-    
-    # temperature를 기본값 외로 지정할 수 없고 적응형 사고(thinking)가 기본인 모델 (langchain-anthropic이 거부함).
-    # 이런 모델은 temperature를 빼고 호출하며(실행 기록에는 None = 모델 기본값),
-    # 구조화 출력은 강제 도구 호출 대신 json_schema 방식을 쓴다(structured_output).
-    FIXED_SAMPLING_PREFIXES = ("claude-fable-5", "claude-sonnet-5-5")
+        """프로바이더 기본 모델 (config.yaml llm.default_models, 없으면 오류)"""
+        models = config_loader.get_llm_config().default_models
+        if provider.value not in models:
+            raise ValueError(f"config.yaml llm.default_models has no model for provider {provider.value}")
+        return models[provider.value]
+
+    @classmethod
+    def fixed_sampling(cls, model: str) -> bool:
+        """temperature를 기본값 외로 받지 않고 적응형 사고가 기본인 모델 (config.yaml llm.fixed_sampling_prefixes).
+        이런 모델은 temperature를 빼고 호출하며(실행 기록에는 None = 모델 기본값),
+        구조화 출력은 강제 도구 호출 대신 json_schema 방식을 쓴다(structured_output)."""
+        return model.startswith(tuple(config_loader.get_llm_config().fixed_sampling_prefixes))
 
     @classmethod
     def supports_temperature(cls, provider: Optional[LLMProvider], model: Optional[str]) -> bool:
         provider = provider or cls.default_provider()
         model = model or cls._get_default_model(provider) or ""
-        return not (provider == LLMProvider.CLAUDE and model.startswith(cls.FIXED_SAMPLING_PREFIXES))
+        return not (provider == LLMProvider.CLAUDE and cls.fixed_sampling(model))
 
     @classmethod
     def effective_temperature(cls, provider: Optional[LLMProvider], model: Optional[str],
@@ -192,7 +190,7 @@ def structured_output(llm: BaseChatModel, schema):
     (실측: Sonnet 5.5·Haiku 4.5 모두 json_schema 동작, 기존 검증된 모델은 기존 방식 유지).
     결과가 없으면(None) 조용히 넘기지 않고 EmptyStructuredOutput을 낸다"""
     model = getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
-    if isinstance(model, str) and model.startswith(LLMFactory.FIXED_SAMPLING_PREFIXES):
+    if isinstance(model, str) and LLMFactory.fixed_sampling(model):
         runnable = llm.with_structured_output(schema, method="json_schema")
     else:
         runnable = llm.with_structured_output(schema)

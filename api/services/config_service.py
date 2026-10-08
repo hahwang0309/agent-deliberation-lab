@@ -6,6 +6,9 @@ import os
 from datetime import datetime
 
 from api.config import settings
+from config.config_loader import config_loader
+from src.models.personas import LLMProvider
+from src.utils.llm_provider import LLMFactory
 from api.schemas.config import (
     SystemConfigResponse,
     SystemInfo,
@@ -58,10 +61,10 @@ class ConfigService:
         # 시스템 제한
         limits = Limits(
             max_discussions_per_user=100,
-            max_concurrent_discussions=5,
-            max_participants_per_discussion=5,
+            max_concurrent_discussions=config_loader.config.limits.max_global_running,
+            max_participants_per_discussion=config_loader.config.limits.max_personas,
             max_rounds=20,
-            max_message_length=1000,
+            max_message_length=config_loader.config.limits.max_human_chars,
             max_custom_personas=10
         )
         
@@ -82,127 +85,26 @@ class ConfigService:
     
     @staticmethod
     def get_llm_providers_status() -> LLMProvidersResponse:
-        """
-        LLM 프로바이더 상태 조회
-        
-        Returns:
-            LLMProvidersResponse: LLM 프로바이더 상태
-        """
+        """프로바이더별 키 설정 여부와 기본 모델 (config.yaml llm.default_models).
+        실제 호출로 상태를 확인하지 않으므로 응답 시간·모델 메타데이터·단가는 비워 둔다"""
         current_time = datetime.utcnow()
+        llm = config_loader.get_llm_config()
+        available = LLMFactory.get_available_providers()
         providers = {}
-        
-        # OpenAI
-        openai_available = bool(os.getenv("OPENAI_API_KEY"))
-        providers["openai"] = LLMProviderStatus(
-            available=openai_available,
-            status="operational" if openai_available else "unavailable",
-            response_time_ms=450 if openai_available else None,
-            reason=None if openai_available else "API key not configured",
-            last_checked=current_time,
-            models=[
-                LLMModelInfo(
-                    id="gpt-4",
-                    name="GPT-4",
-                    version="gpt-4-0613",
-                    context_window=8192,
-                    max_tokens=4096,
-                    cost_per_1k_input_tokens=0.03,
-                    cost_per_1k_output_tokens=0.06,
-                    available=openai_available
-                ),
-                LLMModelInfo(
-                    id="gpt-3.5-turbo",
-                    name="GPT-3.5 Turbo",
-                    version="gpt-3.5-turbo-0125",
-                    context_window=16384,
-                    max_tokens=4096,
-                    cost_per_1k_input_tokens=0.0005,
-                    cost_per_1k_output_tokens=0.0015,
-                    available=openai_available
-                )
-            ] if openai_available else []
-        )
-        
-        # Claude (Anthropic)
-        claude_available = bool(os.getenv("ANTHROPIC_API_KEY"))
-        providers["claude"] = LLMProviderStatus(
-            available=claude_available,
-            status="operational" if claude_available else "unavailable",
-            response_time_ms=520 if claude_available else None,
-            reason=None if claude_available else "API key not configured",
-            last_checked=current_time,
-            models=[
-                LLMModelInfo(
-                    id="claude-3-opus-20240229",
-                    name="Claude 3 Opus",
-                    context_window=200000,
-                    max_tokens=4096,
-                    cost_per_1k_input_tokens=0.015,
-                    cost_per_1k_output_tokens=0.075,
-                    available=claude_available
-                ),
-                LLMModelInfo(
-                    id="claude-3-sonnet-20240229",
-                    name="Claude 3 Sonnet",
-                    context_window=200000,
-                    max_tokens=4096,
-                    cost_per_1k_input_tokens=0.003,
-                    cost_per_1k_output_tokens=0.015,
-                    available=claude_available
-                )
-            ] if claude_available else []
-        )
-        
-        # Gemini
-        gemini_available = bool(os.getenv("GOOGLE_API_KEY"))
-        providers["gemini"] = LLMProviderStatus(
-            available=gemini_available,
-            status="operational" if gemini_available else "unavailable",
-            response_time_ms=400 if gemini_available else None,
-            reason=None if gemini_available else "API key not configured",
-            last_checked=current_time,
-            models=[
-                LLMModelInfo(
-                    id="gemini-pro",
-                    name="Gemini Pro",
-                    context_window=32760,
-                    max_tokens=8192,
-                    cost_per_1k_input_tokens=0.00025,
-                    cost_per_1k_output_tokens=0.0005,
-                    available=gemini_available
-                )
-            ] if gemini_available else []
-        )
-        
-        # Mistral
-        mistral_available = bool(os.getenv("MISTRAL_API_KEY"))
-        providers["mistral"] = LLMProviderStatus(
-            available=mistral_available,
-            status="operational" if mistral_available else "unavailable",
-            response_time_ms=380 if mistral_available else None,
-            reason=None if mistral_available else "API key not configured",
-            last_checked=current_time,
-            models=[
-                LLMModelInfo(
-                    id="mistral-large-latest",
-                    name="Mistral Large",
-                    context_window=32000,
-                    max_tokens=8192,
-                    cost_per_1k_input_tokens=0.008,
-                    cost_per_1k_output_tokens=0.024,
-                    available=mistral_available
-                )
-            ] if mistral_available else []
-        )
-        
-        # 통계 계산
+        for provider in LLMProvider:
+            ok = bool(available.get(provider))
+            model = llm.default_models.get(provider.value)
+            providers[provider.value] = LLMProviderStatus(
+                available=ok,
+                status="configured" if ok else "unavailable",
+                reason=None if ok else "API key not configured",
+                last_checked=current_time,
+                models=[LLMModelInfo(id=model, name=model, max_tokens=llm.max_tokens, available=ok)] if ok and model else [],
+            )
         total_available = sum(1 for p in providers.values() if p.available)
-        total_unavailable = len(providers) - total_available
-        
         return LLMProvidersResponse(
             providers=providers,
             total_available=total_available,
-            total_unavailable=total_unavailable,
+            total_unavailable=len(providers) - total_available,
             last_updated=current_time
         )
-

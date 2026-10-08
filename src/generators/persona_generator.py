@@ -16,7 +16,6 @@ from src.utils.llm_provider import LLMFactory, structured_output
 
 logger = logging.getLogger(__name__)
 
-MAX_ATTEMPTS = 2  # 구조화 출력 검증 실패 시 재시도 포함 총 시도 횟수
 
 
 class PersonaGenerator:
@@ -24,7 +23,8 @@ class PersonaGenerator:
 
     def __init__(self, llm: Optional[BaseChatModel] = None, provider: Optional[LLMProvider] = None):
         self.llm = llm or LLMFactory.create_llm(
-            provider, temperature=0.8, max_tokens=config_loader.get_llm_config().structured_max_tokens
+            provider, temperature=config_loader.get_llm_config().task_temperatures["persona_generation"],
+            max_tokens=config_loader.get_llm_config().structured_max_tokens
         )
         self.structured_llm = structured_output(self.llm, Persona)
 
@@ -43,12 +43,12 @@ class PersonaGenerator:
         user_prompt = prompts.get_persona_user_prompt(topic, perspective_text)
 
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
-        for attempt in range(1, MAX_ATTEMPTS + 1):
+        for attempt in range(1, config_loader.config.persona_generation.max_attempts + 1):
             try:
                 persona = await self.structured_llm.ainvoke(messages)
                 break
             except ValidationError:
-                if attempt == MAX_ATTEMPTS:
+                if attempt == config_loader.config.persona_generation.max_attempts:
                     raise
                 logger.warning("Persona output failed validation (attempt %d); retrying", attempt)
         if agent_id:

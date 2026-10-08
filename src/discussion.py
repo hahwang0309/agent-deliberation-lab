@@ -73,7 +73,7 @@ def create_discussion(participants: List[ParticipantSpec],
         ref = experiment.analyzer if experiment and experiment.analyzer else None
         provider = LLMProvider(ref.provider) if ref and ref.provider else lead.provider
         model = ref.model if ref and ref.model else (lead.model if provider == lead.provider else None)
-        analyzer = bundle.get(provider, model, 0.0)
+        analyzer = bundle.get(provider, model, settings.analyzer_temperature)
 
     engine = NaturalDiscussion(agents, moderator, max_statements, analyzer=analyzer, config=settings,
                                propositions=propositions, survey=survey)
@@ -89,6 +89,7 @@ def create_discussion(participants: List[ParticipantSpec],
                                                                        settings.moderator_temperature)}
                       if moderator else None),
         "analyzer": ({"provider": provider.value, "model": model,
-                      "temperature": LLMFactory.effective_temperature(provider, model, 0.0)} if analyzer else None),
+                      "temperature": LLMFactory.effective_temperature(provider, model, settings.analyzer_temperature)}
+                     if analyzer else None),
     }
     return engine

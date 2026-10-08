@@ -5,143 +5,120 @@ YAML 파일에서 설정과 프롬프트를 로드하고 관리
 import yaml
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional
-from dataclasses import dataclass, field
+from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, fields
+
+from config.discussion_config import DiscussionConfig
+
+
+def _strict(cls, data: Dict[str, Any], section: str):
+    """YAML 섹션을 dataclass로. 빠진 항목·모르는 항목은 오류 (코드에 기본값을 두지 않음)"""
+    names = {f.name for f in fields(cls)}
+    data = data or {}
+    missing, unknown = names - set(data), set(data) - names
+    if missing or unknown:
+        raise ValueError(f"config.yaml [{section}]: missing {sorted(missing)}, unknown {sorted(unknown)}")
+    return cls(**data)
 
 
 @dataclass
 class LLMConfig:
-    """LLM 설정"""
-    temperature: float = 0.7
-    max_tokens: int = 1500
-    structured_max_tokens: int = 2000
-    timeout_seconds: float = 60
-    max_retries: int = 2
-    default_provider: str = "claude"
-    default_models: Dict[str, str] = field(default_factory=dict)
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'LLMConfig':
-        return cls(
-            temperature=data.get('temperature', 0.7),
-            max_tokens=data.get('max_tokens', 1500),
-            structured_max_tokens=data.get('structured_max_tokens', 2000),
-            timeout_seconds=data.get('timeout_seconds', 60),
-            max_retries=data.get('max_retries', 2),
-            default_provider=data.get('default_provider', 'claude'),
-            default_models=data.get('default_models', {})
-        )
+    """LLM 설정 (모델명은 default_models에만 둔다)"""
+    default_provider: str
+    default_models: Dict[str, str]
+    fixed_sampling_prefixes: List[str]
+    temperature: float
+    task_temperatures: Dict[str, float]
+    max_tokens: int
+    structured_max_tokens: int
+    timeout_seconds: float
+    max_retries: int
 
 
 @dataclass
-class DiscussionConfig:
-    """토론 설정"""
-    min_sentences: int = 3
-    max_sentences: int = 8
-    display_limit: int = 400
-    default_rounds: int = 2
-    max_context_messages: int = 5
-    default_persona_count: int = 3
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'DiscussionConfig':
-        response_length = data.get('response_length', {})
-        return cls(
-            min_sentences=response_length.get('min_sentences', 3),
-            max_sentences=response_length.get('max_sentences', 8),
-            display_limit=response_length.get('display_limit', 400),
-            default_rounds=data.get('default_rounds', 2),
-            max_context_messages=data.get('max_context_messages', 5),
-            default_persona_count=data.get('persona', {}).get('default_count', 3)
-        )
+class PersonaGenerationConfig:
+    max_attempts: int
 
 
 @dataclass
-class UIConfig:
-    """UI 설정"""
-    use_emoji: bool = True
-    panel_width: int = 80
-    colors: Dict[str, str] = field(default_factory=dict)
-    show_thinking: bool = True
-    show_round_info: bool = True
-    show_statistics: bool = True
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'UIConfig':
-        console_config = data.get('console', {})
-        output_config = data.get('output', {})
-        return cls(
-            use_emoji=console_config.get('use_emoji', True),
-            panel_width=console_config.get('panel_width', 80),
-            colors=data.get('colors', {}),
-            show_thinking=output_config.get('show_thinking', True),
-            show_round_info=output_config.get('show_round_info', True),
-            show_statistics=output_config.get('show_statistics', True)
-        )
+class SurveySettings:
+    """사전·사후 설문 실행 설정 (문항 형식은 src/services/survey.py의 SurveyConfig)"""
+    transcript_chars: int
+    max_attempts: int
+
+
+@dataclass
+class AnalysisConfig:
+    repeat_threshold: float
+    min_shift: float
+
+
+@dataclass
+class RunnerConfig:
+    rough_input_per_statement: int
+    rough_output_per_statement: int
 
 
 @dataclass
 class LimitsConfig:
     """API 토론 실행 제한"""
-    max_global_running: int = 5
-    default_statements: int = 12
-    max_statements: int = 30
-    min_personas: int = 2
-    max_personas: int = 5
-    user_max_concurrent: int = 1
-    user_daily_starts: int = 5
-    user_expensive_features: bool = False
-    max_human_turns_per_user: int = 5
-    max_human_chars: int = 1000
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'LimitsConfig':
-        defaults = cls()
-        return cls(**{k: data.get(k, getattr(defaults, k)) for k in defaults.__dataclass_fields__})
+    max_global_running: int
+    default_statements: int
+    max_statements: int
+    min_personas: int
+    max_personas: int
+    user_max_concurrent: int
+    user_daily_starts: int
+    user_expensive_features: bool
+    max_human_turns_per_user: int
+    max_human_chars: int
 
 
 @dataclass
 class ReportConfig:
     """종합보고서 설정"""
-    model: Optional[str] = None
-    max_tokens: int = 4000
-    max_attempts: int = 3
-    min_ai_messages: int = 4
-    agreed_threshold: float = 0.8
-    partial_threshold: float = 0.6
-    partial_weight: float = 0.7
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ReportConfig':
-        thresholds = data.get('thresholds', {})
-        return cls(
-            model=data.get('model'),
-            max_tokens=data.get('max_tokens', 4000),
-            max_attempts=data.get('max_attempts', 3),
-            min_ai_messages=data.get('min_ai_messages', 4),
-            agreed_threshold=thresholds.get('agreed', 0.8),
-            partial_threshold=thresholds.get('partial', 0.6),
-            partial_weight=data.get('partial_weight', 0.7),
-        )
+    model: Optional[str]
+    temperature: float
+    max_tokens: int
+    max_attempts: int
+    min_ai_messages: int
+    partial_weight: float
+    agreed_threshold: float
+    partial_threshold: float
 
 
-@dataclass 
+@dataclass
 class AppConfig:
-    """전체 애플리케이션 설정"""
+    """전체 애플리케이션 설정 (config/config.yaml)"""
     llm: LLMConfig
-    discussion: DiscussionConfig
-    ui: UIConfig
+    persona_generation: PersonaGenerationConfig
+    engine: DiscussionConfig
+    survey: SurveySettings
+    analysis: AnalysisConfig
+    experiment_runner: RunnerConfig
     limits: LimitsConfig
     report: ReportConfig
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AppConfig':
+        sections = {f.name: f.type for f in fields(cls)}
+        unknown = set(data) - set(sections)
+        if unknown:
+            raise ValueError(f"config.yaml: unknown sections {sorted(unknown)}")
+        report = dict(data.get("report") or {})
+        thresholds = report.pop("thresholds", {}) or {}
+        report.update(agreed_threshold=thresholds.get("agreed"), partial_threshold=thresholds.get("partial"))
+        if None in (report["agreed_threshold"], report["partial_threshold"]):
+            raise ValueError("config.yaml [report.thresholds]: agreed and partial are required")
         return cls(
-            llm=LLMConfig.from_dict(data.get('llm', {})),
-            discussion=DiscussionConfig.from_dict(data.get('discussion', {})),
-            ui=UIConfig.from_dict(data.get('ui', {})),
-            limits=LimitsConfig.from_dict(data.get('limits', {})),
-            report=ReportConfig.from_dict(data.get('report', {}))
+            llm=_strict(LLMConfig, data.get("llm"), "llm"),
+            persona_generation=_strict(PersonaGenerationConfig, data.get("persona_generation"), "persona_generation"),
+            engine=_strict(DiscussionConfig, data.get("engine"), "engine"),
+            survey=_strict(SurveySettings, data.get("survey"), "survey"),
+            analysis=_strict(AnalysisConfig, data.get("analysis"), "analysis"),
+            experiment_runner=_strict(RunnerConfig, data.get("experiment_runner"), "experiment_runner"),
+            limits=_strict(LimitsConfig, data.get("limits"), "limits"),
+            report=_strict(ReportConfig, report, "report"),
         )
 
 
@@ -244,14 +221,6 @@ class ConfigLoader:
         """LLM 설정 반환"""
         return self.config.llm
     
-    def get_discussion_config(self) -> DiscussionConfig:
-        """토론 설정 반환"""
-        return self.config.discussion
-    
-    def get_ui_config(self) -> UIConfig:
-        """UI 설정 반환"""
-        return self.config.ui
-
 
 # 싱글톤 인스턴스
 config_loader = ConfigLoader()

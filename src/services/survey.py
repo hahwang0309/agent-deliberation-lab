@@ -23,7 +23,6 @@ from src.utils.llm_provider import structured_output
 logger = logging.getLogger(__name__)
 
 PRE, POST = "pre", "post"
-TRANSCRIPT_CHARS = 15000  # 사후 설문에 넣는 토론 기록 길이 (끝에서부터)
 
 SeedValue = Union[int, List[str]]
 
@@ -173,18 +172,20 @@ def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue]) -> s
 
 
 async def run_survey(agent, survey: SurveyConfig, phase: str, transcript: str = "",
-                     seeded: Optional[Dict[str, SeedValue]] = None, max_attempts: int = 2,
+                     seeded: Optional[Dict[str, SeedValue]] = None, max_attempts: Optional[int] = None,
                      prompt_key: Optional[str] = None) -> List[Dict[str, Any]]:
     """참가자 1명의 설문 응답. 형식 오류가 있으면 오류를 알려 주고 다시 묻는다.
     심은 문항(seeded)은 묻지 않고 지정값으로 기록한다. 끝까지 답하지 않은 문항은 값을 비워 둔다(조용히 채우지 않음)."""
     prompts = config_loader.prompts
+    settings = config_loader.config.survey  # 기록 길이·시도 횟수 (config.yaml survey)
+    max_attempts = max_attempts or settings.max_attempts
     seeded = seeded or {}
     asked = [i for i in survey.items if i.id not in seeded]
     valid: Dict[str, SurveyAnswer] = {}
     if asked:
         items = "\n".join(_format_item(i, survey) for i in asked)
         user = prompts.render(f"survey.{prompt_key or phase}", items=items,
-                              transcript=transcript[-TRANSCRIPT_CHARS:] or "(none)")
+                              transcript=transcript[-settings.transcript_chars:] or "(none)")
         messages: List[Any] = [SystemMessage(content=agent._build_system_prompt()), HumanMessage(content=user)]
         asked_ids = {i.id for i in asked}
         for attempt in range(max_attempts):

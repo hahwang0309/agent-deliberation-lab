@@ -18,9 +18,10 @@
 import random
 from typing import Any, Dict, List, Tuple
 
+from config.config_loader import config_loader
+
 # 이 이상이면 같은 화자가 앞서 한 주장을 되풀이한 것으로 본다. 문자 2-gram 유사도라 표현을 바꾼 반복은
 # 잘 잡지 못하는 대리 지표다(실측: 같은 논거의 바꿔 말하기가 0.37~0.55). 사람 코딩(code_repeats_own_argument)으로 보정할 것.
-REPEAT_THRESHOLD = 0.4
 
 
 def _bigrams(text: str) -> set:
@@ -92,7 +93,7 @@ def build_tables(bundle: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
     repeats = repeat_scores(bundle["messages"])
     row = discussion_row(discussion)
     ai_repeats = [s for m in bundle["messages"] if m["speaker_type"] == "ai" and (s := repeats.get(m["seq"])) is not None]
-    row["repeat_rate"] = (round(sum(s >= REPEAT_THRESHOLD for s in ai_repeats) / len(ai_repeats), 3)
+    row["repeat_rate"] = (round(sum(s >= config_loader.config.analysis.repeat_threshold for s in ai_repeats) / len(ai_repeats), 3)
                           if ai_repeats else None)  # AI 발언 중 이전 주장을 되풀이한 비율
     tables["discussions"].append(row)
 

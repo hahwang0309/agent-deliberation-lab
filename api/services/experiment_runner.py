@@ -28,15 +28,13 @@ from api.runtime.runtime import DiscussionRuntime
 from api.schemas.discussion import CreateDiscussionRequest, PersonaInput
 from api.services.discussion_service import DiscussionService
 from api.utils.security import hash_password
+from config.config_loader import config_loader
 from src.services.survey import SeedValue, SurveyConfig
 
 logger = logging.getLogger(__name__)
 
 RUNNER_EMAIL = "experiment-runner@local.invalid"
 TEMPLATES_PATH = Path(__file__).resolve().parents[2] / "config" / "persona_templates.yaml"
-# 사전 추정용 대략치: 실측(Haiku 4.5, 2명·9발언·분석·설문·보고서 포함, 6회)에서
-# 발언 1개당 입력 약 10,700 / 출력 약 1,530 토큰
-ROUGH_INPUT_PER_STATEMENT, ROUGH_OUTPUT_PER_STATEMENT = 10700, 1530
 
 
 class _Strict(BaseModel):
@@ -180,6 +178,11 @@ def build_request(plan: ExperimentPlan, run: Run) -> CreateDiscussionRequest:
         materials=t.materials if c.use_materials else None, survey=t.survey, experiment=experiment)
 
 
+def _rough():
+    """사전 추정용 발언 1개당 토큰 (config.yaml experiment_runner)"""
+    return config_loader.config.experiment_runner
+
+
 def _rough_statements(run: Run) -> int:
     """대략치 계산용 발언 수. 토론 없는 조건은 설문 호출뿐이라 발언 1개 분량으로 잡는다"""
     return 1 if run.condition.experiment.get("mode") == "survey_only" else run.topic.max_statements
@@ -227,8 +230,8 @@ def estimate(plan: ExperimentPlan, pending: List[Run], done: Dict[tuple, Dict[st
         per_out = sum(v["completion_tokens"] for v in finished) / len(finished)
         tokens_in, tokens_out, basis = per_in * len(pending), per_out * len(pending), f"완료 {len(finished)}건 평균"
     else:
-        tokens_in = sum(ROUGH_INPUT_PER_STATEMENT * _rough_statements(r) for r in pending)
-        tokens_out = sum(ROUGH_OUTPUT_PER_STATEMENT * _rough_statements(r) for r in pending)
+        tokens_in = sum(_rough().rough_input_per_statement * _rough_statements(r) for r in pending)
+        tokens_out = sum(_rough().rough_output_per_statement * _rough_statements(r) for r in pending)
         basis = "발언 수 기반 대략치"
     result = {"runs": len(pending), "input_tokens": int(tokens_in), "output_tokens": int(tokens_out), "basis": basis}
     if plan.prices:
@@ -262,8 +265,8 @@ async def run_batch(plan: ExperimentPlan, runtime_factory: Callable[[str], Discu
             next_in = sum(u[0] for u in finished_usage) / len(finished_usage)
             next_out = sum(u[1] for u in finished_usage) / len(finished_usage)
         else:
-            next_in = ROUGH_INPUT_PER_STATEMENT * _rough_statements(run)
-            next_out = ROUGH_OUTPUT_PER_STATEMENT * _rough_statements(run)
+            next_in = _rough().rough_input_per_statement * _rough_statements(run)
+            next_out = _rough().rough_output_per_statement * _rough_statements(run)
         total_in, total_out = result.prompt_tokens + in_flight[0] + next_in, result.completion_tokens + in_flight[1] + next_out
         if plan.limits.max_total_tokens and total_in + total_out > plan.limits.max_total_tokens:
             return True
@@ -281,8 +284,8 @@ async def run_batch(plan: ExperimentPlan, runtime_factory: Callable[[str], Discu
                     result.stopped_by_limit = True
                     result.not_started += 1
                     return
-                reserve = (ROUGH_INPUT_PER_STATEMENT * _rough_statements(run),
-                           ROUGH_OUTPUT_PER_STATEMENT * _rough_statements(run))
+                reserve = (_rough().rough_input_per_statement * _rough_statements(run),
+                           _rough().rough_output_per_statement * _rough_statements(run))
                 in_flight[0] += reserve[0]
                 in_flight[1] += reserve[1]
                 run.attempts += 1

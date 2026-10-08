@@ -72,6 +72,9 @@ class Dynamics(_Strict):
     boomerang_step: Optional[float] = Field(None, ge=0.0, le=1.0)
     concession_step: Optional[float] = Field(None, ge=0.0, le=1.0)
     concession_cap: Optional[float] = Field(None, ge=0.0, le=2.0)
+    value_match_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
+    credibility_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
+    receptive_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 class ExperimentConfig(_Strict):

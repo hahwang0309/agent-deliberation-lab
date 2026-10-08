@@ -6,7 +6,8 @@
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional
 
-MIN_SHIFT = 0.05  # 이보다 작은 이동은 '변화 없음'으로 본다
+from config.config_loader import config_loader
+
 
 
 def summarize_dynamics(records: List[Dict[str, Any]], subtopics: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -52,7 +53,7 @@ def summarize_dynamics(records: List[Dict[str, Any]], subtopics: Optional[List[s
             "spread_start": round(max(starts) - min(starts), 2) if len(starts) > 1 else None,
             "spread_end": round(max(ends) - min(ends), 2) if len(ends) > 1 else None,
             "influences": [{"by": by, "listener": listener, "shift": round(total, 2)}
-                           for (by, listener), total in influence.most_common() if abs(total) >= MIN_SHIFT],
+                           for (by, listener), total in influence.most_common() if abs(total) >= config_loader.config.analysis.min_shift],
             "common_ground": common_ground,
             "boomerangs": boomerangs,
             "unresolved": [{"challenger": c["challenger"], "target": c["target"], "kind": c.get("kind"),
@@ -62,8 +63,10 @@ def summarize_dynamics(records: List[Dict[str, Any]], subtopics: Optional[List[s
 
 
 def stance_text(x: float) -> str:
-    return ("강한 찬성" if x >= 0.6 else "찬성" if x >= 0.2 else "유보" if x > -0.2 else
-            "반대" if x > -0.6 else "강한 반대")
+    engine = config_loader.config.engine  # 입장 라벨 기준은 엔진과 같은 값
+    strong, lean = engine.stance_strong, engine.stance_lean
+    return ("강한 찬성" if x >= strong else "찬성" if x >= lean else "유보" if x > -lean else
+            "반대" if x > -strong else "강한 반대")
 
 
 def dynamics_markdown(dynamics: Dict[str, Any]) -> List[str]:
@@ -77,7 +80,7 @@ def dynamics_markdown(dynamics: Dict[str, Any]) -> List[str]:
         if p["spread_start"] is not None:
             lines += [f"- 입장 간격: {p['spread_start']:.2f} → {p['spread_end']:.2f} (−1 반대 ~ +1 찬성 척도의 최대−최소)"]
         for t in p["trajectories"]:
-            moved = f" ({t['shift']:+.2f})" if abs(t["shift"]) >= MIN_SHIFT else " (변화 없음)"
+            moved = f" ({t['shift']:+.2f})" if abs(t["shift"]) >= config_loader.config.analysis.min_shift else " (변화 없음)"
             human = " (사람, 관찰값)" if t["kind"] == "human" else ""
             lines.append(f"- **{t['name']}**{human}: {stance_text(t['start'])} {t['start']:+.2f} → "
                          f"{stance_text(t['end'])} {t['end']:+.2f}{moved}")

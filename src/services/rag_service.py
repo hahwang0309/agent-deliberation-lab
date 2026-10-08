@@ -9,6 +9,7 @@ import yaml
 from pathlib import Path
 from src.models.personas import Persona, Message
 from src.utils.llm_provider import LLMFactory
+from config.config_loader import config_loader
 from src.services.web_search import WebSearchService
 from langchain_core.messages import SystemMessage, HumanMessage
 import os
@@ -16,6 +17,10 @@ import logging
 
 
 logger = logging.getLogger(__name__)
+
+
+def _task_temperature(task: str) -> float:
+    return config_loader.get_llm_config().task_temperatures[task]
 
 
 class QueryType(Enum):
@@ -88,7 +93,7 @@ class QueryGenerator:
     
     def __init__(self, llm=None):
         from src.models.personas import LLMProvider
-        self.llm = llm or LLMFactory.create_llm(None, temperature=0.3)
+        self.llm = llm or LLMFactory.create_llm(None, temperature=_task_temperature("rag_query"))
         self.prompt_loader = RAGPromptLoader()
     
     async def generate_persona_query(
@@ -157,7 +162,7 @@ class QueryRouter:
     
     def __init__(self, llm=None):
         from src.models.personas import LLMProvider
-        self.llm = llm or LLMFactory.create_llm(None, temperature=0.1)  # 낮은 temperature로 일관성 확보
+        self.llm = llm or LLMFactory.create_llm(None, temperature=_task_temperature("rag_router"))
         self.prompt_loader = RAGPromptLoader()
     
     async def classify_query(self, query: str, topic: str = "") -> QueryType:
@@ -203,7 +208,7 @@ class RAGService:
         self.query_router = QueryRouter(llm)
         self.web_search = WebSearchService() if os.getenv("TAVILY_API_KEY") else None
         from src.models.personas import LLMProvider
-        self.llm = llm or LLMFactory.create_llm(None, temperature=0.3)
+        self.llm = llm or LLMFactory.create_llm(None, temperature=_task_temperature("rag_synthesis"))
         self.prompt_loader = RAGPromptLoader()
         self.cache = RAGCache()  # 캐싱 활성화
         

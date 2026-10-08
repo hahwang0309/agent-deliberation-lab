@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def create_report_llm(callbacks: List[Any]) -> BaseChatModel:
     cfg = config_loader.config.report
-    return LLMFactory.create_llm(None, model=cfg.model, temperature=0,
+    return LLMFactory.create_llm(None, model=cfg.model, temperature=cfg.temperature,
                                  max_tokens=cfg.max_tokens, callbacks=callbacks)
 
 

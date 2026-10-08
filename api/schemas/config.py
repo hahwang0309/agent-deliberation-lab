@@ -60,14 +60,14 @@ class SystemConfigResponse(BaseModel):
 # ========================================
 
 class LLMModelInfo(BaseModel):
-    """LLM 모델 정보"""
+    """LLM 모델 정보 (확인하지 않은 값은 null)"""
     id: str
     name: str
     version: Optional[str] = None
-    context_window: int
-    max_tokens: int
-    cost_per_1k_input_tokens: float
-    cost_per_1k_output_tokens: float
+    context_window: Optional[int] = None
+    max_tokens: Optional[int] = None
+    cost_per_1k_input_tokens: Optional[float] = None
+    cost_per_1k_output_tokens: Optional[float] = None
     available: bool
 
 

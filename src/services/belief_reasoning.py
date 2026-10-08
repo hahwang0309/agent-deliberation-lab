@@ -14,7 +14,8 @@ class BeliefReasoningService:
 
     def __init__(self, persona: Persona, llm: Optional[BaseChatModel] = None):
         self.persona = persona
-        self.llm = llm or LLMFactory.create_llm(None, temperature=0.3)
+        self.llm = llm or LLMFactory.create_llm(
+            None, temperature=config_loader.get_llm_config().task_temperatures["belief_reasoning"])
 
     async def reason_about_topic(self, topic: str, context: List[Message] = None) -> str:
         """주제에 대한 신념 기반 추론 (Chain-of-Thought)"""

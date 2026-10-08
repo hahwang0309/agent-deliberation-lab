@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
 from src.core.agent import DiscussionAgent
+from config.discussion_config import get_config
 from src.core.debate_state import DebateState, DynamicsParams, persuasion
 from src.core.moderator import DiscussionModerator
 from src.core.natural_discussion import ActionType, NaturalDiscussion, Turn, plan_debate
@@ -156,7 +157,7 @@ async def test_two_participants_stalemate_gets_moderator_question_and_obligation
 # ---------- 입장 동역학 ----------
 
 def test_friedkin_johnsen_update_inside_acceptance_zone():
-    state = DebateState(DynamicsParams(step=0.5, anchor=0.1))
+    state = DebateState(DynamicsParams.from_settings(get_config(), step=0.5, anchor=0.1))
     listener = state.ensure("L", stubbornness=0.5)  # 수용 범위 폭 1.2 − 0.8×0.5 = 0.8
     listener.x0 = listener.x = -0.5
     delta = state.update_listener(listener, speaker_x=0.2, q=0.8)  # 거리 0.7 → 수용 범위
@@ -197,7 +198,7 @@ def test_persuasion_combines_factors_and_repetition_has_no_effect():
 
 
 def test_concessions_are_recorded_and_move_only_ai_conceder_within_cap():
-    state = DebateState(DynamicsParams(concession_step=0.05, concession_cap=0.08))
+    state = DebateState(DynamicsParams.from_settings(get_config(), concession_step=0.05, concession_cap=0.08))
     a, b, h = state.ensure("A", stubbornness=0.5), state.ensure("B"), state.ensure("H", kind="human")
     b.x = 0.9
     h.x = -0.5

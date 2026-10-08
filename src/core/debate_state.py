@@ -20,8 +20,10 @@
 입장 x ∈ [−1, 1]은 현재 소주제 명제에 대한 입장이다 (−1 강한 반대, +1 강한 찬성). 소주제가 바뀌면 새로 시작한다.
 """
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, List, Optional, Tuple
+
+from config.discussion_config import get_config
 
 ATTACK_RELATIONS = ("attack", "question")
 
@@ -31,18 +33,30 @@ ZONE_ACCEPT, ZONE_NONCOMMIT, ZONE_REJECT = "accept", "noncommit", "reject"
 
 @dataclass
 class DynamicsParams:
-    step: float = 0.5               # 설득 1회의 최대 이동 비율
-    anchor: float = 0.1             # 초기 입장으로 돌아가려는 힘 (고집도와 곱해짐)
-    accept_wide: float = 1.2        # 고집도 0일 때 수용 범위 폭 (입장 거리)
-    accept_narrow: float = 0.4      # 고집도 1일 때 수용 범위 폭
-    noncommit_width: float = 0.4    # 수용 범위 바깥의 비관여 범위 폭 (그 너머가 거부 범위)
-    noncommit_factor: float = 0.5   # 비관여 범위 설득력 배수
-    reject_factor: float = 0.15     # 거부 범위 설득력 배수
-    threat_dampen: float = 0.5      # 정체성 위협이 설득력을 줄이는 정도
-    boomerang_threshold: float = 0.5  # 거부 범위에서 이 이상의 위협이면 반대로 멀어짐
-    boomerang_step: float = 0.1     # 반대 이동 최대량 (× 위협 × (1 − 고집도))
-    concession_step: float = 0.05   # 양보 1건당 일관성 이동 (× (1 − 고집도))
-    concession_cap: float = 0.2     # 명제당 양보로 인한 이동 상한
+    """입장 동역학 파라미터. 값은 config.yaml engine 섹션 (의미도 그쪽 주석)"""
+    step: float                 # 설득 1회의 최대 이동 비율 (engine.dynamics_step)
+    anchor: float               # 초기 입장으로 돌아가려는 힘 (engine.dynamics_anchor)
+    accept_wide: float
+    accept_narrow: float
+    noncommit_width: float
+    noncommit_factor: float
+    reject_factor: float
+    threat_dampen: float
+    boomerang_threshold: float
+    boomerang_step: float
+    concession_step: float
+    concession_cap: float
+    value_match_weight: float
+    credibility_weight: float
+    receptive_weight: float
+
+    @classmethod
+    def from_settings(cls, settings, **overrides) -> "DynamicsParams":
+        """토론 설정(DiscussionConfig)에서 만든다. overrides로 일부만 바꿀 수 있다"""
+        values = {f.name: getattr(settings, f.name) for f in fields(cls) if f.name not in ("step", "anchor")}
+        values.update(step=settings.dynamics_step, anchor=settings.dynamics_anchor)
+        values.update(overrides)
+        return cls(**values)
 
 
 @dataclass
@@ -71,8 +85,10 @@ def clamp(value: float, low: float = -1.0, high: float = 1.0) -> float:
 
 
 class DebateState:
-    def __init__(self, params: Optional[DynamicsParams] = None):
-        self.params = params or DynamicsParams()
+    def __init__(self, params: Optional[DynamicsParams] = None, commitments_kept: Optional[int] = None):
+        settings = get_config()
+        self.params = params or DynamicsParams.from_settings(settings)
+        self.commitments_kept = commitments_kept or settings.commitments_kept  # 참가자별로 기억하는 최근 주장 수
         self.participants: Dict[str, ParticipantState] = {}
         self.challenges: List[Challenge] = []
         self.concessions: List[Dict[str, Any]] = []  # 현재 명제의 양보 {by, to, claim, seq}
@@ -136,7 +152,7 @@ class DebateState:
                 self._add_challenge(Challenge(speaker, name, seq, "question", ""))
 
         # 공약 저장소
-        sp.commitments = (sp.commitments + [c for c in analysis.get("claims", []) if c])[-6:]
+        sp.commitments = (sp.commitments + [c for c in analysis.get("claims", []) if c])[-self.commitments_kept:]
 
         # 화자 입장 = 이번 발언에서 관찰된 입장
         if analysis.get("stance") is not None:
@@ -165,7 +181,7 @@ class DebateState:
                 continue
             zone = self.zone(listener, sp.x)
             threat = clamp(float(inf.get("threat") or 0.0), 0.0, 1.0)
-            delta = self.update_listener(listener, sp.x, persuasion(inf), threat)
+            delta = self.update_listener(listener, sp.x, persuasion(inf, self.params), threat)
             if abs(delta) >= 0.01:
                 moves.append({"listener": listener.name, "by": speaker, "delta": round(delta, 3),
                               "x": round(listener.x, 3), "zone": zone,
@@ -250,8 +266,9 @@ class DebateState:
         }
 
     @classmethod
-    def from_snapshot(cls, data: Dict[str, Any], params: Optional[DynamicsParams] = None) -> "DebateState":
-        state = cls(params)
+    def from_snapshot(cls, data: Dict[str, Any], params: Optional[DynamicsParams] = None,
+                      commitments_kept: Optional[int] = None) -> "DebateState":
+        state = cls(params, commitments_kept)
         for name, p in data.get("participants", {}).items():
             state.participants[name] = ParticipantState(name=name, **p)
         state.challenges = [Challenge(**c) for c in data.get("challenges", [])]
@@ -261,8 +278,9 @@ class DebateState:
         return state
 
 
-def persuasion(influence: Dict[str, Any]) -> float:
+def persuasion(influence: Dict[str, Any], params: Optional[DynamicsParams] = None) -> float:
     """청자별 설득력 q. 요인이 있으면 요인을 결합하고, 이전 형식(persuasiveness)이면 그 값을 쓴다"""
+    params = params or DynamicsParams.from_settings(get_config())
     if influence.get("quality") is None:
         return clamp(float(influence.get("persuasiveness") or 0.0), 0.0, 1.0)
 
@@ -270,5 +288,9 @@ def persuasion(influence: Dict[str, Any]) -> float:
         value = influence.get(key)
         return clamp(float(default if value is None else value), 0.0, 1.0)
 
-    return (f("quality", 0.0) * f("novelty", 1.0) * (0.5 + 0.5 * f("value_match", 0.0))
-            * (0.5 + 0.5 * f("credibility", 0.5)) * (0.7 + 0.3 * f("receptive", 0.0)))
+    def weighted(key: str, default: float, w: float) -> float:
+        return (1 - w) + w * f(key, default)
+
+    return (f("quality", 0.0) * f("novelty", 1.0) * weighted("value_match", 0.0, params.value_match_weight)
+            * weighted("credibility", 0.5, params.credibility_weight)
+            * weighted("receptive", 0.0, params.receptive_weight))

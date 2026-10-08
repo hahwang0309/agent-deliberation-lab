@@ -27,59 +27,22 @@
 
 ## `config/config.yaml`
 
-### `llm`
+**모델명과 동작 파라미터는 이 파일에만 둡니다.** 코드에는 기본값이 없어서, 항목이 빠지거나 모르는 항목이 있으면 시작할 때 오류가 납니다(`config/config_loader.py`). 코드에 모델명을 직접 쓰면 `tests/test_config.py`가 실패합니다. 각 항목의 의미는 파일 안의 주석에 있습니다.
 
-| 키 | 기본값 | 설명 |
+| 섹션 | 담는 것 | 읽는 곳 |
 |---|---|---|
-| `default_provider` | `claude` | 참가자·페르소나 생성·보고서에서 provider를 지정하지 않을 때 사용 |
-| `default_models` | `claude: claude-haiku-4-5-20251001` 등 | provider별 기본 모델 |
-| `max_tokens` | 1500 | 발언 응답 상한. 실제 길이는 프롬프트의 3~8문장 지시가 정하며, 한국어는 500이면 잘림 |
-| `structured_max_tokens` | 2000 | 페르소나 생성 같은 구조화 출력 상한 |
-| `timeout_seconds` / `max_retries` | 60 / 2 | 모든 provider 호출에 적용 |
+| `llm` | 기본 provider, provider별 기본 모델(`default_models`), temperature를 받지 않는 모델 접두어(`fixed_sampling_prefixes`), 기본·보조 작업별 temperature, 토큰 상한, 타임아웃·재시도 | `src/utils/llm_provider.py` 등 |
+| `persona_generation` | 페르소나 자동 생성 시도 횟수 | `src/generators/persona_generator.py` |
+| `engine` | 토론 엔진 전체: 발언 길이, 명제 수, 맥락 길이, 진행 규칙 기준, 입장 라벨 기준, 분석 맥락·temperature, 입장 동역학과 설득력 가중치, 고집도, 엔진 모드, 진행 장치, 참가자·모더레이터 temperature, 사람 개입 | `config/discussion_config.py`(형식만) → 토론별 사본 `engine_settings()` |
+| `survey` | 사후 설문에 넣는 토론 기록 길이, 시도 횟수 | `src/services/survey.py` |
+| `analysis` | 반복 지표 기준, 입장 궤적의 '변화 없음' 기준 | 데이터 추출, 입장 궤적 |
+| `experiment_runner` | 배치 실행기 사전 추정용 발언당 토큰 | `api/services/experiment_runner.py` |
+| `limits` | 서버 실행 제한(동시 실행, 발언 수, 참가자 수, 사용자 제한, 사람 발언) | API·런타임 |
+| `report` | 보고서 모델·temperature·토큰·시도 횟수, 합의 점수 기준 | 보고서 |
 
-### `limits`
-
-| 키 | 기본값 | 설명 |
-|---|---|---|
-| `max_global_running` | 5 | 서버 전체 동시 실행 토론 수 |
-| `default_statements` / `max_statements` | 12 / 60 | AI 발언 수 기본값 / 상한 |
-| `min_personas` / `max_personas` | 2 / 16 | 참가 페르소나 수 범위 |
-| `user_max_concurrent` | 1 | 일반 사용자 동시 실행 수 (관리자 무제한, 사용자별 덮어쓰기 가능) |
-| `user_daily_starts` | 5 | 일반 사용자 하루(UTC) 시작 수 (재개는 포함하지 않음) |
-| `user_expensive_features` | false | 일반 사용자에게 웹 검색·신념 추론 허용 여부 (LLM 호출 수가 크게 늘어남) |
-| `max_human_turns_per_user` | 5 | 토론 1건에서 1인당 발언 횟수 |
-| `max_human_chars` | 1000 | 사람 발언 최대 글자 수 |
-
-### `report`
-
-| 키 | 기본값 | 설명 |
-|---|---|---|
-| `model` | null | 보고서 모델 (null이면 기본 provider의 기본 모델) |
-| `max_tokens` | 4000 | 보고서 출력 상한 |
-| `max_attempts` | 3 | 검증 실패 시 총 시도 횟수 |
-| `min_ai_messages` | 4 | 보고서를 만들 최소 AI 발언 수 |
-| `partial_weight` | 0.7 | 부분 찬성이 지지 쪽에 기여하는 비율 |
-| `thresholds.agreed` / `thresholds.partial` | 0.8 / 0.6 | 수렴도 → 합의 / 부분 합의 / 이견 라벨 기준 |
-
-### 기타
-
-`discussion`, `system` 등 나머지 섹션은 엔진의 세부 동작 값입니다. 토론 흐름 세부값은 `config/discussion_config.py`에 있습니다. 토론 메커니즘 관련 값은 다음과 같습니다(동작은 [architecture.md](architecture.md#토론-메커니즘) 참고).
-
-| 키 | 기본 | 의미 |
-|---|---|---|
-| `max_subtopics` | 5 | 명제 수 상한 (실제 수는 참가자·발언 수로 계산) |
-| `context_messages` / `context_chars` | 8 / 1200 | 발언 프롬프트에 넣는 최근 발언 수·발언당 글자 수 |
-| `stalemate_exchanges` | 1 | 서로 이만큼 반박을 주고받으면 교착으로 보고 중재 |
-| `consensus_spread` | 0.3 | 반박 없이 입장 간격이 이보다 좁으면 반대 검토 |
-| `dynamics_step` / `dynamics_anchor` | 0.5 / 0.1 | 설득 1회 최대 이동 비율 / 초기 입장 복원력 |
-| `accept_wide` / `accept_narrow` | 1.2 / 0.4 | 고집도 0 / 1일 때 수용 범위 폭 (입장 거리) |
-| `noncommit_width` / `noncommit_factor` | 0.4 / 0.5 | 비관여 범위 폭 / 설득력 배수 |
-| `reject_factor` | 0.15 | 거부 범위 설득력 배수 |
-| `threat_dampen` | 0.5 | 정체성 위협이 설득력을 줄이는 정도 |
-| `boomerang_threshold` / `boomerang_step` | 0.5 / 0.1 | 거부 범위에서 반발 이동이 일어나는 위협 수준 / 최대 반발량 |
-| `concession_step` / `concession_cap` | 0.05 / 0.2 | 양보 1건당 이동 / 명제당 상한 |
-| `stubbornness_default` / `_open` / `_firm` | 0.5 / 0.3 / 0.75 | 성격 키워드별 고집도 |
-| `human_followup_responses` | 1 | 사람 발언 뒤 AI 응답 수 |
+- `engine`의 모든 값은 실행 기록(`run_info.settings`)에 남고, 실험 조건(아래)으로 토론마다 덮어쓸 수 있는 항목이 있습니다. 동작은 [architecture.md](architecture.md#토론-메커니즘)를 보세요.
+- `default_models`를 바꾸면 모델을 지정하지 않은 모든 호출(참가자, 모더레이터, 분석, 보고서, 페르소나 생성, RAG)이 바뀝니다. 실험 계획은 페르소나마다 모델을 적어 두는 것을 권장합니다.
+- `/config/llm-providers` 응답은 키 설정 여부와 이 기본 모델만 보여 줍니다. 실제 호출로 확인한 상태가 아니며, 단가·문맥 길이는 비워 둡니다.
 
 ## 프롬프트·템플릿
 

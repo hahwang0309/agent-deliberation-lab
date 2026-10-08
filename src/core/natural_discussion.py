@@ -16,7 +16,7 @@ import hashlib
 import logging
 import random
 from collections import Counter
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Protocol, Tuple
 
@@ -212,9 +212,7 @@ class NaturalDiscussion:
         self.llm_spec: Dict[str, Any] = {}  # 실행 기록용 모델·temperature (create_discussion이 채움)
         self.messages: List[Message] = []
 
-        self.debate = DebateState(DynamicsParams(
-            step=self.config.dynamics_step, anchor=self.config.dynamics_anchor,
-            **{f.name: getattr(self.config, f.name) for f in fields(DynamicsParams) if f.name not in ("step", "anchor")}))
+        self.debate = DebateState(DynamicsParams.from_settings(self.config), self.config.commitments_kept)
         for agent in agents:
             self.debate.ensure(agent.persona.name, "ai", agent.stubbornness)
 
@@ -284,7 +282,8 @@ class NaturalDiscussion:
             self.closing_done = list(snapshot.get("closing_done", []))
             self.devils_advocate_used = snapshot.get("devils_advocate_used", False)
             if snapshot.get("state"):
-                self.debate = DebateState.from_snapshot(snapshot["state"], self.debate.params)
+                self.debate = DebateState.from_snapshot(snapshot["state"], self.debate.params,
+                                                        self.config.commitments_kept)
             if snapshot_seq is not None:
                 self._replay_after_snapshot(snapshot_seq)
             if self.moderator:
@@ -569,7 +568,7 @@ class NaturalDiscussion:
         target = self._latest_from_others(speaker.persona.name)
         own, theirs = self.debate.stance(speaker.persona.name), self.debate.stance(target.agent_name) if target else None
         self.alternation += 1
-        if own is not None and theirs is not None and abs(own - theirs) < 0.4:
+        if own is not None and theirs is not None and abs(own - theirs) < self.config.close_stance_distance:
             action = ActionType.AGREE_EXTEND if self.alternation % 2 else ActionType.EXAMPLE
         else:
             action = ActionType.REBUT if self.alternation % 2 else ActionType.UNDERCUT
@@ -600,12 +599,13 @@ class NaturalDiscussion:
         if x is None:
             return prompts.render("turn_actions.stance_unknown")
         labels = prompts.get("turn_actions.stance_labels")
-        label = (labels["strong_agree"] if x >= 0.6 else labels["agree"] if x >= 0.2 else
-                 labels["undecided"] if x > -0.2 else labels["disagree"] if x > -0.6 else labels["strong_disagree"])
+        strong, lean = self.config.stance_strong, self.config.stance_lean
+        label = (labels["strong_agree"] if x >= strong else labels["agree"] if x >= lean else
+                 labels["undecided"] if x > -lean else labels["disagree"] if x > -strong else labels["strong_disagree"])
         note = prompts.render("turn_actions.stance_current", label=label, value=x)
         moves = self.recent_moves.get(name, [])
         total = sum(m["delta"] for m in moves)
-        if abs(total) >= 0.05:
+        if abs(total) >= self.config.stance_note_min_shift:
             by = ", ".join(dict.fromkeys(m["by"] for m in moves))
             note += prompts.render("turn_actions.stance_moved", delta=total, by=by)
         return note
@@ -775,8 +775,8 @@ class NaturalDiscussion:
             f"- {self._describe(name)}: stance {round(p.x, 2) if p.x is not None else 'null'}"
             for name, p in self.debate.participants.items())
         context = "\n".join(
-            f"[#{m.metadata.get('seq')}] {m.agent_name}: {m.content[:600]}"
-            for m in self.messages[-7:-1] if m.metadata.get("seq"))
+            f"[#{m.metadata.get('seq')}] {m.agent_name}: {m.content[:self.config.analysis_context_chars]}"
+            for m in self.messages[-(self.config.analysis_context_messages + 1):-1] if m.metadata.get("seq"))
         proposition = self.propositions[self.subtopic_idx] if self.propositions else ""
         try:
             result = await structured_output(self.analyzer, UtteranceAnalysis).ainvoke([
