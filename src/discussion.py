@@ -62,7 +62,8 @@ def create_discussion(participants: List[ParticipantSpec],
         if condition.seed and survey is not None:
             agents[-1].seed = dict(condition.seed)
             agents[-1].initial_position = initial_position_text(
-                survey, condition.seed, experiment.seed_wording if experiment else "hold")
+                survey, condition.seed, experiment.seed_wording if experiment else "hold",
+                experiment.seed_format if experiment else "number")
 
     lead = participants[0] if participants else ParticipantSpec(None, LLMFactory.default_provider())
     moderator = (DiscussionModerator(llm=bundle.get(lead.provider, lead.model, settings.moderator_temperature))
@@ -80,6 +81,8 @@ def create_discussion(participants: List[ParticipantSpec],
                                propositions=propositions, survey=survey)
     if experiment is not None and experiment.turn_order:
         engine.turn_order = list(experiment.turn_order)
+    if experiment is not None:
+        engine.post_survey = experiment.post_survey
     # 실행 기록용: 실제로 요청한 모델·temperature (model None은 프로바이더 기본 모델)
     engine.llm_spec = {
         "participants": {spec.persona.name: {"provider": spec.provider.value, "model": spec.model,

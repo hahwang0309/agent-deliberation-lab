@@ -344,6 +344,24 @@ survey:
 
     Items:
     {items}
+  # 사후 설문 중립판 (실험 조건 post_survey: neutral) — "바뀌지 않았으면 유지하라"는 지시 없이 같은 설문을 다시 묻는다
+  post_neutral: |
+    The discussion has ended. Here is the record of what was said:
+    <<<transcript
+    {transcript}
+    transcript>>>
+
+    Now answer the same questionnaire again as yourself, giving your view at this point.
+    Answer every item in the format shown for it, using its id exactly as shown, and give one short sentence of reason.
+
+    Items:
+    {items}
+  post_alone_neutral: |
+    There is no discussion with other participants. Answer the questionnaire again as yourself, giving your view at this point.
+    Answer every item in the format shown for it, using its id exactly as shown, and give one short sentence of reason.
+
+    Items:
+    {items}
   # 문항별 답 형식
   format_likert: "Answer with an integer score from {low} (strongly disagree / strongly oppose) to {high} (strongly agree / strongly favor)."
   format_single: "Choose exactly one of: {options}."
@@ -351,6 +369,11 @@ survey:
   # 심은 초기값을 시스템 프롬프트에 넣을 때의 표현
   seed_likert: "Your answer: {value} (on a scale from {low} to {high})."
   seed_choice: "Your answer: {choices}."
+  # 심은 리커트 응답을 숫자 대신 말로 (실험 조건 seed_format: verbal). 척도 위치 p = (점수 − 최소) / (최대 − 최소)를
+  # verbal_bins의 상한에 맞춰 verbal_labels 중 하나로 바꾼다 (사후 설문에서 숫자를 그대로 옮겨 적지 못하게)
+  seed_verbal: "Your view: you {label} this."
+  verbal_bins: [0.15, 0.45, 0.55, 0.85, 1.0]
+  verbal_labels: ["strongly oppose", "lean against", "are undecided about", "lean in favor of", "strongly support"]
   retry: |
     Your answer had problems: {errors}. Answer again, covering every item id exactly once in the required format.
 

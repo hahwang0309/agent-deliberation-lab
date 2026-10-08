@@ -1020,3 +1020,28 @@ async def test_survey_accepts_bracketed_item_id_and_lists_valid_ids_on_retry():
     rows = {r["item_id"]: r for r in await run_survey(agent, survey, "pre")}
     assert rows["q1"]["score"] == 5 and rows["q2"]["score"] == 3
     assert "unknown item id 'q2_costs' (valid ids: q1, q2)" in agent.prompts[-1]
+
+
+@pytest.mark.asyncio
+async def test_verbal_seed_and_neutral_post_survey(monkeypatch):
+    from src.services.survey import verbal_position
+    s10 = SurveyConfig(**{"items": [{"id": "q", "text": "x"}], "scale": 10, "scale_min": 0})
+    assert [verbal_position(v, s10).split("you ")[1] for v in (0, 3, 5, 7, 10)] == [
+        "strongly oppose this.", "lean against this.", "are undecided about this.", "lean in favor of this.", "strongly support this."]
+    calls = []
+    original = engine_module.run_survey
+
+    async def spy(agent, survey, phase, transcript="", seeded=None, prompt_key=None, **kw):
+        calls.append((phase, prompt_key))
+        return await original(agent, survey, phase, transcript, seeded=seeded, prompt_key=prompt_key, **kw)
+    monkeypatch.setattr(engine_module, "run_survey", spy)
+    exp = ExperimentConfig(seed_format="verbal", post_survey="neutral", participants={"A": {"seed": {"q1": 6}}})
+    engine = create_discussion(specs(), bundle=FakeBundle(), experiment=exp, survey=SurveyConfig(**SURVEY), max_statements=4)
+    assert "Your view: you lean in favor of this." in engine.agents[0].initial_position
+    assert "Your answer: 6" not in engine.agents[0].initial_position
+    await run(engine)
+    assert ("post", "post_neutral") in calls
+    alone = create_discussion(specs(), bundle=FakeBundle(), survey=SurveyConfig(**SURVEY), max_statements=4,
+                              experiment=ExperimentConfig(mode="survey_only", post_survey="neutral"))
+    calls.clear(); await run(alone)
+    assert ("post", "post_alone_neutral") in calls

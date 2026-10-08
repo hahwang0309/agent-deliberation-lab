@@ -87,6 +87,10 @@ class ExperimentConfig(_Strict):
         "stateful", description="baseline: 순서대로 앞 발언에 답하는 단순 토론 (비교 기준선). "
                                 "survey_only: 토론 없이 사전 설문 후 혼자 다시 답함 (설문 필요)")
     record_prompts: bool = Field(True, description="발언마다 최종 지시 프롬프트를 meta.prompt에 저장")
+    seed_format: Literal["number", "verbal"] = Field(
+        "number", description="심은 리커트 응답을 점수(number)로 또는 말(verbal, 예: strongly oppose)로 알려 줌")
+    post_survey: Literal["standard", "neutral"] = Field(
+        "standard", description="사후 설문 문구: standard = '바뀌지 않았으면 유지' 지시 포함, neutral = 같은 설문을 다시 물음")
     seed_wording: Literal["hold", "neutral"] = Field(
         "hold", description="심은 초기 응답 문구: hold = '입장을 유지하라' 지시 포함, neutral = 응답 사실만 (prompts.yaml)")
     report: bool = Field(True, description="끝난 뒤 종합보고서를 자동으로 만듦 (끄면 보고서 LLM 호출 없음, 나중에 수동 생성 가능)")

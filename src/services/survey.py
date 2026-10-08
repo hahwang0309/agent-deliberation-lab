@@ -166,7 +166,17 @@ def _format_item(item: SurveyItem, survey: SurveyConfig) -> str:
 SEED_WORDING_KEYS = {"hold": "agent.initial_position_block", "neutral": "agent.initial_position_block_neutral"}
 
 
-def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue], wording: str = "hold") -> str:
+def verbal_position(value: int, survey: SurveyConfig) -> str:
+    """리커트 점수 → 말로 된 입장 (prompts.yaml survey.verbal_bins / verbal_labels)"""
+    prompts = config_loader.prompts
+    p = (value - survey.scale_min) / (survey.scale - survey.scale_min)
+    bins, labels = prompts.get("survey.verbal_bins"), prompts.get("survey.verbal_labels")
+    label = next(lab for upper, lab in zip(bins, labels) if p <= upper)
+    return prompts.render("survey.seed_verbal", label=label)
+
+
+def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue], wording: str = "hold",
+                          fmt: str = "number") -> str:
     """시스템 프롬프트에 넣을 '토론 전 내 응답' (심은 초기값)"""
     prompts = config_loader.prompts
     lines = []
@@ -174,7 +184,9 @@ def initial_position_text(survey: SurveyConfig, seed: Dict[str, SeedValue], word
         if item.id not in seed:
             continue
         value = seed[item.id]
-        if item.type == "likert":
+        if item.type == "likert" and fmt == "verbal":
+            answer = verbal_position(value, survey)
+        elif item.type == "likert":
             answer = prompts.render("survey.seed_likert", value=value, low=survey.scale_min, high=survey.scale)
         else:
             answer = prompts.render("survey.seed_choice", choices=", ".join(_match_options(value, item.options)))

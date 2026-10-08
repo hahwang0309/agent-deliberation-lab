@@ -208,6 +208,7 @@ class NaturalDiscussion:
         # 발언 분석은 측정용으로만 돌고 진행에는 쓰지 않는다.
         self.baseline = self.config.engine_mode == "baseline"
         self.turn_order: Optional[List[str]] = None  # baseline 고정 발언 순서 (create_discussion이 채움)
+        self.post_survey = "standard"  # 사후 설문 문구 (실험 조건 post_survey, create_discussion이 채움)
         self.order_pos = 0
         self.llm_spec: Dict[str, Any] = {}  # 실행 기록용 모델·temperature (create_discussion이 채움)
         self.messages: List[Message] = []
@@ -387,7 +388,8 @@ class NaturalDiscussion:
 
         if self.config.engine_mode == "survey_only":  # 토론 없는 조건: 혼자 다시 답하고 끝냄
             if self.survey:
-                async for event in self._run_surveys(POST, prompt_key="post_alone"):
+                key = "post_alone_neutral" if self.post_survey == "neutral" else "post_alone"
+                async for event in self._run_surveys(POST, prompt_key=key):
                     yield event
             logger.info("Survey-only run completed")
             return
@@ -436,7 +438,8 @@ class NaturalDiscussion:
                     yield event
 
         if self.survey:
-            async for event in self._run_surveys(POST, transcript_text(self.messages)):
+            key = "post_neutral" if self.post_survey == "neutral" else None
+            async for event in self._run_surveys(POST, transcript_text(self.messages), prompt_key=key):
                 yield event
 
         logger.info("Discussion completed: statements=%d messages=%d", self.turn_count, len(self.messages))
