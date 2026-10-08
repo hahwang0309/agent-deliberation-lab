@@ -27,7 +27,7 @@ class LLMFactory:
         provider_key = provider.value.lower()
         return llm_config.default_models.get(provider_key, {
             LLMProvider.OPENAI: "gpt-4",
-            LLMProvider.GEMINI: "gemini-pro",
+            LLMProvider.GEMINI: "gemini-3.5-flash-lite",
             LLMProvider.CLAUDE: "claude-haiku-4-5-20251001",
             LLMProvider.MISTRAL: "mistral-large-latest"
         }.get(provider))
