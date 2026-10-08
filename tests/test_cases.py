@@ -144,9 +144,8 @@ def test_a1r_stratified_groups_personas_seeds_and_materials(tmp_path):
     assert topics == a1r.sampled_topics(delegates, items, ["Q5A", "Q3A"], 3, seed=1, briefing=BRIEF)
     assert not validate(plan_dict("a", topics, a1r.CONDITIONS))
 
-    debranded = a1r.sampled_topics(delegates, items, ["Q5A"], 1, seed=1, briefing=BRIEF, debranded=True)[0]
-    assert "Affordable" not in debranded["materials"] + debranded["description"]
-    assert "Obamacare" not in debranded["materials"] and "ACA" not in debranded["materials"]
+    with pytest.raises(ValueError, match="not found in the original"):  # 편집 구절이 원문에 없으면 만들지 않음
+        a1r.sampled_topics(delegates, items, ["Q5A"], 1, seed=1, briefing=BRIEF, debranded=True)
 
     groups = a1r.small_group_topics(delegates, items, ["Q5A"], seed=1)
     assert sorted(len(t["personas"]) for t in groups) == [15, 15] and "materials" not in groups[0]
@@ -273,3 +272,18 @@ def test_briefing_parser_drops_section_titles_navigation_and_merges_continued_ro
     assert rows[0]["arguments_for"] == "It helps young people. It is fair. Recipients contribute to the economy."
     assert rows[0]["arguments_against"] == "It rewards illegal entry. Congress never approved it."
     assert "Title" not in rows[0]["arguments_for"] + rows[0]["proposal"]
+
+
+def test_debranding_edits_are_checked():
+    spec = {"banned": ["ACA", "Obamacare"], "edits": [["The ACA ensures", "The 2010 law ensures"],
+                                                      ["the ACA by", "the 2010 law by"]]}
+    text = "The ACA ensures coverage. Young people benefit from the ACA by staying insured."
+    assert a1r.debrand(text, spec) == "The 2010 law ensures coverage. Young people benefit from the 2010 law by staying insured."
+    with pytest.raises(ValueError, match="not found"):
+        a1r.debrand("Nothing here.", spec)
+    with pytest.raises(ValueError, match="banned term 'Obamacare'"):
+        a1r.debrand(text + " Obamacare too.", spec)
+    with pytest.raises(ValueError, match="repeated article"):
+        a1r.debrand(text, {**spec, "edits": [["The ACA ensures", "The the law ensures"], ["the ACA by", "it by"]]})
+    with pytest.raises(ValueError, match="lowercase"):
+        a1r.debrand(text, {**spec, "edits": [["The ACA ensures", "the law ensures"], ["the ACA by", "it by"]]})

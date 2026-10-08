@@ -54,17 +54,39 @@ a1r:
     party: {"1": Democrat, "2": Republican, "3": Independent}
     ideology: {"1": extremely liberal, "2": liberal, "3": slightly liberal, "4": "moderate, middle of the road", "5": slightly conservative, "6": conservative, "7": extremely conservative, "8": has not thought much about it}
   names: [Alex, Blake, Casey, Drew, Emery, Finley, Gray, Harper, Jamie, Kendall, Logan, Morgan, Noel, Parker, Quinn, Reese, Sage, Taylor]
-  # 이름 제거 강건성 (설계 6-2): 정책 고유명사를 지운 문안과 자료 치환. 연구자가 확인한 뒤 쓴다
+  # 이름 제거 강건성 (설계 6-2): 정책 고유명사만 지운다. 내용상 남는 식별 단서(연도, 중동 등)는 그대로 두고 한계로 기록한다.
+  # edits는 자료(영역 배경 + 자료 상자)의 원문 구절 → 바꿀 구절. 원문 전체를 저장소에 두지 않기 위해 구절만 둔다.
+  # 각 구절은 원문에 반드시 있어야 하고(없으면 오류), 적용 뒤 banned 단어가 남거나 문장이 깨지면 오류다.
   debranded:
     Q5A:
-      proposal: "The 2010 federal health care law that expanded insurance coverage through regulated marketplaces and Medicaid should be repealed."
-      replace: {"Affordable Care Act": "the 2010 federal health care law", "“Obamacare”": "the 2010 law", "Obamacare": "the 2010 law", "ACA": "the 2010 law"}
+      proposal: "The 2010 federal health care law should be repealed."
+      banned: ["Affordable Care Act", "ACA", "Obamacare"]
+      edits:
+        - ["When the Affordable Care Act (ACA, or “Obamacare”) was passed in 2010", "When the federal health care law was passed in 2010"]
+        - ["The ACA penalizes", "The 2010 law penalizes"]
+        - ["The ACA has increased", "The 2010 law has increased"]
+        - ["expansion of Medicaid under ACA,", "expansion of Medicaid under the 2010 law,"]
+        - ["The ACA ensures", "The 2010 law ensures"]
+        - ["benefit from the ACA by", "benefit from the 2010 law by"]
+        - ["As a result of the ACA,", "As a result of the 2010 law,"]
+        - ["Curtailing the ACA’s", "Curtailing the 2010 law’s"]
+        - ["since the ACA was passed in 2010", "since the law was passed in 2010"]
     Q3A:
-      proposal: "The US should commit to the multilateral climate agreement adopted by nearly 200 countries in 2015 to combat climate change."
-      replace: {"Paris Agreement": "2015 multilateral climate agreement", "Paris Climate Agreement": "2015 multilateral climate agreement"}
+      # 원 문항의 "2014"는 실제 채택 연도(2015)와 다른 원문 오류다. 연도를 바꾸지 않고 뺀다
+      proposal: "The US should commit to the international climate agreement to combat climate change."
+      banned: ["Paris", "2014"]
+      edits:
+        - ["signed the Paris Agreement, a framework", "signed an international climate agreement, a framework"]
+        - ["The Paris Agreement is harmful", "The agreement is harmful"]
     Q6F:
-      proposal: "The US should recommit to a 2015 multilateral agreement that limits a country's nuclear program in exchange for sanctions relief."
-      replace: {"Iran Nuclear Agreement": "2015 multilateral nuclear agreement", "Joint Comprehensive Plan of Action": "2015 multilateral nuclear agreement", "JCPOA": "the agreement", "Iranian": "the country's", "Iran": "the country"}
+      # 이름을 지우면 무엇에 관한 합의인지 알 수 없어 설계 6-2의 예시 문구로 대신한다 (원문에 없는 연도는 넣지 않음)
+      proposal: "The US should recommit to the multilateral agreement that limits a country's nuclear program in exchange for sanctions relief."
+      banned: ["Iran", "Iranian", "JCPOA", "Joint Comprehensive"]
+      edits:
+        - ["The Iran agreement represents", "The agreement represents"]
+        - ["evidence that Iran has cheated", "evidence that the country has cheated"]
+        - ["Iran is the principal threat", "The country is the principal threat"]
+        - ["The deal gives Iran economic", "The deal gives the country economic"]
 
 # ---------- 연구 1-C: 논증의 질 × 사회적 지지 (IBM ArgQ 30k) ----------
 argq:

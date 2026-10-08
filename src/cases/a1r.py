@@ -80,8 +80,25 @@ def domain_of(item_id: str, t: Dict[str, Any]) -> str:
     return t["domains"][item_id[1]]
 
 
+BROKEN_TEXT = [(r"\b[Tt]he the\b", "repeated article"), (r"\b(\w+) \1\b", "repeated word"),
+               (r"(?:^|[.!?]\s+|:\s+)[a-z]", "sentence starts in lowercase"), (r"\(\s*\)", "empty parentheses")]
+
+
+def debrand(text: str, spec: Dict[str, Any]) -> str:
+    """이름 제거 구절 편집을 적용하고 검사한다 (원문에 없는 구절, 남은 고유명사, 깨진 문장은 오류)"""
+    for old, new in spec["edits"]:
+        if old not in text:
+            raise ValueError(f"debranding edit not found in the original text: {old!r}")
+        text = text.replace(old, new)
+    problems = [f"banned term {b!r}" for b in spec["banned"] if re.search(rf"\b{re.escape(b)}\b", text)]
+    problems += [f"{name}: {m.group(0)!r}" for rx, name in BROKEN_TEXT for m in re.finditer(rx, text)]
+    if problems:
+        raise ValueError(f"debranded text has problems: {problems}")
+    return text
+
+
 def materials(item_id: str, proposal: str, briefing: Dict[str, Any], t: Dict[str, Any],
-              replace: Optional[Dict[str, str]] = None) -> str:
+              debranding: Optional[Dict[str, Any]] = None) -> str:
     box = briefing["items"][item_id]
     domain = domain_of(item_id, t)
     parts = [t["materials_header"],
@@ -89,14 +106,12 @@ def materials(item_id: str, proposal: str, briefing: Dict[str, Any], t: Dict[str
              t["materials_box"].format(proposal=proposal, arguments_for=box["arguments_for"],
                                        arguments_against=box["arguments_against"])]
     text = "\n\n".join(parts)
-    for old in sorted(replace or {}, key=len, reverse=True):  # 긴 표현부터 (부분 치환이 겹치지 않도록)
-        text = text.replace(old, replace[old])
-    return text
+    return debrand(text, debranding) if debranding else text
 
 
 def _topic(key: str, item_id: str, proposal: str, members: List[Respondent], t: Dict[str, Any],
            briefing: Optional[Dict[str, Any]], max_statements: int, rng: random.Random,
-           replace: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+           debranding: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     names = rng.sample(t["names"], len(members))
     topic = {
         "key": key,
@@ -114,7 +129,7 @@ def _topic(key: str, item_id: str, proposal: str, members: List[Respondent], t: 
                  "groups": sorted({r.group for r in members})},
     }
     if briefing is not None:
-        topic["materials"] = materials(item_id, proposal, briefing, t, replace)
+        topic["materials"] = materials(item_id, proposal, briefing, t, debranding)
     return topic
 
 
@@ -141,13 +156,13 @@ def sampled_topics(delegates: List[Respondent], items: Dict[str, str], item_ids:
     rng = random.Random(seed)
     topics = []
     for item_id in item_ids:
-        proposal, replace, suffix = items[item_id], None, ""
+        proposal, spec, suffix = items[item_id], None, ""
         if debranded:
             spec = t["debranded"][item_id]
-            proposal, replace, suffix = spec["proposal"], spec.get("replace"), "-debranded"
+            proposal, suffix = spec["proposal"], "-debranded"
         for g, members in enumerate(sample_groups(delegates, item_id, groups_per_item, rng)):
             topics.append(_topic(f"{item_id}{suffix}-g{g:02d}", item_id, proposal, members, t, briefing,
-                                 max_statements, rng, replace))
+                                 max_statements, rng, spec))
     return topics
 
 
