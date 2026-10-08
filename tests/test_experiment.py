@@ -862,3 +862,70 @@ async def test_run_batch_with_survey_only_conditions(monkeypatch):
     assert seeded == {"Alice": "seeded", "Bob": "seeded"}
     unseeded = {r["source"] for r in persistence.list_survey(done[("g1", "prior", 0)]["id"]) if r["phase"] == "pre"}
     assert unseeded == {"answered"}
+
+
+# ---------- 정해진 발언(공모자)과 고정 발언 순서 ----------
+
+def three_specs():
+    return [ParticipantSpec(Persona(name=n, **BASE), LLMProvider.CLAUDE, "m-agent") for n in ("T", "C1", "C2")]
+
+
+SCRIPTED = {"mode": "baseline", "mechanisms": {"closing_round": False},
+            "turn_order": ["C1", "C2", "T"],
+            "participants": {"C1": {"script": ["Strong argument one."]},
+                             "C2": {"script": ["Same argument again.", "Second line."]}}}
+
+
+@pytest.mark.parametrize("bad", [
+    {"turn_order": ["A"]},                                                      # stateful에는 고정 순서 없음
+    {"participants": {"A": {"script": ["x"]}}},                                 # stateful에는 정해진 발언 없음
+    {"mode": "baseline", "participants": {"A": {"script": [""]}}},              # 빈 줄
+    {"mode": "baseline", "participants": {"A": {"script": ["x"], "seed": {"q1": 3}}}},  # 공모자에게 초기 응답
+])
+def test_script_and_turn_order_validation(bad):
+    with pytest.raises(ValidationError):
+        ExperimentConfig(**bad)
+
+
+@pytest.mark.asyncio
+async def test_scripted_confederates_follow_fixed_order_and_skip_surveys():
+    bundle = FakeBundle()
+    engine = create_discussion(three_specs(), bundle=bundle, experiment=ExperimentConfig(**SCRIPTED),
+                               survey=SurveyConfig(**SURVEY), max_statements=6)
+    events = await run(engine)
+    said = [(e.speaker, e.content, e.meta.get("scripted", False)) for e in events
+            if e.kind == "utterance" and e.speaker_type == "ai"]
+    assert [s for s, *_ in said] == ["C1", "C2", "T", "C2", "T", "T"]  # 대본을 다 쓴 C1은 건너뜀
+    assert said[0][1:] == ("Strong argument one.", True) and said[3][1:] == ("Second line.", True)
+    assert not said[2][2] and "prompt" not in next(e for e in events if e.speaker == "C1" and e.kind == "utterance").meta
+    assert {e.speaker for e in events if e.kind == "survey"} == {"T"}
+
+
+@pytest.mark.asyncio
+async def test_closing_round_skips_confederates_whose_script_ran_out():
+    exp = {**SCRIPTED, "mechanisms": {}}
+    engine = create_discussion(three_specs(), bundle=FakeBundle(), experiment=ExperimentConfig(**exp), max_statements=9)
+    said = [(e.speaker, e.action) for e in await run(engine) if e.kind == "utterance" and e.speaker_type == "ai"]
+    assert [s for s, a in said if a == "closing"] == ["T"]  # 대본을 다 쓴 C1·C2는 마무리 없이 끝
+    assert [s for s, a in said if a != "closing"] == ["C1", "C2", "T", "C2", "T", "T"]
+
+
+def test_restore_resumes_script_and_turn_order_position():
+    from src.models.personas import Message
+    engine = create_discussion(three_specs(), bundle=FakeBundle(), experiment=ExperimentConfig(**SCRIPTED),
+                               max_statements=6)
+    prior = [Message(role="assistant", content=c, agent_name=n,
+                     metadata={"seq": i + 1, "action": "reply", "speaker_type": "ai"})
+             for i, (n, c) in enumerate([("C1", "Strong argument one."), ("C2", "Same argument again."), ("T", "ok")])]
+    engine.restore(prior)
+    assert engine._agent("C2").script_pos == 1 and not engine._agent("C1").can_speak()
+    assert engine.order_pos == 3 and engine._baseline_turn("T").speaker.persona.name == "C2"
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_turn_order_with_unknown_names():
+    admin = create_user(role="admin")
+    async with LoggedInClient(admin) as client:
+        r = await client.post("/api/v1/discussions", json={**BODY, "experiment": {"mode": "baseline",
+                                                                               "turn_order": ["Alice", "Zed"]}})
+        assert r.status_code == 400 and r.json()["detail"]["error"]["code"] == "UNKNOWN_PARTICIPANT"

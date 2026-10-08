@@ -61,7 +61,7 @@ class DiscussionService:
             if not user.is_admin and not limits.user_expensive_features:
                 # 분석 모델 지정 등으로 비용이 크게 달라질 수 있어 웹 검색과 같은 정책을 따른다
                 raise _error(status.HTTP_403_FORBIDDEN, "FEATURE_RESTRICTED", "실험 조건은 관리자만 지정할 수 있습니다.")
-            unknown = set(request.experiment.participants) - set(names)
+            unknown = (set(request.experiment.participants) | set(request.experiment.turn_order or [])) - set(names)
             if unknown:
                 raise _error(status.HTTP_400_BAD_REQUEST, "UNKNOWN_PARTICIPANT",
                              f"실험 조건의 참가자 이름이 페르소나에 없습니다: {', '.join(sorted(unknown))}")

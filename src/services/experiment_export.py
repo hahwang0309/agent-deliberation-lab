@@ -103,7 +103,7 @@ def build_tables(bundle: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
         tables["utterances"].append({
             "discussion_id": did, "seq": seq, "speaker": m["speaker"], "speaker_type": m["speaker_type"],
             "action": m.get("action"), "subtopic_idx": meta.get("subtopic_idx"), "target_seq": meta.get("target_seq"),
-            "in_reply_to_seq": meta.get("in_reply_to_seq"), "text": m["content"], "chars": len(m["content"] or ""),
+            "in_reply_to_seq": meta.get("in_reply_to_seq"), "scripted": bool(meta.get("scripted")), "text": m["content"], "chars": len(m["content"] or ""),
             "analyzed": bool(analysis), "move": analysis.get("move"), "stance": analysis.get("stance"),
             "claims": " | ".join(analysis.get("claims") or []),
             "n_attacks": sum(t.get("relation") == "attack" for t in analysis.get("targets") or []),

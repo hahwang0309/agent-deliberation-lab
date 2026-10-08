@@ -8,7 +8,7 @@
 from dataclasses import replace
 from typing import Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from config.discussion_config import DiscussionConfig, get_config
 
@@ -28,6 +28,18 @@ class ParticipantCondition(_Strict):
     temperature: Optional[float] = Field(None, ge=0.0, le=1.5, description="발언 temperature")
     seed: Optional[Dict[str, Union[int, List[str]]]] = Field(
         None, description="심은 사전 설문 응답 {문항 id: 점수 또는 보기 목록}. 사전 설문을 묻지 않고 이 값으로 기록하고 프롬프트에 넣음")
+    script: Optional[List[str]] = Field(
+        None, min_length=1, max_length=50,
+        description="정해진 발언 (실험 공모자). 차례마다 다음 줄을 LLM 없이 말하고, 다 쓰면 더 말하지 않음. 설문 대상에서 빠짐")
+
+    @model_validator(mode="after")
+    def check_script(self):
+        if self.script is not None:
+            if any(not line.strip() or len(line) > 4000 for line in self.script):
+                raise ValueError("script lines must be non-empty and at most 4000 characters")
+            if self.seed:
+                raise ValueError("a scripted participant cannot have a seed (it is not surveyed)")
+        return self
 
 
 class ModelRef(_Strict):
@@ -83,6 +95,16 @@ class ExperimentConfig(_Strict):
     moderator_temperature: Optional[float] = Field(None, ge=0.0, le=1.5)
     analyzer: Optional[ModelRef] = Field(None, description="발언 분석 모델 (비우면 첫 참가자의 모델)")
     participants: Dict[str, ParticipantCondition] = Field(default_factory=dict)
+    turn_order: Optional[List[str]] = Field(
+        None, min_length=1, max_length=50,
+        description="baseline 발언 순서 (참가자 이름, 반복 가능). 이 순서를 되풀이하며 정해진 발언을 다 쓴 참가자는 건너뜀")
+
+    @model_validator(mode="after")
+    def check_baseline_only(self):
+        scripted = any(c.script for c in self.participants.values())
+        if (scripted or self.turn_order) and self.mode != "baseline":
+            raise ValueError("script and turn_order require mode baseline")
+        return self
 
 
 def engine_settings(experiment: Optional[ExperimentConfig] = None) -> DiscussionConfig:

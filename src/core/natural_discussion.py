@@ -202,6 +202,8 @@ class NaturalDiscussion:
         # 기준선 모드: 순서대로 돌아가며 앞 발언에 답하는 단순 토론 (발화 행위·응답 의무·중재·입장 안내 없음).
         # 발언 분석은 측정용으로만 돌고 진행에는 쓰지 않는다.
         self.baseline = self.config.engine_mode == "baseline"
+        self.turn_order: Optional[List[str]] = None  # baseline 고정 발언 순서 (create_discussion이 채움)
+        self.order_pos = 0
         self.llm_spec: Dict[str, Any] = {}  # 실행 기록용 모델·temperature (create_discussion이 채움)
         self.messages: List[Message] = []
 
@@ -249,6 +251,11 @@ class NaturalDiscussion:
                 if msg.agent_name in self.agent_turn_count:
                     self.agent_turn_count[msg.agent_name] += 1
                 self.last_speakers = (self.last_speakers + [msg.agent_name])[-3:]
+        for agent in self.agents:  # 정해진 발언은 이미 말한 줄 수만큼 넘김
+            if agent.scripted:
+                agent.script_pos = self.agent_turn_count[agent.persona.name]
+        if self.turn_order:
+            self._restore_order_pos()
         seqs = [m.metadata.get("seq") for m in self.messages if m.metadata.get("seq")]
         self.next_seq = max(seqs) + 1 if seqs else 1
 
@@ -280,6 +287,19 @@ class NaturalDiscussion:
         else:
             self._restore_progress_from_count(subtopics)
         self.restored = True
+
+    def _restore_order_pos(self) -> None:
+        """고정 순서에서의 위치: 저장된 본론 발언을 순서표에 차례로 맞춰 본다 (건너뛴 칸 포함)"""
+        pos, size = 0, len(self.turn_order)
+        for msg in self.messages:
+            if msg.role not in AI_ROLES or msg.metadata.get("action") == ActionType.CLOSING.value:
+                continue
+            for _ in range(size):
+                hit = self.turn_order[pos % size] == msg.agent_name
+                pos += 1
+                if hit:
+                    break
+        self.order_pos = pos
 
     def _replay_after_snapshot(self, snapshot_seq: int) -> None:
         """스냅숏 이후 메시지(분석이 저장되기 전에 중단된 발언, 그 뒤의 전환 안내)를 진행 상태에 반영"""
@@ -410,12 +430,13 @@ class NaturalDiscussion:
 
     async def _run_surveys(self, phase: str, transcript: str = "",
                            prompt_key: Optional[str] = None) -> AsyncIterator[EngineEvent]:
-        """참가자(AI) 전원에게 같은 설문을 독립 호출로 동시에 묻는다"""
+        """참가자(AI) 전원에게 같은 설문을 독립 호출로 동시에 묻는다 (정해진 발언만 하는 공모자는 제외)"""
+        surveyed = [a for a in self.agents if not a.scripted]
         results = await asyncio.gather(*(
             run_survey(a, self.survey, phase, transcript, seeded=a.seed if phase == PRE else None,
                        prompt_key=prompt_key)
-            for a in self.agents))
-        for agent, answers in zip(self.agents, results):
+            for a in surveyed))
+        for agent, answers in zip(surveyed, results):
             yield EngineEvent(kind="survey", speaker=agent.persona.name, speaker_type="ai",
                               meta={"phase": phase, "answers": answers})
 
@@ -473,10 +494,14 @@ class NaturalDiscussion:
 
         # 1. 사람 발언에 대한 후속 응답
         if self.pending_followups > 0:
-            return Turn(self._least_spoken(others), ActionType.RESPOND_TO_HUMAN)
+            able = [a for a in others if a.can_speak()] or [a for a in self.agents if a.can_speak()]
+            return Turn(self._least_spoken(able), ActionType.RESPOND_TO_HUMAN) if able else None
 
-        # 2. 종결 라운드: 아직 마무리하지 않은 참가자 순서대로
+        # 2. 종결 라운드: 아직 마무리하지 않은 참가자 순서대로 (정해진 발언을 다 쓴 참가자는 마무리 없이 끝)
         if self.closing_started:
+            for a in self.agents:
+                if a.persona.name not in self.closing_done and not a.can_speak():
+                    self.closing_done.append(a.persona.name)
             remaining = [a for a in self.agents if a.persona.name not in self.closing_done]
             return Turn(remaining[0], ActionType.CLOSING) if remaining else None
 
@@ -532,11 +557,22 @@ class NaturalDiscussion:
             action = ActionType.REBUT if self.alternation % 2 else ActionType.UNDERCUT
         return Turn(speaker, action, target)
 
-    def _baseline_turn(self, last: Optional[str]) -> Turn:
-        """기준선: 참가자 목록 순서대로 돌아가며 발언"""
+    def _baseline_turn(self, last: Optional[str]) -> Optional[Turn]:
+        """기준선: 참가자 목록(또는 turn_order) 순서대로 돌아가며 발언. 정해진 발언을 다 쓴 참가자는 건너뜀"""
+        if self.turn_order:
+            for _ in range(len(self.turn_order)):
+                agent = self._agent(self.turn_order[self.order_pos % len(self.turn_order)])
+                self.order_pos += 1
+                if agent.can_speak():
+                    return Turn(agent, ActionType.REPLY)
+            return None
         names = [a.persona.name for a in self.agents]
-        nxt = (names.index(last) + 1) % len(names) if last in names else 0
-        return Turn(self.agents[nxt], ActionType.REPLY)
+        start = (names.index(last) + 1) % len(names) if last in names else 0
+        for i in range(len(names)):
+            agent = self.agents[(start + i) % len(names)]
+            if agent.can_speak():
+                return Turn(agent, ActionType.REPLY)
+        return None
 
     # ---------- 발언 ----------
 
@@ -608,9 +644,14 @@ class NaturalDiscussion:
 
         yield EngineEvent(kind="utterance_start", speaker=name, speaker_type="ai", action=action.value)
         response = ""
-        async for chunk in speaker.respond_stream(prompt, self.messages):
-            response += chunk
-            yield EngineEvent(kind="chunk", speaker=name, speaker_type="ai", content=chunk, action=action.value)
+        if speaker.scripted:  # 실험 공모자: 정해진 다음 줄 (LLM 호출 없음)
+            response = speaker.script[speaker.script_pos]
+            speaker.script_pos += 1
+            yield EngineEvent(kind="chunk", speaker=name, speaker_type="ai", content=response, action=action.value)
+        else:
+            async for chunk in speaker.respond_stream(prompt, self.messages):
+                response += chunk
+                yield EngineEvent(kind="chunk", speaker=name, speaker_type="ai", content=chunk, action=action.value)
 
         seq = self.next_seq
         self.next_seq += 1
@@ -625,7 +666,9 @@ class NaturalDiscussion:
             "rag_query": rag.query if rag else None,
             "sources": rag.sources if rag else None,
         }
-        if self.config.record_prompts:  # 실험 재현·감사용 (시스템 프롬프트는 페르소나·프롬프트 해시로 재구성 가능)
+        if speaker.scripted:
+            meta["scripted"] = True
+        if self.config.record_prompts and not speaker.scripted:  # 실험 재현·감사용 (시스템 프롬프트는 페르소나·프롬프트 해시로 재구성 가능)
             meta["prompt"] = prompt
         self.messages.append(Message(role="assistant", content=response, agent_name=name,
                                      metadata={"action": action.value, "speaker_type": "ai", **meta}))

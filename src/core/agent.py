@@ -43,6 +43,8 @@ class DiscussionAgent:
         self.materials = materials  # 모든 참가자에게 같은 배경 자료집 (인간 숙의의 자료집에 대응)
         self.seed = seed or {}  # 심은 사전 설문 응답 {문항 id: 값} (사전 설문은 묻지 않고 이 값으로 기록)
         self.initial_position = initial_position  # 심은 응답을 시스템 프롬프트에 넣을 문장
+        self.script: Optional[List[str]] = None  # 정해진 발언 (실험 공모자). 있으면 LLM 대신 차례마다 다음 줄을 말함
+        self.script_pos = 0
         self.provider = provider or LLMFactory.default_provider()
         self.language = "auto"
         self.statement_count = 0
@@ -56,6 +58,14 @@ class DiscussionAgent:
         # RAG 서비스 (선택)
         self.rag_service = RAGService(aux_llm) if enable_web_search else None
         self.last_rag_result = None  # 마지막 RAG 결과 저장
+
+    @property
+    def scripted(self) -> bool:
+        return self.script is not None
+
+    def can_speak(self) -> bool:
+        """정해진 발언을 다 쓴 참가자는 더 말하지 않는다"""
+        return self.script is None or self.script_pos < len(self.script)
 
     @property
     def stubbornness(self) -> float:

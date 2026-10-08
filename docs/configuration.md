@@ -113,6 +113,7 @@
 | `agent_temperature` / `moderator_temperature` | 참가자 기본 / 모더레이터 temperature (기본 0.7 / 0.5). 발언 분석은 항상 0 |
 | `analyzer` | 발언 분석 모델 `{provider, model}`. 비우면 첫 참가자의 모델 (판정자와 참가자 모델을 분리할 때 사용) |
 | `record_prompts` | 발언마다 최종 지시 프롬프트를 메시지 `meta.prompt`에 저장 (실험 조건이 있으면 기본 켬) |
-| `participants.{이름}` | 참가자별 `stubbornness`(0~1, 비우면 성격 키워드로 정함), `temperature`, `seed`(설문 문항별 초기 응답. 사전 설문 대신 기록되고 시스템 프롬프트에 들어감, [api-reference](api-reference.md) 설문 참고) |
+| `participants.{이름}` | 참가자별 `stubbornness`(0~1, 비우면 성격 키워드로 정함), `temperature`, `seed`(설문 문항별 초기 응답. 사전 설문 대신 기록되고 시스템 프롬프트에 들어감, [api-reference](api-reference.md) 설문 참고), `script`(정해진 발언 목록, 실험 공모자: `mode: baseline`에서만. 차례마다 LLM 없이 다음 줄을 말하고, 다 쓰면 이후 차례와 종결 라운드에서 빠짐. 설문 대상이 아니고 `seed`를 줄 수 없음. 발언 `meta.scripted = true`) |
+| `turn_order` | `mode: baseline`의 발언 순서(참가자 이름 목록, 같은 이름 반복 가능). 이 순서를 되풀이하며 대본을 다 쓴 참가자는 건너뜀. 재개 시 저장된 발언으로 위치를 복원 |
 
 `mechanisms.latitude`나 `concession_shift`를 끄면 `dynamics`의 해당 값보다 우선합니다. 알 수 없는 키는 거부되므로 오타로 조건이 무시되지 않습니다.
