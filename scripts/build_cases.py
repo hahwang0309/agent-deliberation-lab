@@ -152,7 +152,7 @@ def cmd_a1r(args) -> int:
     delegates = a1r.load_delegates(args.dataset, list(items))
     print(f"delegates with post-survey: {len(delegates)}; party mix {dict(Counter(a1r.PARTIES[d.party] for d in delegates))}")
     if args.small_groups:
-        topics = a1r.small_group_topics(delegates, items, ids, args.seed, brief, max_statements=args.max_statements or 39)
+        topics = a1r.small_group_topics(delegates, items, ids, args.seed, brief, max_statements=args.max_statements)
         sizes = Counter(len(tp["personas"]) for tp in topics)
         print(f"small groups: {len(topics)} topics, sizes {dict(sorted(sizes.items()))}")
     else:

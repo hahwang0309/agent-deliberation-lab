@@ -43,15 +43,18 @@ def _with_structured_subtopics(base):
 
 
 def _with_structured_survey(base):
-    """에이전트용: 사전·사후 설문(구조화 출력)에는 프롬프트의 [문항 id]마다 점수 4로 답한다"""
+    """에이전트용: 사전·사후 설문(구조화 출력)에는 프롬프트의 [문항 id]마다 점수 4로 답한다 (선택형은 첫 보기)"""
 
     class FakeAgent(base):
         def with_structured_output(self, schema, **kwargs):
             import re
 
             def answer(messages):
+                items = re.findall(r"^\[(\w+)\].*\n.*?(?:from|of): ([^\n(]+?)\.?(?: \(|$)", messages[-1].content, re.M)
+                first = {i: opts.split(", ")[0] for i, opts in items}
                 ids = re.findall(r"^\[(\w+)\]", messages[-1].content, re.M)
-                return schema(answers=[{"item_id": i, "score": 4, "reason": "fake"} for i in ids])
+                return schema(answers=[{"item_id": i, "score": 4, "choices": [first[i]] if i in first else [],
+                                        "reason": "fake"} for i in ids])
             return RunnableLambda(answer)
 
     return FakeAgent

@@ -72,3 +72,6 @@ data/
 
 # Research notes (private, not part of the app)
 docs/research/
+
+# Serena MCP local state
+.serena/

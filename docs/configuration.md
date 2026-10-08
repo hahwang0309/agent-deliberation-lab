@@ -42,8 +42,8 @@
 | 키 | 기본값 | 설명 |
 |---|---|---|
 | `max_global_running` | 5 | 서버 전체 동시 실행 토론 수 |
-| `default_statements` / `max_statements` | 12 / 30 | AI 발언 수 기본값 / 상한 |
-| `min_personas` / `max_personas` | 2 / 5 | 참가 페르소나 수 범위 |
+| `default_statements` / `max_statements` | 12 / 60 | AI 발언 수 기본값 / 상한 |
+| `min_personas` / `max_personas` | 2 / 16 | 참가 페르소나 수 범위 |
 | `user_max_concurrent` | 1 | 일반 사용자 동시 실행 수 (관리자 무제한, 사용자별 덮어쓰기 가능) |
 | `user_daily_starts` | 5 | 일반 사용자 하루(UTC) 시작 수 (재개는 포함하지 않음) |
 | `user_expensive_features` | false | 일반 사용자에게 웹 검색·신념 추론 허용 여부 (LLM 호출 수가 크게 늘어남) |

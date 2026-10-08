@@ -164,10 +164,36 @@ class LLMBundle:
         return self._cache[key]
 
 
+class EmptyStructuredOutput(ValueError):
+    """모델이 구조화 출력을 내지 않음 (예: Mistral이 도구 호출 없이 답함). 호출부는 실패로 처리해 재시도한다"""
+
+
+def _require_output(result):
+    if result is None:
+        raise EmptyStructuredOutput("model returned no structured output")
+    return result
+
+
+class _RequireOutput:
+    """구조화 출력 Runnable을 감싸 결과가 None이면 예외로 바꾼다"""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    def invoke(self, *args, **kwargs):
+        return _require_output(self.inner.invoke(*args, **kwargs))
+
+    async def ainvoke(self, *args, **kwargs):
+        return _require_output(await self.inner.ainvoke(*args, **kwargs))
+
+
 def structured_output(llm: BaseChatModel, schema):
     """구조화 출력 Runnable. 사고가 기본인 모델은 강제 도구 호출이 안 되므로 json_schema 방식을 쓴다
-    (실측: Sonnet 5.5·Haiku 4.5 모두 json_schema 동작, 기존 검증된 모델은 기존 방식 유지)"""
+    (실측: Sonnet 5.5·Haiku 4.5 모두 json_schema 동작, 기존 검증된 모델은 기존 방식 유지).
+    결과가 없으면(None) 조용히 넘기지 않고 EmptyStructuredOutput을 낸다"""
     model = getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
     if isinstance(model, str) and model.startswith(LLMFactory.FIXED_SAMPLING_PREFIXES):
-        return llm.with_structured_output(schema, method="json_schema")
-    return llm.with_structured_output(schema)
+        runnable = llm.with_structured_output(schema, method="json_schema")
+    else:
+        runnable = llm.with_structured_output(schema)
+    return _RequireOutput(runnable)

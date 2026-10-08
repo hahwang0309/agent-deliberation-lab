@@ -30,7 +30,10 @@ def _dictionary() -> frozenset:
 def _dehyphen(match: re.Match) -> str:
     """줄 끝에서 끊긴 단어(com- bat → combat)는 붙이고, 원래 하이픈 단어(high- tax → high-tax)는 하이픈 유지"""
     left, right = match.group(1), match.group(2)
-    return left + right if (left + right).lower() in _dictionary() else f"{left}-{right}"
+    word = (left + right).lower()
+    stems = [word] + [word[:-len(end)] for end in ("s", "es", "ed", "d", "ing", "ly") if word.endswith(end)]
+    stems += [word[:-3] + "e" for _ in [0] if word.endswith("ing")] + [word[:-3] + "y" for _ in [0] if word.endswith("ies")]
+    return left + right if any(s in _dictionary() for s in stems) else f"{left}-{right}"
 
 
 def _columns(header_line: str):
@@ -113,12 +116,19 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", s.lower())
 
 
+NEAR_TIE = 0.15  # 최고 유사도와 이만큼 안쪽이면 같은 정책안의 다른 판(요약편·본편)으로 본다
+
+
 def match_items(rows: List[Dict[str, str]], items: Dict[str, str]) -> Dict[str, Dict[str, Any]]:
-    """문항 id → 문구가 가장 비슷한 표 행 (유사도 match_score 0~1)"""
+    """문항 id → 문구가 가장 비슷한 표 행 (유사도 match_score 0~1).
+    요약편(Executive Summary)에도 같은 정책안의 짧은 판이 있으므로, 유사도가 비슷한 후보 중 논거가 가장 긴 행(본편)을 고른다"""
     out = {}
     for item_id, label in items.items():
         scored = [(difflib.SequenceMatcher(None, _norm(label), _norm(r["proposal"])).ratio(), r) for r in rows]
-        score, best = max(scored, key=lambda x: x[0]) if scored else (0.0, None)
-        if best is not None:
-            out[item_id] = {**best, "match_score": round(score, 3)}
+        if not scored:
+            continue
+        top = max(s for s, _ in scored)
+        score, best = max(((s, r) for s, r in scored if s >= top - NEAR_TIE),
+                          key=lambda x: len(x[1]["arguments_for"]) + len(x[1]["arguments_against"]))
+        out[item_id] = {**best, "match_score": round(score, 3)}
     return out

@@ -972,3 +972,29 @@ def test_openai_base_url_allows_local_server_without_key(monkeypatch):
     monkeypatch.delenv("OPENAI_BASE_URL")
     with pytest.raises(ValueError):
         LLMFactory.create_llm(LLMProvider.OPENAI, model="x")
+
+
+@pytest.mark.asyncio
+async def test_empty_structured_output_is_retried_not_crashing():
+    """모델이 구조화 출력 없이(None) 답해도 설문은 다시 묻고, 끝까지 없으면 missing으로 남긴다"""
+    agent = ScriptedSurveyAgent([])
+    calls = []
+
+    class NoneLLM:
+        def with_structured_output(self, schema, **kwargs):
+            return RunnableLambda(lambda messages: calls.append(1))  # 항상 None
+    agent.llm = NoneLLM()
+    rows = await run_survey(agent, SurveyConfig(**SURVEY), "pre")
+    assert len(calls) == 2 and {r["source"] for r in rows} == {"missing"}
+
+
+@pytest.mark.asyncio
+async def test_survey_with_no_answers_at_all_fails_the_run(monkeypatch):
+    """모델 호출이 전부 실패해 응답이 하나도 없으면 완료가 아니라 실패로 남는다 (배치 실행기가 다시 시도)"""
+    async def nothing(agent, survey, phase, transcript="", seeded=None, prompt_key=None, **kw):
+        return [{"item_id": i.id, "source": "seeded" if seeded and i.id in seeded else "missing"} for i in survey.items]
+    monkeypatch.setattr(engine_module, "run_survey", nothing)
+    engine = create_discussion(specs(), bundle=FakeBundle(), experiment=ExperimentConfig(mode="survey_only"),
+                               survey=SurveyConfig(**SURVEY), max_statements=4)
+    with pytest.raises(engine_module.SurveyFailed):
+        await run(engine)

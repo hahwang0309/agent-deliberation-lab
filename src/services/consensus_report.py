@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from config.config_loader import config_loader
 from src.services.debate_dynamics import dynamics_markdown
 from src.utils.language_detector import LanguageDetector
-from src.utils.llm_provider import structured_output
+from src.utils.llm_provider import EmptyStructuredOutput, structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +229,8 @@ class ConsensusReportGenerator:
                 errors = validate(result) if validate else []
             except ValidationError as e:
                 result, errors = None, [f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()]
+            except EmptyStructuredOutput as e:
+                result, errors = None, [str(e)]
             if not errors:
                 return result
             logger.warning("Report %s output invalid (attempt %d): %s", schema.__name__, attempt, errors[:5])

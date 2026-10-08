@@ -152,7 +152,7 @@ def sampled_topics(delegates: List[Respondent], items: Dict[str, str], item_ids:
 
 
 def small_group_topics(delegates: List[Respondent], items: Dict[str, str], item_ids: List[str], seed: int,
-                       briefing: Optional[Dict[str, Any]] = None, max_statements: int = 39,
+                       briefing: Optional[Dict[str, Any]] = None, max_statements: Optional[int] = None,
                        groups: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """실제 소집단 복제: GROUP별로 그 문항 사전 점수가 있는 숙의 참가자 전원"""
     t = texts()["a1r"]
@@ -169,8 +169,9 @@ def small_group_topics(delegates: List[Respondent], items: Dict[str, str], item_
             members = by_group[group]
             if len(members) > len(t["names"]):
                 raise ValueError(f"group {group} has {len(members)} members; add names in cases.yaml")
+            # 발언 수를 비우면 1인당 3개 (입장 표명 + 응답 + 종결)
             topics.append(_topic(f"{item_id}-group{group}", item_id, items[item_id], members, t, briefing,
-                                 max_statements, rng))
+                                 max_statements or 3 * len(members), rng))
     return topics
 
 

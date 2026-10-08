@@ -103,7 +103,7 @@ python scripts/coding_agreement.py --coded coder1.csv --second coder2.csv
 | `argq --seed S` | `data/raw/argq/*.csv` (IBM ArgQ 30k, CC-BY 3.0) | 8주제 × 표적 입장 2. 반대 논거 강(WA 상위 25%)·약(하위 25%) 3개씩, 총 토큰 ±10%. 조건 강·약 × 소수(1명이 3개)·다수(3명이 1개씩), 공모자 대본과 고정 순서 |
 
 - `--allow-draft`: 검토 전 자료 상자 초안으로 만들기(파일럿용). 확정본이 아니면 기본으로 거부합니다.
-- 제약: 실제 소집단은 8~16명이라 현재 참가자 상한(`limits.max_personas` 5)과 발언 수 상한(`limits.max_statements` 30)에 걸려 검사를 통과하지 못합니다.
+- 실제 소집단은 8~16명입니다. 발언 수를 비우면 1인당 3개로 잡습니다(참가자 상한 `limits.max_personas` 16, 발언 수 상한 `limits.max_statements` 60).
 - DeliData의 혼자 답 일부는 `["N", "/", "A"]`(기록 없음)입니다. 무효로 보고, 그런 참가자가 있는 집단은 복제에서 뺍니다.
 
 ## 주의

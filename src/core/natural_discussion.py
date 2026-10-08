@@ -187,6 +187,10 @@ class Turn:
     parties: Optional[Tuple[str, str]] = None
 
 
+class SurveyFailed(RuntimeError):
+    """설문 시점 하나에서 응답이 전혀 없음"""
+
+
 class NaturalDiscussion:
     def __init__(self, agents: List[DiscussionAgent], moderator: Optional[DiscussionModerator] = None,
                  max_statements: int = 20, analyzer: Optional[BaseChatModel] = None,
@@ -446,6 +450,10 @@ class NaturalDiscussion:
             run_survey(a, self.survey, phase, transcript, seeded=a.seed if phase == PRE else None,
                        prompt_key=prompt_key)
             for a in surveyed))
+        asked = [row for answers in results for row in answers if row["source"] != "seeded"]
+        if asked and all(row["source"] == "missing" for row in asked):
+            # 전원이 한 문항도 답하지 못함 = 모델 호출 자체의 실패 (예: 없는 모델). 완료로 기록하지 않는다
+            raise SurveyFailed(f"{phase} survey: no participant answered any item")
         for agent, answers in zip(surveyed, results):
             yield EngineEvent(kind="survey", speaker=agent.persona.name, speaker_type="ai",
                               meta={"phase": phase, "answers": answers})
