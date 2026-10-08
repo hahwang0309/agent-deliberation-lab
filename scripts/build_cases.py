@@ -45,11 +45,12 @@ class _NoAliasDumper(yaml.SafeDumper):
 def plan_dict(name: str, topics: List[Dict[str, Any]], conditions: List[Dict[str, Any]],
               repetitions: int = 1) -> Dict[str, Any]:
     """조건마다 config/cases.yaml의 측정 프로토콜을 넣는다 (조건이 직접 정한 값이 우선)"""
+    from config.config_loader import config_loader
     from src.cases import texts
     protocol = texts()["protocol"]
     conditions = [{**c, "experiment": {**protocol, **c.get("experiment", {})}} for c in conditions]
     return {"name": name, "repetitions": repetitions, "concurrency": 4, "retries": 1, "report": False,
-            "limits": {"max_total_tokens": 5_000_000}, "topics": topics, "conditions": conditions}
+            "limits": {"max_total_tokens": config_loader.config.experiment_runner.plan_max_total_tokens}, "topics": topics, "conditions": conditions}
 
 
 def validate(plan: Dict[str, Any]) -> List[str]:

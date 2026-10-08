@@ -58,6 +58,7 @@ class AnalysisConfig:
 class RunnerConfig:
     rough_input_per_statement: int
     rough_output_per_statement: int
+    plan_max_total_tokens: int
 
 
 @dataclass

@@ -36,7 +36,7 @@
 | `engine` | 토론 엔진 전체: 발언 길이, 명제 수, 맥락 길이, 진행 규칙 기준, 입장 라벨 기준, 분석 맥락·temperature, 입장 동역학과 설득력 가중치, 고집도, 엔진 모드, 진행 장치, 참가자·모더레이터 temperature, 사람 개입 | `config/discussion_config.py`(형식만) → 토론별 사본 `engine_settings()` |
 | `survey` | 사후 설문에 넣는 토론 기록 길이, 시도 횟수 | `src/services/survey.py` |
 | `analysis` | 반복 지표 기준, 입장 궤적의 '변화 없음' 기준 | 데이터 추출, 입장 궤적 |
-| `experiment_runner` | 배치 실행기 사전 추정용 발언당 토큰 | `api/services/experiment_runner.py` |
+| `experiment_runner` | 배치 실행기 사전 추정용 발언당 토큰, `build_cases.py` 계획의 토큰 안전 상한(`plan_max_total_tokens`) | `api/services/experiment_runner.py` |
 | `limits` | 서버 실행 제한(동시 실행, 발언 수, 참가자 수, 사용자 제한, 사람 발언) | API·런타임 |
 | `report` | 보고서 모델·temperature·토큰·시도 횟수, 합의 점수 기준 | 보고서 |
 

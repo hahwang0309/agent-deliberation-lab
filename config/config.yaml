@@ -131,7 +131,7 @@ engine:
 # 사전·사후 설문 (src/services/survey.py)
 survey:
   transcript_chars: 15000   # 사후 설문에 넣는 토론 기록 길이 (끝에서부터)
-  max_attempts: 2           # 형식 오류 시 다시 묻기 포함 총 시도 횟수
+  max_attempts: 3           # 형식 오류 시 다시 묻기 포함 총 시도 횟수 (2 → 3: Mistral 결측 약 10%, 2026-10-09)
 
 # 분석용 추출 지표 (src/services/experiment_export.py, debate_dynamics.py)
 analysis:
@@ -143,6 +143,7 @@ analysis:
 experiment_runner:
   rough_input_per_statement: 10700
   rough_output_per_statement: 1530
+  plan_max_total_tokens: 600000000   # build_cases.py가 만드는 계획의 토큰 안전 상한 (입력+출력, 연구 1 본 실행 규모)
 
 # ---------- 서버 ----------
 # 실행 제한 (API 토론 런타임)

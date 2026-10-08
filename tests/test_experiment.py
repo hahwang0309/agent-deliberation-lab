@@ -984,7 +984,8 @@ async def test_empty_structured_output_is_retried_not_crashing():
             return RunnableLambda(lambda messages: calls.append(1))  # 항상 None
     agent.llm = NoneLLM()
     rows = await run_survey(agent, SurveyConfig(**SURVEY), "pre")
-    assert len(calls) == 2 and {r["source"] for r in rows} == {"missing"}
+    from config.config_loader import config_loader
+    assert len(calls) == config_loader.config.survey.max_attempts and {r["source"] for r in rows} == {"missing"}
 
 
 @pytest.mark.asyncio
