@@ -35,20 +35,22 @@ API 키와 `SECRET_KEY`는 `.env`에서 읽습니다. `--db`는 필수이며, �
 | `retries` | 실패한 실행을 다시 시도할 횟수 (기본 1) |
 | `limits.max_total_tokens` | 입력+출력 누적 토큰 상한. 다음 실행이 상한을 넘을 것 같으면 새 실행을 시작하지 않습니다 |
 | `limits.max_cost_usd` + `prices` | 비용 상한. 단가(`input_per_mtok`, `output_per_mtok`)는 사용자가 확인한 값을 넣습니다. 코드에는 단가를 두지 않습니다 |
-| `topics[]` | `key`, `topic`, `language`, `max_statements`, `use_moderator`, `personas`(dict 또는 `persona_templates.yaml`의 템플릿 id), `propositions`(고정 명제), `materials` 또는 `materials_file`(배경 자료, 계획 파일 기준 상대 경로), `survey`(사전·사후 설문) |
-| `conditions[]` | `label`과 `experiment`(실험 조건). 항목은 [configuration.md](configuration.md#실험-조건-토론별)를 참고하세요 |
+| `topics[]` | `key`, `topic`, `language`, `max_statements`, `use_moderator`, `personas`(dict 또는 `persona_templates.yaml`의 템플릿 id), `propositions`(고정 명제), `materials` 또는 `materials_file`(배경 자료, 계획 파일 기준 상대 경로), `survey`(사전·사후 설문), `seeds`(참가자 이름 → 심을 사전 응답 `{문항 id: 점수 또는 보기 목록}`) |
+| `conditions[]` | `label`, `experiment`(실험 조건, 항목은 [configuration.md](configuration.md#실험-조건-토론별)), `use_seeds`(주제의 seeds를 심을지, 기본 true), `use_materials`(주제 자료를 넣을지, 기본 true) |
+
+**집단 복제(블록):** 주제 1개가 집단 1개입니다. 같은 주제의 페르소나·초기 응답·자료가 모든 조건에 그대로 복제되므로, 조건 간 차이는 조건 설정에서만 생깁니다. 예: `discuss`(토론), `alone`(`mode: survey_only`, 초기 응답을 받은 채 혼자 다시 답함), `prior`(`survey_only` + `use_seeds: false`, 모델의 사전 답).
 
 **실행 순서:** 반복 → 주제 → 조건 순으로 교차합니다. 시간에 따른 API 변화가 한 조건에 몰리지 않게 하기 위해서입니다.
 
 **이어 돌리기:** 같은 배치에서 이미 `completed`인 (주제, 조건, 반복)은 건너뜁니다. 실패하거나 중단된 실행은 새 토론으로 다시 실행하고, 이전 기록은 감사용으로 남깁니다. 분석할 때는 `discussions` 표의 `status`로 걸러 내세요.
 
-**토큰 추정:** 같은 배치에 완료된 실행이 있으면 그 평균을 씁니다. 없으면 발언 수 기반 대략치를 씁니다(Haiku 4.5 실측 기준 분석·설문·보고서를 포함해 발언 1개당 입력 약 10,700, 출력 약 1,530 토큰). 참가자 수, 자료집 길이, 모델에 따라 크게 달라지므로 첫 배치는 작게 돌려 평균을 얻으세요.
+**토큰 추정:** 같은 배치에 완료된 실행이 있으면 그 평균을 씁니다. 없으면 발언 수 기반 대략치를 씁니다(Haiku 4.5 실측 기준 분석·설문·보고서를 포함해 발언 1개당 입력 약 10,700, 출력 약 1,530 토큰). 토론 없는 조건(`survey_only`)은 발언 1개 분량으로 잡습니다. 같은 배치의 완료 평균은 조건을 구분하지 않으므로, 토론 조건과 토론 없는 조건을 섞은 배치에서는 평균이 실제와 다를 수 있습니다. 참가자 수, 자료집 길이, 모델에 따라 크게 달라지므로 첫 배치는 작게 돌려 평균을 얻으세요.
 
 ## 실험 조건으로 바꿀 수 있는 것
 
 | 범주 | 항목 |
 |---|---|
-| 엔진 | `mode`: `stateful`(상태 기반) / `baseline`(순서대로 앞 발언에 답하는 단순 토론) |
+| 엔진 | `mode`: `stateful`(상태 기반) / `baseline`(순서대로 앞 발언에 답하는 단순 토론) / `survey_only`(토론 없이 사전 설문 후 혼자 다시 답함) |
 | 진행 장치 | 발언 분석, 응답 의무, 교착 중재, 반대 검토, 종결 라운드, 수용 범위, 양보 이동 (각각 on/off) |
 | 동역학 | 설득 이동량, 고집 복원력, 수용·비관여·거부 범위, 반발, 양보 이동량 |
 | 참가자 | 참가자별 고집도, temperature |

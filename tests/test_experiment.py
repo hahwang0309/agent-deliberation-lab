@@ -777,3 +777,88 @@ async def test_api_validates_and_stores_seeded_choice_answers(monkeypatch):
     rows = {(r["phase"], r["participant"]): r for r in persistence.list_survey(discussion_id)}
     assert rows[("pre", "Alice")]["source"] == "seeded" and rows[("pre", "Alice")]["choices"] == ["E", "4"]
     assert rows[("pre", "Alice")]["correct"] is False
+
+
+# ---------- 토론 없는 조건과 집단 복제 ----------
+
+import src.core.natural_discussion as engine_module  # noqa: E402
+from config.config_loader import config_loader  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_survey_only_mode_asks_pre_then_alone_without_discussion(monkeypatch):
+    calls = []
+    original = engine_module.run_survey
+
+    async def spy(agent, survey, phase, transcript="", seeded=None, prompt_key=None, **kw):
+        calls.append((agent.persona.name, phase, prompt_key, transcript))
+        return await original(agent, survey, phase, transcript, seeded=seeded, prompt_key=prompt_key, **kw)
+    monkeypatch.setattr(engine_module, "run_survey", spy)
+
+    bundle = FakeBundle()
+    exp = ExperimentConfig(mode="survey_only", participants={"A": {"seed": {"q1": 6}}})
+    engine = create_discussion(specs(), bundle=bundle, experiment=exp, survey=SurveyConfig(**SURVEY), max_statements=4)
+    events = await run(engine)
+    assert [e.kind for e in events] == ["survey"] * 4 and not engine.messages
+    assert sorted((n, p, k) for n, p, k, _ in calls) == [
+        ("A", "post", "post_alone"), ("A", "pre", None), ("B", "post", "post_alone"), ("B", "pre", None)]
+    assert all(t == "" for *_, t in calls)
+    pre_a = next(e for e in events if e.speaker == "A" and e.meta["phase"] == "pre").meta["answers"]
+    assert [(a["item_id"], a["source"], a["score"]) for a in pre_a] == [("q1", "seeded", 6), ("q2", "answered", 4)]
+    assert "There is no discussion" in config_loader.prompts.render("survey.post_alone", items="x")
+
+
+@pytest.mark.asyncio
+async def test_api_survey_only_requires_survey_and_completes_without_report(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    admin = create_user(role="admin")
+    async with LoggedInClient(admin) as client:
+        r = await client.post("/api/v1/discussions", json={**BODY, "experiment": {"mode": "survey_only"}})
+        assert r.status_code == 400 and r.json()["detail"]["error"]["code"] == "SURVEY_REQUIRED"
+        r = await client.post("/api/v1/discussions", json={**BODY, "survey": SURVEY,
+                                                         "experiment": {"mode": "survey_only"}})
+        discussion_id = r.json()["id"]
+        assert (await client.post(f"/api/v1/discussions/{discussion_id}/start")).status_code == 202
+        await asyncio.wait_for(registry.get(discussion_id).task, timeout=10)
+        assert (await client.get(f"/api/v1/discussions/{discussion_id}")).json()["status"] == "completed"
+        assert (await client.get(f"/api/v1/discussions/{discussion_id}/report")).status_code == 404
+    rows = persistence.list_survey(discussion_id)
+    assert len(rows) == 2 * 2 * 2 and not persistence.list_messages_after(discussion_id)
+
+
+CLONE_PLAN = {
+    "name": "clone-test", "repetitions": 1,
+    "topics": [{"key": "g1", "topic": "Remote work mandates?", "max_statements": 4, "materials": "Brief.",
+                "personas": [dict(name="Alice", **PERSONA), dict(name="Bob", **PERSONA)], "survey": SURVEY,
+                "seeds": {"Alice": {"q1": 2}, "Bob": {"q1": 6}}}],
+    "conditions": [
+        {"label": "discuss", "experiment": {"mode": "baseline", "participants": {"Bob": {"temperature": 0.3}}}},
+        {"label": "alone", "experiment": {"mode": "survey_only"}, "use_materials": False},
+        {"label": "prior", "experiment": {"mode": "survey_only"}, "use_seeds": False, "use_materials": False},
+    ],
+}
+
+
+def test_same_group_is_cloned_across_conditions_with_seed_and_materials_switches():
+    plan = ExperimentPlan(**CLONE_PLAN)
+    discuss, alone, prior = (build_request(plan, r) for r in plan_runs(plan))
+    assert [p.name for p in discuss.personas] == [p.name for p in alone.personas] == [p.name for p in prior.personas]
+    assert discuss.materials == "Brief." and alone.materials is None and prior.materials is None
+    assert discuss.experiment.participants["Bob"].seed == {"q1": 6}
+    assert discuss.experiment.participants["Bob"].temperature == 0.3       # 조건의 참가자 설정과 합침
+    assert alone.experiment.participants["Alice"].seed == {"q1": 2}
+    assert prior.experiment.participants == {}
+    assert CLONE_PLAN["conditions"][0]["experiment"]["participants"] == {"Bob": {"temperature": 0.3}}  # 원본 불변
+
+
+@pytest.mark.asyncio
+async def test_run_batch_with_survey_only_conditions(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    result = await run_batch(ExperimentPlan(**CLONE_PLAN), on_progress=lambda _: None)
+    assert len(result.completed) == 3 and not result.failed
+    done = existing_runs("clone-test")
+    seeded = {r["participant"]: r["source"] for r in persistence.list_survey(done[("g1", "alone", 0)]["id"])
+              if r["phase"] == "pre" and r["item_id"] == "q1"}
+    assert seeded == {"Alice": "seeded", "Bob": "seeded"}
+    unseeded = {r["source"] for r in persistence.list_survey(done[("g1", "prior", 0)]["id"]) if r["phase"] == "pre"}
+    assert unseeded == {"answered"}

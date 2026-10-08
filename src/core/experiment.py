@@ -68,8 +68,9 @@ class ExperimentConfig(_Strict):
     batch: Optional[str] = Field(None, max_length=100, description="배치 실행 이름 (scripts/run_experiment.py)")
     topic_key: Optional[str] = Field(None, max_length=100, description="배치 안의 주제 키")
     replicate: Optional[int] = Field(None, ge=0, description="반복 번호")
-    mode: Literal["stateful", "baseline"] = Field(
-        "stateful", description="baseline: 순서대로 앞 발언에 답하는 단순 토론 (비교 기준선)")
+    mode: Literal["stateful", "baseline", "survey_only"] = Field(
+        "stateful", description="baseline: 순서대로 앞 발언에 답하는 단순 토론 (비교 기준선). "
+                                "survey_only: 토론 없이 사전 설문 후 혼자 다시 답함 (설문 필요)")
     record_prompts: bool = Field(True, description="발언마다 최종 지시 프롬프트를 meta.prompt에 저장")
     mechanisms: Mechanisms = Field(default_factory=Mechanisms)
     dynamics: Dynamics = Field(default_factory=Dynamics)

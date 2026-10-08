@@ -65,6 +65,8 @@ class DiscussionService:
             if unknown:
                 raise _error(status.HTTP_400_BAD_REQUEST, "UNKNOWN_PARTICIPANT",
                              f"실험 조건의 참가자 이름이 페르소나에 없습니다: {', '.join(sorted(unknown))}")
+            if request.experiment.mode == "survey_only" and request.survey is None:
+                raise _error(status.HTTP_400_BAD_REQUEST, "SURVEY_REQUIRED", "토론 없는 조건(survey_only)에는 설문(survey)이 필요합니다.")
             seeds = {n: c.seed for n, c in request.experiment.participants.items() if c.seed}
             if seeds and request.survey is None:
                 raise _error(status.HTTP_400_BAD_REQUEST, "SEED_WITHOUT_SURVEY", "초기 응답을 심으려면 설문(survey)이 필요합니다.")

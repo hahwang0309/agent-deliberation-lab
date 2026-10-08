@@ -330,6 +330,14 @@ survey:
 
     Items:
     {items}
+  # 토론 없는 조건(mode: survey_only)의 사후 설문
+  post_alone: |
+    There is no discussion with other participants. Take time to reconsider the questionnaire on your own,
+    then answer it again as yourself. Change an answer only if, on reflection, you now hold a different view.
+    Answer every item in the format shown for it, using its id exactly as shown, and give one short sentence of reason.
+
+    Items:
+    {items}
   # 문항별 답 형식
   format_likert: "Answer with an integer score from {low} (strongly disagree / strongly oppose) to {high} (strongly agree / strongly favor)."
   format_single: "Choose exactly one of: {options}."

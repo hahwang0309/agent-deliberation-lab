@@ -352,6 +352,13 @@ class NaturalDiscussion:
             async for event in self._run_surveys(PRE):
                 yield event
 
+        if self.config.engine_mode == "survey_only":  # 토론 없는 조건: 혼자 다시 답하고 끝냄
+            if self.survey:
+                async for event in self._run_surveys(POST, prompt_key="post_alone"):
+                    yield event
+            logger.info("Survey-only run completed")
+            return
+
         if not self.restored:
             if self.fixed_propositions:
                 if self.moderator:
@@ -401,10 +408,12 @@ class NaturalDiscussion:
 
         logger.info("Discussion completed: statements=%d messages=%d", self.turn_count, len(self.messages))
 
-    async def _run_surveys(self, phase: str, transcript: str = "") -> AsyncIterator[EngineEvent]:
+    async def _run_surveys(self, phase: str, transcript: str = "",
+                           prompt_key: Optional[str] = None) -> AsyncIterator[EngineEvent]:
         """참가자(AI) 전원에게 같은 설문을 독립 호출로 동시에 묻는다"""
         results = await asyncio.gather(*(
-            run_survey(a, self.survey, phase, transcript, seeded=a.seed if phase == PRE else None)
+            run_survey(a, self.survey, phase, transcript, seeded=a.seed if phase == PRE else None,
+                       prompt_key=prompt_key)
             for a in self.agents))
         for agent, answers in zip(self.agents, results):
             yield EngineEvent(kind="survey", speaker=agent.persona.name, speaker_type="ai",

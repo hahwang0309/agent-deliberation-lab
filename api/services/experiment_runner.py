@@ -4,6 +4,8 @@
 - 토론은 웹과 같은 경로(DiscussionService.create → DiscussionRuntime.run)로 만들고 실행한다.
   그래서 저장 형식, 설문, 실행 기록, 보고서가 웹에서 만든 토론과 같다.
 - 웹 사용자 제한(동시 실행, 일일 시작 수)과 서버 전체 동시 실행 수는 거치지 않고, 계획의 concurrency를 쓴다.
+- 주제 1개가 집단 1개(블록)다. 같은 주제의 페르소나·초기 응답(seeds)·자료를 모든 조건에 그대로 복제하고,
+  조건은 use_seeds·use_materials로 초기 응답과 자료를 쓸지 정한다(예: 토론 / 혼자 다시 답하기 / 사전 응답 없음).
 - 실행 순서는 반복 → 주제 → 조건 순으로 섞어서, 시간에 따른 API 변화가 한 조건에 몰리지 않게 한다.
 - 이미 완료된 (주제, 조건, 반복)은 건너뛴다(중단 후 이어 돌리기). 실패한 실행은 retries만큼 다시 시도한다.
 - 누적 토큰(또는 가격을 주면 비용)이 상한을 넘을 것 같으면 새 실행을 시작하지 않는다.
@@ -26,7 +28,7 @@ from api.runtime.runtime import DiscussionRuntime
 from api.schemas.discussion import CreateDiscussionRequest, PersonaInput
 from api.services.discussion_service import DiscussionService
 from api.utils.security import hash_password
-from src.services.survey import SurveyConfig
+from src.services.survey import SeedValue, SurveyConfig
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +55,15 @@ class TopicPlan(_Strict):
     materials: Optional[str] = None
     materials_file: Optional[str] = None
     survey: Optional[SurveyConfig] = None
+    seeds: Dict[str, Dict[str, SeedValue]] = Field(
+        default_factory=dict, description="참가자 이름 → 심은 사전 설문 응답 (조건의 use_seeds가 켜졌을 때 씀)")
 
 
 class ConditionPlan(_Strict):
     label: str = Field(..., max_length=100)
     experiment: Dict[str, Any] = Field(default_factory=dict)
+    use_seeds: bool = Field(True, description="주제의 seeds를 참가자 초기 응답으로 심음")
+    use_materials: bool = Field(True, description="주제의 배경 자료를 넣음")
 
 
 class Limits(_Strict):
@@ -144,13 +150,23 @@ def _personas(topic: TopicPlan) -> List[PersonaInput]:
 
 
 def build_request(plan: ExperimentPlan, run: Run) -> CreateDiscussionRequest:
-    t = run.topic
-    experiment = {**run.condition.experiment, "label": run.condition.label, "batch": plan.name,
+    t, c = run.topic, run.condition
+    experiment = {**c.experiment, "label": c.label, "batch": plan.name,
                   "topic_key": t.key, "replicate": run.replicate}
+    if c.use_seeds and t.seeds:
+        participants = {name: dict(cond) for name, cond in (c.experiment.get("participants") or {}).items()}
+        for name, seed in t.seeds.items():
+            participants.setdefault(name, {})["seed"] = seed
+        experiment["participants"] = participants
     return CreateDiscussionRequest(
         topic=t.topic, description=t.description, language=t.language, personas=_personas(t),
         max_statements=t.max_statements, use_moderator=t.use_moderator, propositions=t.propositions,
-        materials=t.materials, survey=t.survey, experiment=experiment)
+        materials=t.materials if c.use_materials else None, survey=t.survey, experiment=experiment)
+
+
+def _rough_statements(run: Run) -> int:
+    """대략치 계산용 발언 수. 토론 없는 조건은 설문 호출뿐이라 발언 1개 분량으로 잡는다"""
+    return 1 if run.condition.experiment.get("mode") == "survey_only" else run.topic.max_statements
 
 
 def plan_runs(plan: ExperimentPlan) -> List[Run]:
@@ -193,8 +209,8 @@ def estimate(plan: ExperimentPlan, pending: List[Run], done: Dict[tuple, Dict[st
         per_out = sum(v["completion_tokens"] for v in finished) / len(finished)
         tokens_in, tokens_out, basis = per_in * len(pending), per_out * len(pending), f"완료 {len(finished)}건 평균"
     else:
-        tokens_in = sum(ROUGH_INPUT_PER_STATEMENT * r.topic.max_statements for r in pending)
-        tokens_out = sum(ROUGH_OUTPUT_PER_STATEMENT * r.topic.max_statements for r in pending)
+        tokens_in = sum(ROUGH_INPUT_PER_STATEMENT * _rough_statements(r) for r in pending)
+        tokens_out = sum(ROUGH_OUTPUT_PER_STATEMENT * _rough_statements(r) for r in pending)
         basis = "발언 수 기반 대략치"
     result = {"runs": len(pending), "input_tokens": int(tokens_in), "output_tokens": int(tokens_out), "basis": basis}
     if plan.prices:
@@ -228,8 +244,8 @@ async def run_batch(plan: ExperimentPlan, runtime_factory: Callable[[str], Discu
             next_in = sum(u[0] for u in finished_usage) / len(finished_usage)
             next_out = sum(u[1] for u in finished_usage) / len(finished_usage)
         else:
-            next_in = ROUGH_INPUT_PER_STATEMENT * run.topic.max_statements
-            next_out = ROUGH_OUTPUT_PER_STATEMENT * run.topic.max_statements
+            next_in = ROUGH_INPUT_PER_STATEMENT * _rough_statements(run)
+            next_out = ROUGH_OUTPUT_PER_STATEMENT * _rough_statements(run)
         total_in, total_out = result.prompt_tokens + in_flight[0] + next_in, result.completion_tokens + in_flight[1] + next_out
         if plan.limits.max_total_tokens and total_in + total_out > plan.limits.max_total_tokens:
             return True
@@ -247,8 +263,8 @@ async def run_batch(plan: ExperimentPlan, runtime_factory: Callable[[str], Discu
                     result.stopped_by_limit = True
                     result.not_started += 1
                     return
-                reserve = (ROUGH_INPUT_PER_STATEMENT * run.topic.max_statements,
-                           ROUGH_OUTPUT_PER_STATEMENT * run.topic.max_statements)
+                reserve = (ROUGH_INPUT_PER_STATEMENT * _rough_statements(run),
+                           ROUGH_OUTPUT_PER_STATEMENT * _rough_statements(run))
                 in_flight[0] += reserve[0]
                 in_flight[1] += reserve[1]
                 run.attempts += 1
