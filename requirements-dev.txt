@@ -5,3 +5,9 @@ pytest>=8.0.0
 pytest-asyncio>=0.24.0
 httpx>=0.28.0      # FastAPI TestClient
 requests>=2.32.0   # 루트 테스트 스크립트
+
+# 분석 (검정력 시뮬레이션, 혼합 모형)
+numpy>=2.0
+scipy>=1.13
+pandas>=2.2
+statsmodels>=0.14
