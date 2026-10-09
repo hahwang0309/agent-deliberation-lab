@@ -95,16 +95,19 @@ def create_discussion(participants: List[ParticipantSpec],
                 x = 2 * (v - survey.scale_min) / (survey.scale - survey.scale_min) - 1
                 state = engine.debate.ensure(agent.persona.name, "ai", agent.stubbornness)
                 state.x0 = state.x = round(x, 3)
-    # 실행 기록용: 실제로 요청한 모델·temperature (model None은 프로바이더 기본 모델)
+    # 실행 기록용: 실제로 요청한 모델·temperature (model None이면 프로바이더 기본 모델 이름을 기록)
+    def resolved(p, m):
+        return m or LLMFactory._get_default_model(p)
+
     engine.llm_spec = {
-        "participants": {spec.persona.name: {"provider": spec.provider.value, "model": spec.model,
+        "participants": {spec.persona.name: {"provider": spec.provider.value, "model": resolved(spec.provider, spec.model),
                                              "temperature": LLMFactory.effective_temperature(spec.provider, spec.model, t)}
                          for spec, t in zip(participants, temperatures)},
-        "moderator": ({"provider": lead.provider.value, "model": lead.model,
+        "moderator": ({"provider": lead.provider.value, "model": resolved(lead.provider, lead.model),
                        "temperature": LLMFactory.effective_temperature(lead.provider, lead.model,
                                                                        settings.moderator_temperature)}
                       if moderator else None),
-        "analyzer": ({"provider": provider.value, "model": model,
+        "analyzer": ({"provider": provider.value, "model": resolved(provider, model),
                       "temperature": LLMFactory.effective_temperature(provider, model, settings.analyzer_temperature)}
                      if analyzer else None),
     }

@@ -398,6 +398,10 @@ def test_collect_run_info_has_code_prompt_settings_and_models():
     assert info["llm"]["participants"]["A"] == {"provider": "claude", "model": "m-agent", "temperature": 0.3}
     assert info["llm"]["analyzer"] == {"provider": "claude", "model": "m-judge", "temperature": 0.0}
     assert "langchain-core" in info["packages"]
+    # 모델을 비우면(프로바이더 기본 모델) 실제 모델 이름을 기록한다
+    from config.config_loader import config_loader
+    engine = create_discussion(specs(), bundle=RecordingBundle(), experiment=ExperimentConfig(analyzer={"provider": "gemini"}))
+    assert engine.llm_spec["analyzer"]["model"] == config_loader.get_llm_config().default_models["gemini"]
 
 
 @pytest.mark.asyncio
