@@ -43,9 +43,12 @@ def main(argv=None) -> int:
     init_db()
     plan = load_plan(args.plan)
     done = existing_runs(plan.name)
-    pending = [r for r in runs_until(plan, args.until_fraction) if (done.get(r.key) or {}).get("status") != "completed"]
+    target = runs_until(plan, args.until_fraction)
+    pending = [r for r in target if (done.get(r.key) or {}).get("status") != "completed"]
+    completed = sum((done.get(r.key) or {}).get("status") == "completed" for r in plan_runs(plan))
     print(f"plan {plan.name}: {len(plan.topics)} topics x {len(plan.conditions)} conditions x {plan.repetitions} reps "
-          f"= {len(plan_runs(plan))} runs, already completed {len(plan_runs(plan)) - len(pending)}")
+          f"= {len(plan_runs(plan))} runs, already completed {completed}"
+          + (f", this stage up to {len(target)} ({args.until_fraction:.0%})" if args.until_fraction is not None else ""))
     print("estimate:", json.dumps(estimate(plan, pending, done), ensure_ascii=False))
     if args.dry_run:
         return 0
