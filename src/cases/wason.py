@@ -157,9 +157,10 @@ def variant_topics(n: int, distribution: Counter, seed: int, size: int = 3,
     return topics
 
 
+# 반복 수는 사전 등록한 설계 (분석 계획 7-1): 기준선 3회(H1), 상태 기반 1회(E1은 기준선 1회째와 짝)
 CONDITIONS = [
-    {"label": "A-baseline", "experiment": {"mode": "baseline"}, "repetitions": 2},
-    {"label": "A-stateful", "experiment": {"mode": "stateful"}, "repetitions": 2},
+    {"label": "A-baseline", "experiment": {"mode": "baseline"}, "repetitions": 3},
+    {"label": "A-stateful", "experiment": {"mode": "stateful"}, "repetitions": 1},
     {"label": "B-resolve", "experiment": {"mode": "survey_only"}, "repetitions": 1},
     {"label": "C-unseeded", "experiment": {"mode": "survey_only"}, "use_seeds": False, "repetitions": 1},
 ]

@@ -131,7 +131,8 @@ def cmd_wason_variants(args) -> int:
     from src.cases import wason
     dist = wason.solo_role_distribution(wason.load_delidata(args.data))
     topics = wason.variant_topics(args.n, dist, args.seed, size=args.size, max_statements=args.max_statements)
-    conditions = [c for c in wason.CONDITIONS if c["label"] != "B-resolve"]  # 설계: A 두 모드 + C
+    # 설계(분석 계획 7-1): A 두 모드 + C, 각 1회
+    conditions = [{**c, "repetitions": 1} for c in wason.CONDITIONS if c["label"] != "B-resolve"]
     print("solo answer role distribution:", {"+".join(k): v for k, v in dist.most_common()})
     return write_plan(plan_dict(args.name, topics, conditions), args)
 
@@ -233,7 +234,7 @@ def cmd_argq(args) -> int:
     from src.cases import argq
     topics, conditions = argq.topics_and_conditions(argq.load_arguments(args.data), args.seed,
                                                     positive_control=args.positive_control)
-    return write_plan(plan_dict(args.name, topics, conditions, repetitions=8), args)
+    return write_plan(plan_dict(args.name, topics, conditions, repetitions=3), args)  # 셀당 3회 (분석 계획 7-1)
 
 
 def main(argv=None) -> int:
