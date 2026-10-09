@@ -109,6 +109,20 @@ python scripts/coding_agreement.py --coded coder1.csv --second coder2.csv
 - 실제 소집단은 8~16명입니다. 발언 수를 비우면 1인당 3개로 잡습니다(참가자 상한 `limits.max_personas` 16, 발언 수 상한 `limits.max_statements` 60).
 - DeliData의 혼자 답 일부는 `["N", "/", "A"]`(기록 없음)입니다. 무효로 보고, 그런 참가자가 있는 집단은 복제에서 뺍니다.
 
+## 분석 (연구 1)
+
+`scripts/analyze_study1.py`가 실험 DB와 실행한 계획 파일을 합쳐 사전 등록한 검정을 돌립니다(모듈 `src/analysis/`). 혼합 모형은 R의 lme4·lmerTest를 `Rscript`로 부르므로 R과 두 패키지가 필요합니다(macOS: `brew install nlopt pkg-config` 뒤 R에서 `install.packages(c("lme4", "lmerTest"))`).
+
+```bash
+python scripts/analyze_study1.py --db data/study1/*.db --plans data/study1/*.yaml --out data/study1/results-claude.json
+python scripts/analyze_study1.py ... --model gemini-3.5-flash-lite --out ...   # 비교 모델 재현
+python scripts/analyze_study1.py ... --blind --boot 50                          # 스크립트 점검: 추정치를 쓰지 않음
+```
+
+- 제외 기준: 재시도 뒤에도 실패한 조건이 있는 블록은 그 연구에서 뺍니다. 사후 설문 무응답은 그 참가자만 뺍니다. 무응답률은 결과 파일의 `missing_rates`에 조건별로 남습니다.
+- 혼합 모형이 수렴하지 않으면 고정 효과 추정치 + 다수준 군집 부트스트랩 구간으로 대체하고, 결과의 `method`에 적습니다.
+- 인간 기준 자료: `data/raw/delidata/`, `data/raw/a1r/dataset.tab`.
+
 ## 주의
 
 - **temperature를 바꿀 수 없는 모델:** `claude-sonnet-5-5`, `claude-fable-5*`는 기본값 외의 temperature를 받지 않고 적응형 사고가 기본입니다. 이 모델에는 temperature를 넣지 않고 호출하며, 실행 기록에는 `temperature: null`(모델 기본값)로 남습니다. 따라서 이 모델로는 temperature 조건을 실험할 수 없고, 분석 모델로 쓰면 temperature 0이 적용되지 않습니다. 구조화 출력은 json_schema 방식을 씁니다.

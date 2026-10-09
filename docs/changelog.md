@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 연구 1 분석 스크립트 (2026-10-09)
+- `scripts/analyze_study1.py`, `src/analysis/`(자료 정리·제외 기준, 인간 기준 자료, 충실도 D·FR과 군집 부트스트랩, R lme4/lmerTest 혼합 모형, 가설별 검정과 Holm 보정). 혼합 모형이 수렴하지 않으면 다수준 군집 부트스트랩으로 대체합니다. `--blind`는 추정치 없이 표본 수·적합 상태만 냅니다.
+- 분석에는 R과 lme4·lmerTest가 필요합니다(docs/experiments.md).
+
 ## 엔진 점검 전 수정 (2026-10-09)
 - 연구 계획의 발언 분석기를 주 모델(`claude`)로 고정했습니다(`config/cases.yaml` protocol `analyzer`). 참가자 모델이 스스로 판정하면 엔진 처치 강도가 모델마다 달랐습니다.
 - 토론별 모델별 토큰 사용량을 실행 기록(`run_info[-1].usage_by_model`)에 남깁니다. 참가자와 분석기 모델이 다를 때 비용을 나눠 계산하기 위해서입니다.
