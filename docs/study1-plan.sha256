@@ -1,0 +1,28 @@
+# Study 1 plan documents and main-run plan files (SHA-256), fixed before the main experiment (2026-10-09T13:25Z)
+# docs/research/ is kept outside the repository; this list records their content at this commit.
+37ebbe0d437e3c92c66e737dbfabbb6cd65895af71de0b339128e40dfaab7b8b  docs/research/study1-experiment-design.md
+6e13bca125d001c39df1b013011be5146b9ef5a13cf148bb86c677c902e44707  docs/research/study1-analysis-plan.md
+d7231ce1648fbf4acf71772034ca300be2e3e9db78e2b7fb44384cb8e0f9d031  docs/research/study1-engine-freeze.md
+07b722456bf949a8a37a5bb6227b92548e4159c0773d9ff79b02741045e6f7d9  docs/research/study1-preregistration.md
+0611bd3814b359b32cc0b05794c84d0aca8a935d10f36ea58a7a0a23fbb53428  docs/research/study1-experiment-design-en.md
+336ef7a62ae48e33e51ae1ad89e4981da3e54e8530726ddd488a5c80495cb30c  docs/research/study1-analysis-plan-en.md
+d301998e929036d240cdc2fbbb746c67f76a8e2fa884e05b1fc97a5f95fa2e1f  docs/research/study1-engine-freeze-en.md
+4f5fcd853a8c9b59489577a8fdd14fed95a8b303295ef6c69e66eab7b865fc9f  docs/research/study1-preregistration-en.md
+90d70dd6ea90e8c00b52567717b8c244eb8997c42125148e9b9e732982632705  data/study1/plans/a1r-debranded-claude.yaml
+ae98731188b6eeb2bff37349572e75e23f7da568f4e1d31f1445091abdb1183a  data/study1/plans/a1r-debranded-gemini.yaml
+091cdc6736919e165958dac4d3d6ea043af2573360d87535daf4c06311fedbd1  data/study1/plans/a1r-debranded-mistral.yaml
+8518d5ebf671f9a899ee205316e4c028fbfdd1aa1c1446cc70bcb0b7aae4d432  data/study1/plans/a1r-dev-claude.yaml
+228a7072e341d9c7ee520c71373c115ba6ef2c93c697be53694acd16087319b0  data/study1/plans/a1r-dev-gemini.yaml
+bd5b95d00cac63f8ac58b8ce4fa3c92f405c32fd9df6ed03bc6d29e7f3911625  data/study1/plans/a1r-dev-mistral.yaml
+f694a37d1ef2d997a1e1f670a3a4ee831866eec9f2c727d471fe932a455ce3c7  data/study1/plans/a1r-locked-claude.yaml
+8c6879b8d19bafaec9f50bfc256bb4826101ad68d296270a7d140b98584c357f  data/study1/plans/a1r-locked-gemini.yaml
+778f09d4ce7dff7d2964a2cf83821683f6f531df9c3c71ab40f7882436a01025  data/study1/plans/a1r-locked-mistral.yaml
+faa1a9ea3429675753427c4003d20d700bd2721160e047ba677fc58f5abe2f6f  data/study1/plans/argq-claude.yaml
+86d9e6a5793f1610fc821fed9e20f9265c1303363a9573db95baac2c94b92055  data/study1/plans/argq-gemini.yaml
+1d4f802600e537d6beaf7d45053685ad40fb46d698a58f26dffbd881d14a4839  data/study1/plans/argq-mistral.yaml
+2b95f2b91b2ca815899da9a0a8c72763d304a431e12b9833bf8518d8746528b8  data/study1/plans/variants-claude.yaml
+786d4597612c1c6f750465edbc911a1f3bb51260dbea646f70ee36aa83483052  data/study1/plans/variants-gemini.yaml
+41f721349a74ac39a12adfc88225592dc0b884792296d4d845502ed710f916d3  data/study1/plans/variants-mistral.yaml
+e751639ea06ff8e1b333312ec230978c34a0ec2e8399976294407aefee54c71f  data/study1/plans/wason-claude.yaml
+32c7a7b90ef1707725dc3d2a0dd3b6895b1cb3f96be6d7bea61725b7e20394ab  data/study1/plans/wason-gemini.yaml
+0b0ee58eeb695abfb157a65605e379f30718988f2582ac985b892ad0f29b387e  data/study1/plans/wason-mistral.yaml

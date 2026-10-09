@@ -554,6 +554,17 @@ async def test_run_batch_runs_skips_completed_and_respects_token_limit(monkeypat
     assert existing_runs("batch-limit") == {}
 
 
+@pytest.mark.asyncio
+async def test_run_batch_until_fraction_runs_a_prefix_then_resumes(monkeypatch):
+    monkeypatch.setattr(runtime_module, "LLMBundle", FakeBundle)
+    plan = ExperimentPlan(**{**PLAN, "name": "batch-staged"})
+    order = [r.key for r in plan_runs(plan)]
+    first = await run_batch(plan, on_progress=lambda _: None, until_fraction=0.5)  # 4건 중 앞 2건
+    assert len(first.completed) == 2 and set(existing_runs("batch-staged")) == set(order[:2])
+    rest = await run_batch(plan, on_progress=lambda _: None, until_fraction=1.0)
+    assert rest.skipped == 2 and len(rest.completed) == 2 and set(existing_runs("batch-staged")) == set(order)
+
+
 def test_run_experiment_cli_dry_run_uses_separate_db(tmp_path):
     plan_file = tmp_path / "plan.yaml"
     plan_file.write_text(yaml.safe_dump(PLAN, allow_unicode=True), encoding="utf-8")

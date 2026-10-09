@@ -12,6 +12,7 @@
 """
 import asyncio
 import logging
+import math
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -239,13 +240,19 @@ def estimate(plan: ExperimentPlan, pending: List[Run], done: Dict[tuple, Dict[st
     return result
 
 
+def runs_until(plan: ExperimentPlan, fraction: Optional[float]) -> List[Run]:
+    """실행 순서(plan_runs)의 앞에서부터 전체의 fraction만큼 (단계별 실행: 중간 점검 지점까지만 돌림)"""
+    runs = plan_runs(plan)
+    return runs if fraction is None else runs[:math.ceil(len(runs) * fraction)]
+
+
 async def run_batch(plan: ExperimentPlan, runtime_factory: Callable[[str], DiscussionRuntime] = None,
-                    on_progress: Callable[[str], None] = print) -> BatchResult:
+                    on_progress: Callable[[str], None] = print, until_fraction: Optional[float] = None) -> BatchResult:
     runtime_factory = runtime_factory or (lambda discussion_id: DiscussionRuntime(discussion_id, broker))
     done = existing_runs(plan.name)
     result = BatchResult()
     runs = []
-    for run in plan_runs(plan):
+    for run in runs_until(plan, until_fraction):
         prev = done.get(run.key)
         if prev and prev["status"] == DiscussionStatus.COMPLETED:
             result.skipped += 1

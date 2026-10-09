@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 단계별 실행 (2026-10-09)
+- `run_experiment.py --until-fraction F`: 실행 순서(반복 → 주제 → 조건)의 앞에서부터 전체의 F만큼만 실행합니다. 중간 점검 지점까지 돌리고, 같은 명령을 더 큰 F로 다시 실행하면 완료분은 건너뛰고 이어 갑니다.
+- `docs/study1-plan.sha256`: 연구 1 분석 계획 문서(저장소 밖 `docs/research/`)와 본 실험 계획 파일의 SHA-256. 본 실험 전에 계획이 확정됐다는 기록입니다.
+
 ## 연구 1 분석 스크립트 (2026-10-09)
 - `scripts/analyze_study1.py`, `src/analysis/`(자료 정리·제외 기준, 인간 기준 자료, 충실도 D·FR과 군집 부트스트랩, R lme4/lmerTest 혼합 모형, 가설별 검정과 Holm 보정). 혼합 모형이 수렴하지 않으면 다수준 군집 부트스트랩으로 대체합니다. `--blind`는 추정치 없이 표본 수·적합 상태만 냅니다.
 - 분석에는 R과 lme4·lmerTest가 필요합니다(docs/experiments.md).
