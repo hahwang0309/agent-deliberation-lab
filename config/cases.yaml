@@ -9,11 +9,16 @@
 # - seed_placement memory: 초기 응답을 시스템 프롬프트(정체성 지시)가 아니라 대화 앞부분의 지난 주고받음으로 제시.
 #   처치 없는 조건 C의 재응답 잡음을 A1R 통제집단과 비교해 미리 정한 규칙으로 골랐다 (data/pilot5/RULE.md, 2026-10-08):
 #   평균 |이동| 비율 Claude 1.02(system 0.54), Gemini 0.37(system 0.38)
+# - analyzer: 엔진의 발언 분석(근거 약화·설득 요인·양보 판정)을 모든 모델에서 주 모델로 고정 (2026-10-09).
+#   참가자 모델이 스스로 판정하면 처치 강도가 모델마다 달라졌다(엔진 점검: 1-B 근거 안내 Claude 297, Mistral 77).
+#   모델은 provider만 정하고 이름은 config.yaml llm.default_models를 따른다
 protocol:
   seed_format: verbal
   post_survey: neutral
   seed_wording: neutral
   seed_placement: memory
+  analyzer:
+    provider: claude
 
 # ---------- 연구 1-A: Wason 선택 과제 (DeliData와 같은 문구) ----------
 wason:

@@ -141,7 +141,9 @@ def list_messages_after(discussion_id: str, after_seq: int = 0, limit: int = 100
         return [serialize_message(m) for m in rows]
 
 
-def add_usage(discussion_id: str, prompt_tokens: int, completion_tokens: int, llm_calls: int) -> None:
+def add_usage(discussion_id: str, prompt_tokens: int, completion_tokens: int, llm_calls: int,
+              by_model: Optional[Dict[str, Dict[str, int]]] = None) -> None:
+    """누적 토큰·호출 수. 모델별 사용량은 이번 실행 기록(run_info 마지막 항목)에 남긴다 (참가자·분석 모델이 다를 때 비용 계산용)"""
     with session_scope() as db:
         d = db.get(Discussion, discussion_id)
         if d is None:
@@ -149,6 +151,13 @@ def add_usage(discussion_id: str, prompt_tokens: int, completion_tokens: int, ll
         d.prompt_tokens = (d.prompt_tokens or 0) + prompt_tokens
         d.completion_tokens = (d.completion_tokens or 0) + completion_tokens
         d.llm_calls = (d.llm_calls or 0) + llm_calls
+        if by_model and d.run_info:
+            merged = {m: dict(u) for m, u in (d.run_info[-1].get("usage_by_model") or {}).items()}
+            for model, u in by_model.items():  # 보고서 생성도 같은 실행 기록에 더한다
+                cur = merged.setdefault(model, {"input_tokens": 0, "output_tokens": 0})
+                cur["input_tokens"] += u.get("input_tokens", 0)
+                cur["output_tokens"] += u.get("output_tokens", 0)
+            d.run_info = [*d.run_info[:-1], {**d.run_info[-1], "usage_by_model": merged}]
 
 
 def mark_active_as_interrupted() -> int:

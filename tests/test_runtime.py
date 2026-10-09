@@ -166,6 +166,18 @@ async def test_stop_cancels_running_discussion(monkeypatch):
     assert [m["seq"] for m in messages] == list(range(1, len(messages) + 1))
 
 
+def test_usage_by_model_is_added_to_the_current_run_info():
+    discussion_id = _create()
+    persistence.append_run_info(discussion_id, {"resumed": False})
+    persistence.add_usage(discussion_id, 30, 6, 2, by_model={"a": {"input_tokens": 10, "output_tokens": 2},
+                                                             "b": {"input_tokens": 20, "output_tokens": 4}})
+    persistence.add_usage(discussion_id, 5, 1, 1, by_model={"a": {"input_tokens": 5, "output_tokens": 1}})  # 보고서 생성
+    d = _discussion(discussion_id)
+    assert d.prompt_tokens == 35 and d.run_info[-1]["resumed"] is False
+    assert d.run_info[-1]["usage_by_model"] == {"a": {"input_tokens": 15, "output_tokens": 3},
+                                                "b": {"input_tokens": 20, "output_tokens": 4}}
+
+
 def test_mark_active_as_interrupted():
     discussion_id = _create()
     persistence.update_discussion(discussion_id, status=DiscussionStatus.RUNNING)

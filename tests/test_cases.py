@@ -300,7 +300,7 @@ def test_case_plans_carry_the_measurement_protocol():
     from src.cases import texts
     protocol = texts()["protocol"]
     assert protocol == {"seed_format": "verbal", "post_survey": "neutral", "seed_wording": "neutral",
-                        "seed_placement": "memory"}
+                        "seed_placement": "memory", "analyzer": {"provider": "claude"}}
     plan = plan_dict("p", [], [{"label": "a", "experiment": {"mode": "baseline"}},
                                {"label": "b", "experiment": {"post_survey": "standard"}}])
     assert plan["conditions"][0]["experiment"] == {**protocol, "mode": "baseline"}

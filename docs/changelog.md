@@ -1,6 +1,8 @@
 # 변경 이력
 
 ## 엔진 점검 전 수정 (2026-10-09)
+- 연구 계획의 발언 분석기를 주 모델(`claude`)로 고정했습니다(`config/cases.yaml` protocol `analyzer`). 참가자 모델이 스스로 판정하면 엔진 처치 강도가 모델마다 달랐습니다.
+- 토론별 모델별 토큰 사용량을 실행 기록(`run_info[-1].usage_by_model`)에 남깁니다. 참가자와 분석기 모델이 다를 때 비용을 나눠 계산하기 위해서입니다.
 - 설문 시도 횟수 2 → 3 (`survey.max_attempts`). Mistral 설문 결측이 약 10%였습니다. 모든 모델·조건에 같게 적용됩니다.
 - `build_cases.py`가 만드는 계획의 토큰 안전 상한을 설정 `experiment_runner.plan_max_total_tokens`(6억)로 옮겼습니다(이전 코드 고정값 500만).
 

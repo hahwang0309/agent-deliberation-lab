@@ -20,4 +20,6 @@ class UsageCounter(UsageMetadataCallbackHandler):
     def totals(self) -> Dict[str, int]:
         prompt = sum(u.get("input_tokens", 0) for u in self.usage_metadata.values())
         completion = sum(u.get("output_tokens", 0) for u in self.usage_metadata.values())
-        return {"prompt_tokens": prompt, "completion_tokens": completion, "llm_calls": self.calls}
+        by_model = {model: {"input_tokens": u.get("input_tokens", 0), "output_tokens": u.get("output_tokens", 0)}
+                    for model, u in self.usage_metadata.items()}
+        return {"prompt_tokens": prompt, "completion_tokens": completion, "llm_calls": self.calls, "by_model": by_model}
