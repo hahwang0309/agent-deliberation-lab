@@ -47,7 +47,7 @@ text='''# Human-inspired rules reshape deliberation and collective judgment in l
 
 '''+author_info+'''
 
-**국문 통합 작업 원고 · 2026-10-26.** 등록·탐색·강건성 결과와 입장 변화 언급의 GLM 조정 결과를 반영한 검토용 초안이다. 사람 검증은 별도로 진행 중이며 해당 결과는 `<추후 작성 필요>`로 표시했다. 저자명·소속·연구비를 반영했으며, 나머지 저자 확인·윤리·자료 공개 정보와 본문 영문화·최종 투고 편집은 남아 있다.
+**국문 통합 작업 원고 · 2026-10-26.** 등록·탐색·강건성 결과와 입장 변화 언급의 GLM 조정 결과를 반영한 검토용 초안이다. 발언 유형·논거 참조·규칙 수행의 추가 LLM 판정 조정을 완료했으며 원 주 분석과 조정 민감도를 구분했다. 확정 저자 정보와 자료·코드 제공 범위를 반영했으며, 본문 영문화·최종 저자 승인과 투고 편집은 남아 있다.
 
 [그림 여섯 개·범례](manuscript-figures/Captions.md) · [Table 1](Table1.md) · [Table 2](Table2.md) · [강건성 보고서](robustness/README.md) · [투고 준비 상태](nature-communications/SubmissionReadiness.md)
 
@@ -100,5 +100,5 @@ text='''# Human-inspired rules reshape deliberation and collective judgment in l
 
 import hashlib
 inputs=[b/name for name in ["Abstract.md","AbstractEnglish.md","IntroductionDraft.md","ResultsDraft.md","Discussion.md","MethodsDraft.md","nature-communications/AuthorDeclarationsDraft.md","literature-review/sources.json","review-revision/source-data/reference-catalogue.json"]]
-(b/"manuscript-source-manifest.json").write_text(json.dumps({"date":"2026-10-26","status":"Working manuscript; author identity and funding supplied; declarations synchronized; data access and remaining author facts pending","inputs":{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()for p in inputs},"output_sha256":hashlib.sha256((b/"ManuscriptDraft.md").read_bytes()).hexdigest()},ensure_ascii=False,indent=2)+"\n")
+(b/"manuscript-source-manifest.json").write_text(json.dumps({"date":"2026-10-26","status":"Working manuscript; author facts and automated coding finalized; fixed public data/code versions documented; English editing and final approval remain","inputs":{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()for p in inputs},"output_sha256":hashlib.sha256((b/"ManuscriptDraft.md").read_bytes()).hexdigest()},ensure_ascii=False,indent=2)+"\n")
 print("Assembled ManuscriptDraft.md and source hashes.")

@@ -58,7 +58,7 @@ def main():
  declarations=(B/'nature-communications/AuthorDeclarationsDraft.md').read_text()
  expected_endmatter=declarations.split('## 원고 말미',1)[1].split('## Methods에 포함할 선언',1)[0].strip().replace('](../', '](')
  assert expected_endmatter in s
- for token in ['Ha Hwang¹,²','RS-2025-19252970','https://github.com/hahwang0309/agent-deliberation-lab','<저자 작성>']:assert token in s,token
+ for token in ['Ha Hwang¹,²','RS-2025-19252970','https://github.com/hahwang0309/agent-deliberation-lab','ghkdgk0309@gmail.com']:assert token in s,token
  assert '**AI use.**' not in main_text
  assert 'is preparing a patent application' in s and 'The application has not yet been filed.' in s
  assert 'The author declares no other competing interests.' in s
@@ -112,8 +112,8 @@ def main():
  intro=(B/'IntroductionDraft.md').read_text();methods=(B/'MethodsDraft.md').read_text();abstract=(B/'Abstract.md').read_text()
  for token in ['화용-변증법','Petty','Friedkin','공동 합의','상태 기반 토론','RQ1','RQ2','RQ3']:assert token in intro,token
  # The approved Discussion interprets the findings without repeating model-wise estimates.
- for token in ['Steenbergen','Fishkin','Friedkin','Brockers','Jang','Petty','Smit','Shao','Tak','다른 참가자들과 크게 다른 입장','질문','일관되게','구성의 영향과 생성의 변동','사람 검증']:assert token in disc,token
- for token in ['xᵢ₀','각 에이전트에게 다시 물어','그 변화를 다음 발언에 알려','RegistrationDeviations.md','<추후 작성 필요>']:assert token in methods,token
+ for token in ['Steenbergen','Fishkin','Friedkin','Brockers','Jang','Petty','Smit','Shao','Tak','다른 참가자들과 크게 다른 입장','질문','일관되게','구성의 영향과 생성의 변동','측정상의 불확실성']:assert token in disc,token
+ for token in ['xᵢ₀','각 에이전트에게 다시 물어','그 변화를 다음 발언에 알려','RegistrationDeviations.md','언어모델 최종 판정(LLM-as-a-Judge)']:assert token in methods,token
  # Registration timing details live in the linked supplement; essential disclosure stays in Methods.
  registration_details=(B/'RegistrationDeviations.md').read_text()
  for token in ['200–208','RegistrationCompletionCounts.json']:assert token in registration_details,token
@@ -179,11 +179,18 @@ def main():
  cap=(B/'manuscript-figures/Captions.md').read_text();legend=cap.split('**English legend.**',1)[1].split('\n\n-',1)[0];assert len(legend.split())<=350
  checks['figure5_english_legend_words']=len(legend.split())
  checks['visual_QA']='Figures 1-5 prior visual review retained; Figure 6 and case SI separately reviewed in RevisionCompletionChecks-2026-10-21.json'
- checks['human_validation']='ongoing; user-authorized <추후 작성 필요> placeholders'
- checks['author_declarations_status']='Ethics, data access, final licence terms and final author review pending; no upload or push performed'
+ coding=json.loads((B/'submission-preparation/coding-finalization/results.json').read_text())
+ assert {k:v['n'] for k,v in coding['domains'].items()}=={'utterance':2440,'evidence':600,'device':1500}
+ assert all(v['unresolved_n']==0 for v in coding['domains'].values())
+ for token in ['사람검증결과로 확인 필요','<추후 작성 필요>','사람 검증은 현재 진행 중']:assert token not in main_text,token
+ checks['coding_validation']='LLM adjudication completed in three domains; original human-label comparison and primary estimates preserved'
+ hf=json.loads((B/'submission-preparation/huggingface-publication.json').read_text());code=json.loads((B/'submission-preparation/github-publication.json').read_text())
+ assert hf['private'] is False and hf['commit'] in declarations
+ assert code['commit'] in declarations and code['release_url'] in declarations
+ checks['author_declarations_status']='Author facts synchronized; fixed public data/code releases recorded; final author review remains'
  checks['final_English_maintext_length']='pending English translation; not certified from Korean draft'
  checks['manual_review_content_anchors']='present'
- checks['scope']='Editorial/theory revision checks. Actual human validation, ethics/rights, final English manuscript and submission remain pending.'
- (B/'review-revision/ReviewChecks.json').write_text(json.dumps({'date':'2026-10-21','status':'editorial checks passed; external completion items pending','checks':checks},ensure_ascii=False,indent=2)+'\n')
+ checks['scope']='Editorial, source and completed automated-coding checks. English main text, final author approval and actual submission remain.'
+ (B/'review-revision/ReviewChecks.json').write_text(json.dumps({'date':'2026-10-26','status':'source and synchronization checks passed; final submission steps remain','checks':checks},ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(checks,ensure_ascii=False))
 if __name__=='__main__':main()

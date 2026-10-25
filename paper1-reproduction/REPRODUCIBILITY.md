@@ -7,12 +7,11 @@ analysis code are separate snapshots: the experimental frozen commit is
 The reproduction release contains `current/` source, `frozen-experiment.tar`,
 `requirements-analysis.lock.txt`, environment and checksum records. It excludes
 credentials, raw experiment databases, full upstream corpora and manuscript
-drafts. Data are prepared separately for Hugging Face account `haha0309`.
-Do not assume a planned dataset URL is accessible before a deposit is made.
+drafts. Data are publicly released at https://huggingface.co/datasets/haha0309/agent-deliberation-study1, fixed revision `c13fd45abfafc9f0bcc5b8157d8ea73038138ae8`.
 
 ## Numeric reanalysis without model APIs
 
-Create a Python environment, install `requirements-analysis.lock.txt`, and make
+Create a Python environment, install `requirements-analysis.complete.lock.txt`, and make
 R with `lme4` and `lmerTest` available on PATH. From `current/` run:
 
 ```sh
