@@ -1,0 +1,32 @@
+Ha Hwang Research Use License 1.0
+Copyright (c) 2026 Ha Hwang
+
+1. Covered material
+This license applies to original code authored by Ha Hwang in this repository
+and its explicitly identified reproduction releases. It does not license
+third-party software, upstream datasets, briefing documents, model services,
+generated research datasets, or manuscript text. Their respective terms apply.
+
+2. Permission
+You may use, copy, run, modify and redistribute covered code for non-commercial
+scientific research, education and verification of published research results.
+Retain this license and copyright notices, identify modifications, and include
+the associated paper and fixed code-version citation in resulting publications.
+Redistributed covered code and modifications must carry these same restrictions.
+This license does not restrict independent ideas or facts.
+
+3. Commercial use
+Commercial products, paid services and other commercial exploitation of covered
+code require separate written permission from Ha Hwang. Contact:
+ghkdgk0309@gmail.com. This is a research-use license, not an OSI-approved
+open-source license.
+
+4. Patent rights
+No patent license is granted. Ha Hwang is preparing, but has not yet filed, a
+patent application concerning the stateful discussion algorithm. No statement
+here asserts that a patent exists or determines patentability or infringement.
+
+5. Disclaimer
+THE COVERED CODE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND, TO THE EXTENT
+PERMITTED BY LAW. THE COPYRIGHT HOLDER IS NOT LIABLE FOR CLAIMS OR DAMAGES
+ARISING FROM ITS USE. THIRD-PARTY RIGHTS ARE NOT WARRANTED OR RELICENSED.

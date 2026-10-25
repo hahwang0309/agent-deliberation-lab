@@ -1,0 +1,29 @@
+# LangChain & AI (langchain_core는 provider 패키지 의존성으로 설치됨)
+langchain-openai>=1.0.0
+langchain-google-genai>=3.0.0
+langchain-anthropic>=1.0.0
+langchain-mistralai>=1.0.0
+
+# FastAPI & Web
+fastapi>=0.116.0
+uvicorn[standard]>=0.35.0
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.17.0
+psycopg2-binary>=2.9.0
+
+# Authentication & Security
+PyJWT>=2.10.0
+bcrypt>=5.0.0
+
+# Configuration & Environment
+python-dotenv>=1.1.0
+pydantic>=2.11.0
+pydantic-settings>=2.10.0
+pyyaml>=6.0.2
+email-validator>=2.3.0
+
+
+# Async HTTP (웹 검색)
+aiohttp>=3.13.0

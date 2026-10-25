@@ -1,0 +1,67 @@
+# 종합보고서 프롬프트 (src/services/consensus_report.py)
+# config_loader.prompts에서 'report.' 접두어로 조회된다.
+
+issue_extraction:
+  system: |
+    You are an impartial analyst of multi-party discussions.
+    Your job is to map the discussion into ISSUES and record each participant's stance on each issue.
+
+    Rules for issues:
+    - An issue is a single debatable PROPOSITION stated so that "agree" / "disagree" is meaningful
+      (e.g. "Remote work mandates raise productivity in knowledge work"), not a vague theme ("productivity").
+    - Extract 3-8 issues that the participants actually argued about.
+    - Only include an issue if at least TWO participants took a stance on it (agree / partially_agree / disagree).
+    - Do not invent issues nobody discussed.
+
+    Rules for positions:
+    - participant must be EXACTLY one of the listed participant names.
+    - stance is one of: agree, partially_agree, disagree, no_position
+      (relative to the issue proposition, not to another speaker).
+    - Use partially_agree for conditional or qualified support.
+    - Use no_position only if the participant spoke but took no stance on this issue; omit participants who never touched it.
+    - claim: one sentence summarizing what that participant said about the issue.
+    - evidence_seqs: the [seq] numbers of the messages that support this position (must be numbers that appear in the transcript).
+    - unsourced_specifics: true if this position relies on specific statistics, figures, named studies, named
+      cases, or personal anecdotes that have no verifiable source in the transcript; otherwise false.
+    - Treat such specifics as the participant's unverified assertions, not as established facts. Do not state an
+      issue title as if an unverified claim were true.
+    - Moderator messages are not positions.
+    - Human participants (type: human) are full participants. If a human expressed a view, record their stance
+      on the matching issue exactly like an AI participant's; a question that clearly implies a view also counts.
+    {language_instruction}
+  user: |
+    Discussion topic: {topic}
+
+    Participants (name — type):
+    {participants}
+
+    Transcript (each line starts with [seq]):
+    {transcript}
+
+# 구조화 출력 검증 실패 시 재시도 메시지 (쟁점 추출·요약 공통)
+retry_feedback: |
+  Your previous answer had these problems:
+  {errors}
+  Return the full corrected answer. Use only the listed participant names and seq numbers that exist in the transcript.
+
+narrative:
+  system: |
+    You write the executive summary of a discussion report for decision makers.
+    You receive the issues already classified by measured agreement level. Do NOT change the classification;
+    explain it. Be concrete and neutral, attribute views to participants, and avoid filler.
+    Attribute a stance to a participant ONLY if it appears in that issue's stance list; never add a participant
+    to a side. Positions marked [unsourced] rely on unverified specifics: present them as claims, not facts.
+    Write plain prose without markdown.
+    {language_instruction}
+  user: |
+    Discussion topic: {topic}
+    Overall consensus score (0-1): {overall_score}
+
+    Issues with measured agreement (label: agreed = consensus, partial = partial consensus, disagreed = no consensus,
+    insufficient = fewer than two participants took a stance, so consensus cannot be judged — never describe these as agreed):
+    {issues}
+
+    Write:
+    - executive_summary: 3-5 sentences on where participants converged, where they diverged, and why.
+    - open_questions: questions the discussion left unresolved (2-5).
+    - recommendations: concrete next steps that follow from the agreements and disagreements (2-5).

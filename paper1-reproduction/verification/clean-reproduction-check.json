@@ -1,0 +1,11 @@
+{
+  "status": "pass",
+  "fresh_python_environment_installed": true,
+  "six_figures_regenerated": true,
+  "main_numeric_records_identical": true,
+  "figure6_records_identical": true,
+  "E1_E5_all_15_refits_match": true,
+  "all_42_registered_rows_refit": false,
+  "R_environment": "existing R 4.6.1 with lme4/lmerTest, not reinstalled",
+  "api_calls_for_reproduction": 0
+}

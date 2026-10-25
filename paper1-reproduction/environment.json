@@ -1,0 +1,30 @@
+{
+  "python": "3.12.13 (main, Mar  3 2026, 12:39:30) [Clang 17.0.0 (clang-1700.6.3.2)]",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "packages": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "scipy": "1.18.1",
+    "statsmodels": "0.15.0",
+    "matplotlib": "3.11.2",
+    "PyYAML": "6.0.3"
+  },
+  "fresh_install_tested": true,
+  "api_calls": 0,
+  "R": "4.6.1",
+  "lme4": "2.0.6",
+  "lmerTest": "3.2.1",
+  "R_versions_verified_locally": true,
+  "fresh_R_install_tested": false,
+  "verified_scope": {
+    "status": "pass",
+    "fresh_python_environment_installed": true,
+    "six_figures_regenerated": true,
+    "main_numeric_records_identical": true,
+    "figure6_records_identical": true,
+    "E1_E5_all_15_refits_match": true,
+    "all_42_registered_rows_refit": false,
+    "R_environment": "existing R 4.6.1 with lme4/lmerTest, not reinstalled",
+    "api_calls_for_reproduction": 0
+  }
+}

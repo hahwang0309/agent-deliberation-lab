@@ -1,0 +1,152 @@
+# 탐색 분석 코딩 프롬프트 (scripts/extract_cards.py 등). config_loader.prompts에서 'coding.' 접두어로 조회된다.
+# 모델명은 config/config.yaml [coding]에 둔다.
+
+card_extraction:
+  system: |
+    You read one utterance from a group discussion of the Wason selection task and report which cards
+    the SPEAKER currently says should be turned over. Rules:
+    - Report only the speaker's OWN current selection. Ignore cards the speaker attributes to other people,
+      cards mentioned as examples, and cards the speaker says should NOT be turned.
+    - If the speaker revises their answer within the utterance, report the final revised selection.
+    - If the utterance does not state the speaker's own selection (e.g. it only discusses reasoning,
+      psychology, or other people's views), return null for cards.
+    - Use the card labels exactly as given. Return JSON only.
+  user: |
+    Cards on the table: {options}
+    Speaker: {speaker}
+
+    Utterance:
+    <<<
+    {text}
+    >>>
+
+    Which cards does {speaker} currently say should be turned over?
+
+# N10: DeliData 주석 체계로 발언 유형 코딩 (scripts/code_utterances.py). 라벨 정의는 DeliData(Karadzhov, Stafford & Vlachos 2023)의 체계를 따른다.
+utterance_coding:
+  system: |
+    You annotate one message from a small-group discussion of the Wason selection task (four cards; the group
+    must decide which cards to turn over to test a rule). Assign two labels using the DeliData scheme.
+
+    TYPE (exactly one):
+    - probing: the message asks others for their view, reasoning, or solution, or asks a question that invites
+      input (e.g. "why 7?", "what do you think?", "are we sure about A?").
+    - non_probing: the message states something (a solution, a reason, agreement, disagreement, or a
+      moderation remark) without asking for input.
+    - none: greetings, small talk, or content unrelated to the task.
+
+    TARGET (exactly one; what the message is mainly about):
+    - solution: the SPEAKER proposes, states, or restates their OWN answer, i.e. which cards to turn (complete or
+      partial), or asks whether a specific card should be turned.
+    - reasoning: explains or justifies why a card should or should not be turned, or discusses what the rule means.
+    - agree: mainly expresses agreement with another member.
+    - disagree: mainly expresses disagreement with another member.
+    - moderation: manages the discussion rather than contributing content: asks OTHER members for their answer,
+      choice, or opinion ("what do you think?", "which cards did you choose?", "@Emu?"), asks to move on, summarises,
+      calls for a decision, checks whether everyone agrees, assigns turns.
+    - none: no task-related target (greetings, small talk, waiting for people, off-topic).
+
+    A question addressed to others asking for their answer or view is TYPE probing with TARGET moderation, unless the
+    question itself proposes or argues for a specific card (then solution or reasoning).
+    Precedence when a message both names cards and does something else:
+    - If it gives a reason or explanation for a card ("because", "we need to test", "to verify", "it's a vowel so"),
+      label reasoning, not solution. Solution is for bare answers without justification.
+    - If it rejects, objects to, or contradicts another member's proposal ("no", "I wouldn't pick 3", "no, just 3 and E",
+      "it should be the 9"), label disagree, even if it offers an alternative card.
+    - If it accepts another member's proposal ("same", "I also have U and 5", "yes, and 5"), label agree.
+
+    If a message does several things, pick the TYPE and TARGET that describe its main function.
+    Return JSON only.
+  user: |
+    Previous messages (context, do not label these):
+    <<<
+    {context}
+    >>>
+
+    Message to label, by {speaker}:
+    <<<
+    {text}
+    >>>
+
+# N6 ②: 장치 수행 판정 (scripts/code_devices.py). 장치 발언과 기준선 대조 발언에 같은 6개 관찰 항목을 묻고, 장치 발언에는 지시 수행 여부를 추가로 묻는다.
+device_coding:
+  system: |
+    You read one utterance from a multi-party discussion (the speaker is an AI agent role-playing a participant) and
+    judge what the utterance actually does in its text. Judge only what is observable in the utterance; do not
+    assume anything from the instruction the speaker may have received. For each item answer yes, partial, or no.
+
+    Items (about the utterance itself):
+    - addresses_specific_claim: the speaker refers to a specific claim or point made earlier by a named other
+      participant and responds to that claim (not merely to the general topic).
+    - concedes_part: the speaker openly accepts that some part of another participant's point is right.
+    - names_disagreement_between_others: the speaker describes where two OTHER participants disagree with each
+      other (what the disagreement is about, or what each side gets right).
+    - proposes_third_option: the speaker proposes a compromise, a third option, or a reframing meant to satisfy the
+      concerns of two sides.
+    - objects_to_shared_view: the speaker raises an objection, risk, or counter-argument against a view that the group
+      (including possibly the speaker) has been converging on.
+    - states_position_change: the speaker explicitly says that their own position has moved, shifted, or changed
+      (in either direction), or explicitly says it has not moved. Answer yes only if a change is stated; partial if
+      movement is implied but not stated; no if nothing is said about own movement or the speaker says it did not move.
+
+    If an instruction excerpt is given, also answer:
+    - instruction_followed: does the utterance do what that instruction asked? yes = clearly does it, partial = does
+      part of it or does it weakly, no = does not do it. If no instruction is given, answer "none".
+
+    Return JSON only.
+  user: |
+    Previous utterances (context):
+    <<<
+    {context}
+    >>>
+
+    Instruction the speaker received for this turn (may be "(none)"):
+    <<<
+    {instruction}
+    >>>
+
+    Utterance by {speaker}:
+    <<<
+    {text}
+    >>>
+
+# 층 3: 근거–결론 연결 (scripts/code_evidence.py). 1-B 에이전트 1명의 사후 이유가 토론의 논거로 뒷받침되는지. 계획 3절 "층 3 코딩 범위".
+evidence_coding:
+  system: |
+    You audit one participant in a small-group policy discussion. You get the full transcript (utterances numbered
+    by #seq), the participant's score before and after the discussion (0 = strongly oppose the proposal,
+    10 = strongly support), and the one-sentence reason the participant gave after the discussion.
+    Judge only from the texts. Answer each item with the allowed values.
+
+    1. references_argument: does the post-discussion reason refer to a specific argument, claim, or piece of
+       evidence that actually appeared in the transcript (by any speaker, including the participant)?
+       yes / no / undeterminable. A generic restatement of the proposal or of the participant's side without any
+       transcript-specific content is "no".
+    2. argument_source: if yes, who introduced that argument in the transcript first: own (the participant),
+       peer (another participant), both, or none (if item 1 is not yes).
+    3. argument_seqs: the #seq numbers of the utterances where the referenced argument appears (empty if none).
+    4. relevant: is the referenced argument relevant to the conclusion the reason states (the side and strength
+       expressed by the post score)? yes / no / undeterminable / none.
+    5. supports: does the referenced argument, as stated in the transcript, actually support that conclusion
+       (rather than the opposite side, or neither)? yes / no / undeterminable / none.
+    6. rebutted: was the referenced argument challenged or rebutted by anyone in the transcript?
+       yes / no / undeterminable / none.
+    7. rebuttal_resolved: if rebutted, was the rebuttal answered (defended, conceded, or clarified) before the end?
+       yes / no / not_rebutted / undeterminable.
+
+    Return JSON only.
+  user: |
+    Proposal: {proposal}
+
+    Transcript:
+    <<<
+    {transcript}
+    >>>
+
+    Participant: {speaker}
+    Score before discussion: {pre}
+    Score after discussion: {post}
+    Reason given after the discussion:
+    <<<
+    {reason}
+    >>>

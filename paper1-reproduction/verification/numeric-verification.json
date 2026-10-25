@@ -1,0 +1,149 @@
+{
+  "api_calls": 0,
+  "raw_databases_used": false,
+  "hypotheses": [
+    "E1",
+    "E2",
+    "E3",
+    "E4",
+    "E5"
+  ],
+  "checks": [
+    {
+      "model": "claude",
+      "hypothesis": "E1",
+      "estimate": -0.124168435951875,
+      "reference_estimate": -0.124168435951875,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "claude",
+      "hypothesis": "E2",
+      "estimate": 0.149321353098717,
+      "reference_estimate": 0.149321353098717,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "claude",
+      "hypothesis": "E3",
+      "estimate": 0.536802585795798,
+      "reference_estimate": 0.536802585795798,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "claude",
+      "hypothesis": "E4",
+      "estimate": 0.859375,
+      "reference_estimate": 0.859375,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "claude",
+      "hypothesis": "E5",
+      "estimate": 1.96354166666667,
+      "reference_estimate": 1.96354166666667,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "gemini",
+      "hypothesis": "E1",
+      "estimate": -0.0285916489738149,
+      "reference_estimate": -0.0285916489738149,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "gemini",
+      "hypothesis": "E2",
+      "estimate": 0.154025543912292,
+      "reference_estimate": 0.154025543912292,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "gemini",
+      "hypothesis": "E3",
+      "estimate": 0.828823017211264,
+      "reference_estimate": 0.828823017211264,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "gemini",
+      "hypothesis": "E4",
+      "estimate": -0.6875,
+      "reference_estimate": -0.6875,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "gemini",
+      "hypothesis": "E5",
+      "estimate": 4.39583333333333,
+      "reference_estimate": 4.39583333333333,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "mistral",
+      "hypothesis": "E1",
+      "estimate": -0.140799716914366,
+      "reference_estimate": -0.140799716914366,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "mistral",
+      "hypothesis": "E2",
+      "estimate": -0.0711378001176686,
+      "reference_estimate": -0.0711378001176686,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "mistral",
+      "hypothesis": "E3",
+      "estimate": 0.118941841683303,
+      "reference_estimate": 0.118941841683303,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "mistral",
+      "hypothesis": "E4",
+      "estimate": -2.421875,
+      "reference_estimate": -2.421875,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    },
+    {
+      "model": "mistral",
+      "hypothesis": "E5",
+      "estimate": -3.515625,
+      "reference_estimate": -3.515625,
+      "absolute_difference": 0.0,
+      "max_ci_difference": 0.0,
+      "matches_1e-6": true
+    }
+  ],
+  "all_match_1e_6": true
+}
