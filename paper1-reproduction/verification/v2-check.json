@@ -1,0 +1,41 @@
+{
+  "date": "2026-10-26",
+  "status": "pass",
+  "environment": "Previously fresh-installed Python analysis environment; existing R installation, not a new OS environment",
+  "E1_E5_refits": 15,
+  "all_estimates_and_intervals_match_1e_6": true,
+  "figures_generated": 6,
+  "figure1_5_numeric_records_identical": true,
+  "figure6_numeric_records_identical": true,
+  "coding_merge_audit": {
+    "api_calls": 0,
+    "human_validation": false,
+    "checks": {
+      "utterance": {
+        "n": 2440,
+        "agreement_n": 1727,
+        "disagreement_n": 713,
+        "merged_labels_match": true,
+        "condition_counts_match": true
+      },
+      "device": {
+        "n": 1500,
+        "agreement_n": 211,
+        "disagreement_n": 1289,
+        "merged_labels_match": true,
+        "condition_counts_match": true
+      },
+      "evidence": {
+        "n": 600,
+        "agreement_n": 95,
+        "disagreement_n": 505,
+        "merged_labels_match": true,
+        "condition_counts_match": true
+      }
+    }
+  },
+  "dataset_manifest_verified_files": 190,
+  "api_calls": 0,
+  "full_42_registered_rows_refit": false,
+  "download_test": "Anonymous fixed-revision manifest download and one missing-file fetch succeeded; remaining 189 cached files were SHA-256 verified"
+}

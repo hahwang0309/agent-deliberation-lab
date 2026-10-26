@@ -1,0 +1,7 @@
+# Optional paid coding — implementation references
+
+The three `code_*.py` scripts preserve the initial coding implementations; the other two preserve the later comparison-coder / GLM adjudication and position-change adjudication. They are **source references, not public-data quick-start commands**: the originals use author-side databases, working paths and environment configuration. Do not run them from this directory. Their external calls can incur charges and send unpublished inputs to Mistral.
+
+The public dataset contains the frozen rubrics, sampling/selection records, initial pairs, judge decisions, and merged labels. Use `analysis/scripts/audit_public_coding.py` for an offline check of the released adjudication merge. Re-running a model is a new stochastic measurement, not a reproduction of the archived labels. To adapt the references, explicitly map the released JSONL inputs, keep IDs and frozen rubrics, configure your own API credentials outside this folder, and select/pay for available models yourself. Historical model availability is not guaranteed. No credentials are supplied. No API calls are needed for the main quick start.
+
+The initial coding scripts import platform modules available in the repository; this directory is not an independently installable package. The source references are provided to inspect how the later protocol was executed; they do not claim an independently runnable end-to-end API replay.
